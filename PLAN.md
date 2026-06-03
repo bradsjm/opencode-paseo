@@ -160,19 +160,14 @@ daemon/client responses over CLI output-shaping behavior.
 
 ## 5. Cross-cutting architecture decision: adopt `@getpaseo/client`
 
-Future work must stop extending the repository's handwritten protocol client as
-the long-term transport implementation.
-
 ### 5.1 Direction
 
 Adopt `@getpaseo/client` `DaemonClient` as the plugin's transport foundation and
 reduce local transport code to a small adapter layer.
 
-This applies to existing Phase 1 behavior as well as future phases.
-
 ### 5.2 What stays local
 
-Even after migration, keep a local transport adapter owned by this repository so
+Keep a local transport adapter owned by this repository so
 that plugin code does not depend directly on the full upstream client surface.
 
 That local adapter should own only:
@@ -181,32 +176,6 @@ That local adapter should own only:
 - the small method surface the plugin actually uses;
 - any plugin-specific event normalization still needed by `lib/hooks.ts`; and
 - clean shutdown/disposal integration with OpenCode hooks.
-
-### 5.3 What must be removed or collapsed during migration
-
-During the migration, remove repository-owned protocol duplication wherever the
-upstream client now owns the source of truth.
-
-That includes:
-
-- handwritten request/response correlation logic in `lib/transport/client.ts`;
-- handwritten protocol request/response/event shapes in
-  `lib/transport/types.ts` that duplicate upstream client/protocol types; and
-- assumptions in local types that do not match current upstream payloads.
-
-Keep plugin-specific types only when they describe plugin state or plugin event
-semantics rather than daemon wire contracts.
-
-### 5.4 Migration guardrails
-
-Adopting `DaemonClient` must not change these behaviors:
-
-- localhost-only plugin connection policy remains enforced in config validation;
-- reconnect remains disabled by plugin policy even though the upstream client can
-  reconnect;
-- the plugin still loads successfully when daemon connection fails at startup;
-- `paseo_status`, `paseo_inbox_read`, and `paseo_inbox_status` retain their
-  existing public semantics unless this plan explicitly changes them.
 
 ## 6. Phase 2: transport migration, terminal primitives, permission response
 
