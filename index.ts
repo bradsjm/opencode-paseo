@@ -28,6 +28,17 @@ import {
     createWorktreeCreateTool,
     createWorktreeArchiveTool,
 } from "./lib/tools/worktree.js"
+import {
+    createScheduleListTool,
+    createScheduleInspectTool,
+    createScheduleCreateTool,
+    createScheduleUpdateTool,
+    createSchedulePauseTool,
+    createScheduleResumeTool,
+    createScheduleDeleteTool,
+    createScheduleRunOnceTool,
+    createScheduleLogsTool,
+} from "./lib/tools/schedule.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 
 const server: Plugin = (async (ctx) => {
@@ -82,6 +93,15 @@ const server: Plugin = (async (ctx) => {
             paseo_worktree_list: createWorktreeListTool(state, client, logger),
             paseo_worktree_create: createWorktreeCreateTool(state, client, logger),
             paseo_worktree_archive: createWorktreeArchiveTool(state, client, logger),
+            paseo_schedule_list: createScheduleListTool(state, client, logger),
+            paseo_schedule_inspect: createScheduleInspectTool(state, client, logger),
+            paseo_schedule_create: createScheduleCreateTool(state, client, logger),
+            paseo_schedule_update: createScheduleUpdateTool(state, client, logger),
+            paseo_schedule_pause: createSchedulePauseTool(state, client, logger),
+            paseo_schedule_resume: createScheduleResumeTool(state, client, logger),
+            paseo_schedule_delete: createScheduleDeleteTool(state, client, logger),
+            paseo_schedule_run_once: createScheduleRunOnceTool(state, client, logger),
+            paseo_schedule_logs: createScheduleLogsTool(state, client, logger),
         },
     }
 }) satisfies Plugin

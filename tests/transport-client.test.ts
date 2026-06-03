@@ -5,6 +5,7 @@ import {
     mapServerInfo,
     mapAgentSnapshot,
     translateUpstreamEvent,
+    PaseoClient,
 } from "../lib/transport/client.js"
 import type { DaemonConfig } from "../lib/config.js"
 
@@ -281,4 +282,27 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
         } as any)
         assert.equal(result, null)
     })
+})
+
+// ─── Schedule Methods on PaseoClient ─────────────────────────────────────────
+
+test("PaseoClient implements all schedule transport methods", () => {
+    const scheduleMethods = [
+        "scheduleList",
+        "scheduleInspect",
+        "scheduleCreate",
+        "scheduleUpdate",
+        "schedulePause",
+        "scheduleResume",
+        "scheduleDelete",
+        "scheduleRunOnce",
+        "scheduleLogs",
+    ]
+    for (const method of scheduleMethods) {
+        assert.equal(
+            typeof (PaseoClient.prototype as Record<string, unknown>)[method],
+            "function",
+            `PaseoClient.prototype.${method} should be a function`,
+        )
+    }
 })

@@ -22,3 +22,14 @@ export {
     createWorktreeCreateTool,
     createWorktreeArchiveTool,
 } from "./worktree.js"
+export {
+    createScheduleListTool,
+    createScheduleInspectTool,
+    createScheduleCreateTool,
+    createScheduleUpdateTool,
+    createSchedulePauseTool,
+    createScheduleResumeTool,
+    createScheduleDeleteTool,
+    createScheduleRunOnceTool,
+    createScheduleLogsTool,
+} from "./schedule.js"

@@ -161,6 +161,52 @@ export interface RespondPermissionOptions {
     selectedActionId?: string
 }
 
+// ─── Schedule Types ───────────────────────────────────────────────────────────
+// Plugin-level shapes for schedule operations (thin wrappers over daemon RPCs).
+
+export type ScheduleCadence =
+    | { type: "every"; everyMs: number }
+    | { type: "cron"; expression: string; timezone?: string }
+
+export interface ScheduleNewAgentConfig {
+    provider: string
+    cwd: string
+    modeId?: string
+    model?: string
+}
+
+export interface ScheduleCreateOptions {
+    prompt: string
+    name?: string
+    cadence: ScheduleCadence
+    target:
+        | { type: "self"; agentId: string }
+        | { type: "agent"; agentId: string }
+        | { type: "new-agent"; config: ScheduleNewAgentConfig }
+    maxRuns?: number
+    expiresAt?: string
+    runOnCreate?: boolean
+}
+
+export interface ScheduleUpdateOptions {
+    id: string
+    name?: string
+    prompt?: string
+    cadence?: ScheduleCadence
+    newAgentConfig?: {
+        provider?: string
+        model?: string | null
+        modeId?: string | null
+        cwd?: string
+    }
+    maxRuns?: number
+    expiresAt?: string
+}
+
+export interface ScheduleInspectOptions {
+    id: string
+}
+
 // ─── Normalized Daemon Event ──────────────────────────────────────────────────
 // The adapter translates upstream DaemonClient events into this shape
 // before delivering them to plugin consumers.
@@ -213,4 +259,15 @@ export interface PaseoTransport {
     listWorktrees(options: WorktreeListOptions): Promise<Record<string, unknown>>
     createWorktree(options: WorktreeCreateOptions): Promise<Record<string, unknown>>
     archiveWorktree(options: WorktreeArchiveOptions): Promise<Record<string, unknown>>
+
+    // Schedule operations
+    scheduleList(): Promise<Record<string, unknown>>
+    scheduleInspect(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
+    scheduleCreate(options: ScheduleCreateOptions): Promise<Record<string, unknown>>
+    scheduleUpdate(options: ScheduleUpdateOptions): Promise<Record<string, unknown>>
+    schedulePause(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
+    scheduleResume(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
+    scheduleDelete(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
+    scheduleRunOnce(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
+    scheduleLogs(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
 }

@@ -28,6 +28,9 @@ import type {
     WorktreeListOptions,
     WorktreeCreateOptions,
     WorktreeArchiveOptions,
+    ScheduleCreateOptions,
+    ScheduleUpdateOptions,
+    ScheduleInspectOptions,
 } from "./types.js"
 
 // ─── Paseo Client Adapter ─────────────────────────────────────────────────────
@@ -454,6 +457,71 @@ export class PaseoClient implements PaseoTransport {
             repoRoot: options.repoRoot,
             branchName: options.branchName,
         })
+        return result as unknown as Record<string, unknown>
+    }
+
+    // ─── Schedule Operations ─────────────────────────────────────────────
+
+    async scheduleList(): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleList()
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleInspect(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleInspect({ id: options.id })
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleCreate(options: ScheduleCreateOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleCreate({
+            prompt: options.prompt,
+            name: options.name,
+            cadence: options.cadence as unknown as Record<string, unknown>,
+            target: options.target as unknown as Record<string, unknown>,
+            maxRuns: options.maxRuns,
+            expiresAt: options.expiresAt,
+            runOnCreate: options.runOnCreate,
+        } as Parameters<typeof this.daemon.scheduleCreate>[0])
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleUpdate(options: ScheduleUpdateOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleUpdate({
+            id: options.id,
+            name: options.name,
+            prompt: options.prompt,
+            cadence: options.cadence as unknown as Record<string, unknown> | undefined,
+            newAgentConfig: options.newAgentConfig as unknown as
+                | Record<string, unknown>
+                | undefined,
+            maxRuns: options.maxRuns,
+            expiresAt: options.expiresAt,
+        } as Parameters<typeof this.daemon.scheduleUpdate>[0])
+        return result as unknown as Record<string, unknown>
+    }
+
+    async schedulePause(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.schedulePause({ id: options.id })
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleResume(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleResume({ id: options.id })
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleDelete(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleDelete({ id: options.id })
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleRunOnce(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleRunOnce({ id: options.id })
+        return result as unknown as Record<string, unknown>
+    }
+
+    async scheduleLogs(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.scheduleLogs({ id: options.id })
         return result as unknown as Record<string, unknown>
     }
 

@@ -131,6 +131,17 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
         assert.ok(toolIDs.data.includes("paseo_worktree_create"))
         assert.ok(toolIDs.data.includes("paseo_worktree_archive"))
 
+        // Schedule tools
+        assert.ok(toolIDs.data.includes("paseo_schedule_list"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_inspect"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_create"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_update"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_pause"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_resume"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_delete"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_run_once"))
+        assert.ok(toolIDs.data.includes("paseo_schedule_logs"))
+
         assert.ok(existsSync(logDir), "expected debug log directory to be created")
 
         const logFiles = readdirSync(logDir).filter((name) => name.endsWith(".log"))
