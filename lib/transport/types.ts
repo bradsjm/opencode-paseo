@@ -45,6 +45,58 @@ export interface TerminalSummary {
     title?: string
 }
 
+// ─── Phase 2 Result Types ─────────────────────────────────────────────────────
+// Plugin-level shapes returned by terminal and permission operations.
+
+export interface CreatedTerminal {
+    id: string
+    name: string
+    title?: string
+    cwd?: string
+}
+
+export interface TerminalCapture {
+    terminalId: string
+    content: string
+    lineCount: number
+    truncated: boolean
+}
+
+export interface KilledTerminal {
+    id: string
+    exitCode?: number | null
+}
+
+export interface PermissionResponse {
+    workerId: string
+    permissionId: string
+    behavior: "allow" | "deny"
+}
+
+export interface CreateTerminalOptions {
+    cwd: string
+    name?: string
+    agentId?: string
+    command?: string
+    args?: string[]
+}
+
+export interface CaptureTerminalOptions {
+    terminalId: string
+    start?: number
+    end?: number
+    stripAnsi?: boolean
+}
+
+export interface RespondPermissionOptions {
+    workerId: string
+    permissionId: string
+    behavior: "allow" | "deny"
+    message?: string
+    interrupt?: boolean
+    selectedActionId?: string
+}
+
 // ─── Normalized Daemon Event ──────────────────────────────────────────────────
 // The adapter translates upstream DaemonClient events into this shape
 // before delivering them to plugin consumers.
@@ -75,4 +127,13 @@ export interface PaseoTransport {
     getStatus(): Promise<Record<string, unknown>>
     getProvidersSnapshot(cwd?: string): Promise<Array<Record<string, unknown>>>
     onEvent(callback: DaemonEventCallback): () => void
+
+    // Phase 2: Terminal operations
+    createTerminal(options: CreateTerminalOptions): Promise<CreatedTerminal>
+    captureTerminal(options: CaptureTerminalOptions): Promise<TerminalCapture>
+    sendTerminalInput(terminalId: string, input: string): Promise<void>
+    killTerminal(terminalId: string): Promise<KilledTerminal>
+
+    // Phase 2: Permission operations
+    respondToPermission(options: RespondPermissionOptions): Promise<PermissionResponse>
 }

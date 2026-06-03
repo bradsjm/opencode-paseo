@@ -45,6 +45,24 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
         getStatus: async () => ({ status: "ok", version: "0.1.0", uptime: 1234 }),
         getProvidersSnapshot: async () => [],
         onEvent: () => () => {},
+        createTerminal: async (options) => ({
+            id: `t-${Date.now()}`,
+            name: options.name ?? "terminal",
+            cwd: options.cwd,
+        }),
+        captureTerminal: async (options) => ({
+            terminalId: options.terminalId,
+            content: "",
+            lineCount: 0,
+            truncated: false,
+        }),
+        sendTerminalInput: async () => {},
+        killTerminal: async (terminalId) => ({ id: terminalId, exitCode: null }),
+        respondToPermission: async (options) => ({
+            workerId: options.workerId,
+            permissionId: options.permissionId,
+            behavior: options.behavior,
+        }),
         ...overrides,
     }
 }

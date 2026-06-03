@@ -6,6 +6,14 @@ import { PaseoClient } from "./lib/transport/client.js"
 import { hydrate } from "./lib/hydration/hydrate.js"
 import { createStatusTool } from "./lib/tools/status.js"
 import { createInboxReadTool, createInboxStatusTool } from "./lib/tools/inbox.js"
+import {
+    createTerminalListTool,
+    createTerminalCreateTool,
+    createTerminalCaptureTool,
+    createTerminalSendInputTool,
+    createTerminalKillTool,
+} from "./lib/tools/terminal.js"
+import { createPermissionRespondTool } from "./lib/tools/permission.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 
 const server: Plugin = (async (ctx) => {
@@ -44,6 +52,12 @@ const server: Plugin = (async (ctx) => {
             paseo_status: createStatusTool(state, client, logger),
             paseo_inbox_read: createInboxReadTool(state, logger),
             paseo_inbox_status: createInboxStatusTool(state, logger),
+            paseo_terminal_list: createTerminalListTool(state, client, logger),
+            paseo_terminal_create: createTerminalCreateTool(state, client, logger),
+            paseo_terminal_capture: createTerminalCaptureTool(state, client, logger),
+            paseo_terminal_send_input: createTerminalSendInputTool(state, client, logger),
+            paseo_terminal_kill: createTerminalKillTool(state, client, logger),
+            paseo_permission_respond: createPermissionRespondTool(state, client, logger),
         },
     }
 }) satisfies Plugin

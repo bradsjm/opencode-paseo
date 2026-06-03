@@ -13,6 +13,13 @@ import type {
     DaemonEvent,
     DaemonEventCallback,
     PaseoTransport,
+    CreateTerminalOptions,
+    CreatedTerminal,
+    CaptureTerminalOptions,
+    TerminalCapture,
+    KilledTerminal,
+    RespondPermissionOptions,
+    PermissionResponse,
 } from "./types.js"
 
 // ─── Paseo Client Adapter ─────────────────────────────────────────────────────
@@ -257,6 +264,76 @@ export class PaseoClient implements PaseoTransport {
     async getProvidersSnapshot(cwd?: string): Promise<Array<Record<string, unknown>>> {
         const result = await this.daemon.getProvidersSnapshot({ cwd })
         return (result.entries ?? []) as Array<Record<string, unknown>>
+    }
+
+    // ─── Terminal Operations ─────────────────────────────────────────────
+
+    async createTerminal(options: CreateTerminalOptions): Promise<CreatedTerminal> {
+        const result = await this.daemon.createTerminal(options.cwd, options.name, undefined, {
+            agentId: options.agentId,
+            command: options.command,
+            args: options.args,
+        })
+        const terminal = result.terminal
+        if (!terminal) {
+            throw new Error("Daemon returned no terminal for createTerminal request")
+        }
+        return {
+            id: terminal.id,
+            name: terminal.name,
+            title: terminal.title ?? undefined,
+            cwd: terminal.cwd,
+        }
+    }
+
+    async captureTerminal(options: CaptureTerminalOptions): Promise<TerminalCapture> {
+        const result = await this.daemon.captureTerminal(options.terminalId, {
+            start: options.start,
+            end: options.end,
+            stripAnsi: options.stripAnsi,
+        })
+        const content = result.lines.join("\n")
+        return {
+            terminalId: result.terminalId,
+            content,
+            lineCount: result.totalLines,
+            truncated: result.lines.length < result.totalLines,
+        }
+    }
+
+    async sendTerminalInput(terminalId: string, input: string): Promise<void> {
+        this.daemon.sendTerminalInput(terminalId, { type: "input", data: input })
+    }
+
+    async killTerminal(terminalId: string): Promise<KilledTerminal> {
+        const result = await this.daemon.killTerminal(terminalId)
+        return {
+            id: result.terminalId,
+            exitCode: result.success ? 0 : null,
+        }
+    }
+
+    // ─── Permission Operations ───────────────────────────────────────────
+
+    async respondToPermission(options: RespondPermissionOptions): Promise<PermissionResponse> {
+        const response =
+            options.behavior === "allow"
+                ? {
+                      behavior: "allow" as const,
+                      selectedActionId: options.selectedActionId,
+                  }
+                : {
+                      behavior: "deny" as const,
+                      message: options.message,
+                      interrupt: options.interrupt,
+                      selectedActionId: options.selectedActionId,
+                  }
+        await this.daemon.respondToPermission(options.workerId, options.permissionId, response)
+        return {
+            workerId: options.workerId,
+            permissionId: options.permissionId,
+            behavior: options.behavior,
+        }
     }
 
     // ─── Event Subscription ──────────────────────────────────────────────

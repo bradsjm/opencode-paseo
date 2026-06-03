@@ -24,6 +24,14 @@ function syncWorkerFromPayload(
           ? Object.keys(rawLabels)
           : (current?.labels ?? [])
 
+    // Derive pendingPermissionIds from agent payload when available
+    let pendingPermissionIds = current?.pendingPermissionIds ?? []
+    if (agent && Array.isArray(agent.pendingPermissions)) {
+        pendingPermissionIds = agent.pendingPermissions
+            .map((p: unknown) => (p as Record<string, unknown>)?.id as string | undefined)
+            .filter((id): id is string => typeof id === "string")
+    }
+
     const fallbackStatus =
         type === "worker.finished"
             ? "finished"
@@ -64,7 +72,7 @@ function syncWorkerFromPayload(
         branchName:
             (typeof agent?.branchName === "string" && agent.branchName) || current?.branchName,
         unreadEventCount: current?.unreadEventCount ?? 0,
-        pendingPermissionIds: current?.pendingPermissionIds ?? [],
+        pendingPermissionIds,
     })
 }
 
@@ -141,6 +149,15 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
             syncWorkerFromPayload(state, type, payload)
         }
 
+        // Track pending permissions on the worker
+        if (type === "permission.requested") {
+            const permId = payload.permissionId as string | undefined
+            const worker = state.workers.get(resourceId)
+            if (worker && permId && !worker.pendingPermissionIds.includes(permId)) {
+                worker.pendingPermissionIds = [...worker.pendingPermissionIds, permId]
+            }
+        }
+
         const blocking =
             kind === "worker.blocked" ||
             kind === "permission.requested" ||
@@ -177,6 +194,13 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
                     ) {
                         markEventRead(state, id)
                     }
+                }
+                // Remove resolved permission from worker's pending list
+                const worker = state.workers.get(resourceId)
+                if (worker && permId) {
+                    worker.pendingPermissionIds = worker.pendingPermissionIds.filter(
+                        (id) => id !== permId,
+                    )
                 }
             }
         }

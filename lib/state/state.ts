@@ -137,3 +137,21 @@ export function upsertTerminal(state: PluginState, terminal: TerminalSessionSumm
 export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
     state.workers.set(worker.id, worker)
 }
+
+// ─── Session-Terminal Binding ────────────────────────────────────────────────
+// Records a newly created terminal in both the global terminal map and the
+// session's createdTerminalIds so that subsequent inbox events for this
+// terminal are routed to the correct session.
+
+export function recordCreatedTerminal(
+    state: PluginState,
+    sessionId: string,
+    terminal: TerminalSessionSummary,
+): void {
+    state.terminals.set(terminal.id, terminal)
+    const session = state.sessions.get(sessionId)
+    if (session) {
+        session.createdTerminalIds.add(terminal.id)
+        session.updatedAt = Date.now()
+    }
+}
