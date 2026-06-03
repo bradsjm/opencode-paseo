@@ -2,7 +2,7 @@ import type { Event } from "@opencode-ai/sdk"
 import type { PluginState, InboxEvent } from "./state/types.js"
 import type { PluginConfig } from "./config.js"
 import type { Logger } from "./logger.js"
-import type { PaseoClient } from "./transport/client.js"
+import type { PaseoTransport } from "./transport/types.js"
 import type { Config } from "@opencode-ai/plugin"
 import { insertInboxEvent, markEventRead, upsertWorker } from "./state/state.js"
 import { mapDaemonWorkerStatus } from "./state/status.js"
@@ -72,7 +72,7 @@ function syncWorkerFromPayload(
 
 export function createEventHandler(
     state: PluginState,
-    client: PaseoClient,
+    _client: PaseoTransport,
     logger: Logger,
     config: PluginConfig,
 ) {

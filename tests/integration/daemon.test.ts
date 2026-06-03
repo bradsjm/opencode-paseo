@@ -25,7 +25,7 @@ async function isDaemonReachable(): Promise<boolean> {
     const client = new PaseoClient(createDaemonConfig())
     try {
         await client.connect()
-        client.disconnect()
+        await client.close()
         return true
     } catch {
         return false
@@ -41,29 +41,23 @@ test("real daemon integration", async (t) => {
         return
     }
 
-    await t.test("hello handshake returns server_info", async () => {
+    await t.test("hello handshake provides server_info via getServerInfo", async () => {
         const client = new PaseoClient(createDaemonConfig())
         try {
-            const serverInfo = await client.connect()
+            await client.connect()
 
-            assert.ok(serverInfo, "connect() should return server info")
-            assert.ok(typeof serverInfo.serverId === "string", "serverId should be a string")
-            assert.ok(serverInfo.serverId.length > 0, "serverId should not be empty")
+            const serverInfo = client.getServerInfo()
+            assert.ok(serverInfo, "getServerInfo() should return server info after connect")
+            assert.ok(typeof serverInfo!.serverId === "string", "serverId should be a string")
+            assert.ok(serverInfo!.serverId.length > 0, "serverId should not be empty")
             assert.ok(
-                typeof serverInfo.capabilities === "object",
+                typeof serverInfo!.capabilities === "object",
                 "capabilities should be an object",
             )
-            assert.ok(typeof serverInfo.version === "string", "version should be a string")
-            assert.ok(serverInfo.version!.length > 0, "version should not be empty")
 
             assert.ok(client.isConnected(), "client should report connected")
-            assert.deepEqual(
-                client.getServerInfo(),
-                serverInfo,
-                "getServerInfo() should match connect() result",
-            )
         } finally {
-            client.disconnect()
+            await client.close()
         }
     })
 
@@ -75,13 +69,12 @@ test("real daemon integration", async (t) => {
 
             assert.ok(Array.isArray(agents), "fetchAgents should return an array")
 
-            // If there are agents, verify their shape
             for (const agent of agents) {
                 assert.ok(typeof agent.id === "string", "agent.id should be a string")
                 assert.ok(typeof agent.status === "string", "agent.status should be a string")
             }
         } finally {
-            client.disconnect()
+            await client.close()
         }
     })
 
@@ -93,12 +86,12 @@ test("real daemon integration", async (t) => {
 
             assert.ok(Array.isArray(terminals), "listTerminals should return an array")
 
-            // If there are terminals, verify their shape
             for (const terminal of terminals) {
                 assert.ok(typeof terminal.id === "string", "terminal.id should be a string")
+                assert.ok(typeof terminal.name === "string", "terminal.name should be a string")
             }
         } finally {
-            client.disconnect()
+            await client.close()
         }
     })
 
@@ -111,7 +104,7 @@ test("real daemon integration", async (t) => {
             assert.ok(typeof status === "object", "getStatus should return an object")
             assert.ok(status !== null, "status should not be null")
         } finally {
-            client.disconnect()
+            await client.close()
         }
     })
 
@@ -130,30 +123,28 @@ test("real daemon integration", async (t) => {
             // Wait briefly for any server-pushed events
             await new Promise((resolve) => setTimeout(resolve, 1000))
 
-            // Unsubscribe — event may or may not have fired, both are valid
             unsubscribe()
             assert.ok(true, "event subscription and unsubscribe completed")
         } finally {
-            client.disconnect()
+            await client.close()
         }
     })
 
-    await t.test("disconnect cleans up and rejects pending requests", async () => {
+    await t.test("close cleans up and rejects pending requests", async () => {
         const client = new PaseoClient(createDaemonConfig())
         await client.connect()
 
         assert.ok(client.isConnected(), "should be connected")
 
-        client.disconnect()
+        await client.close()
 
         assert.ok(!client.isConnected(), "should be disconnected")
-        assert.equal(client.getServerInfo(), null, "serverInfo should be null after disconnect")
+        assert.equal(client.getServerInfo(), null, "serverInfo should be null after close")
 
-        // Requests after disconnect should fail
         await assert.rejects(
             () => client.fetchAgents(),
-            { message: /Not connected/ },
-            "fetchAgents should reject after disconnect",
+            undefined,
+            "fetchAgents should reject after close",
         )
     })
 
@@ -162,7 +153,6 @@ test("real daemon integration", async (t) => {
         try {
             await client.connect()
 
-            // Fire multiple requests sequentially
             const agents = await client.fetchAgents()
             const terminals = await client.listTerminals()
             const status = await client.getStatus()
@@ -171,7 +161,7 @@ test("real daemon integration", async (t) => {
             assert.ok(Array.isArray(terminals), "terminals should be array")
             assert.ok(typeof status === "object", "status should be object")
         } finally {
-            client.disconnect()
+            await client.close()
         }
     })
 })

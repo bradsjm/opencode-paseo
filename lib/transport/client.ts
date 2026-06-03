@@ -1,175 +1,262 @@
+import { DaemonClient } from "@getpaseo/client"
+import type {
+    DaemonClientConfig,
+    DaemonEvent as UpstreamDaemonEvent,
+    ConnectionState,
+} from "@getpaseo/client"
 import type { DaemonConfig } from "../config.js"
 import type {
-    HelloMessage,
-    SessionRequest,
     AgentSummary,
-    AgentEntry,
-    FetchAgentsRequest,
-    GetProvidersSnapshotRequest,
-    ListTerminalsRequest,
+    FetchAgentsOptions,
     TerminalSummary,
+    ServerInfo,
     DaemonEvent,
     DaemonEventCallback,
-    ServerInfo,
-    PongMessage,
+    PaseoTransport,
 } from "./types.js"
 
-// ─── Paseo Daemon Client ────────────────────────────────────────────────────
-// Speaks the real Paseo daemon WebSocket protocol:
-//   - Endpoint: ws://host:port/ws
-//   - Hello handshake on connect → server_info confirmation
-//   - Session-wrapped messages with requestId correlation
-//   - Ping/pong keepalive
-//   - Auth via Sec-WebSocket-Protocol or Authorization header
+// ─── Paseo Client Adapter ─────────────────────────────────────────────────────
+// Wraps @getpaseo/client DaemonClient and exposes the PaseoTransport interface
+// that the rest of the plugin depends on. Translates upstream typed events into
+// the normalized DaemonEvent shape used by the inbox and state layer.
 
-export class PaseoClient {
-    private config: DaemonConfig
-    private ws: WebSocket | null = null
-    private eventListeners: DaemonEventCallback[] = []
-    private connected = false
-    private serverInfo: ServerInfo | null = null
-    private pendingRequests = new Map<
-        string,
-        {
-            resolve: (value: unknown) => void
-            reject: (reason: Error) => void
-            timer: ReturnType<typeof setTimeout>
+const APP_VERSION = "0.1.89"
+
+// ─── Exported Pure Functions (for testing) ────────────────────────────────────
+
+export function buildDaemonConfig(config: DaemonConfig): DaemonClientConfig {
+    const host = config.host.includes(":") ? `[${config.host}]` : config.host
+    return {
+        url: `ws://${host}:${config.port}/ws`,
+        clientId: `opencode-paseo-${crypto.randomUUID()}`,
+        clientType: "cli",
+        appVersion: APP_VERSION,
+        password: config.password,
+        connectTimeoutMs: config.connectionTimeoutMs,
+        reconnect: { enabled: false },
+        suppressSendErrors: true,
+    }
+}
+
+export function mapServerInfo(info: {
+    serverId: string
+    hostname?: string | null
+    version?: string | null
+    capabilities?: Record<string, unknown>
+    features?: Record<string, boolean>
+}): ServerInfo {
+    return {
+        serverId: info.serverId,
+        hostname: info.hostname ?? undefined,
+        version: info.version ?? undefined,
+        features: (info.features ?? {}) as Record<string, boolean>,
+        capabilities: (info.capabilities ?? {}) as Record<string, unknown>,
+    }
+}
+
+export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
+    const labels = (agent.labels ?? {}) as Record<string, string>
+    return {
+        id: agent.id as string,
+        provider: (agent.provider as string) ?? "unknown",
+        cwd: (agent.cwd as string) ?? "",
+        model: (agent.model as string | null) ?? null,
+        status: (agent.status as string) ?? "unknown",
+        title: (agent.title as string | null) ?? null,
+        labels,
+        requiresAttention: agent.requiresAttention as boolean | undefined,
+        attentionReason: (agent.attentionReason as string | null) ?? null,
+        attentionTimestamp: (agent.attentionTimestamp as string | null) ?? null,
+        pendingPermissions: (agent.pendingPermissions as Array<Record<string, unknown>>) ?? [],
+        capabilities: (agent.capabilities as Record<string, unknown>) ?? {},
+        runtimeInfo: (agent.runtimeInfo as Record<string, unknown>) ?? undefined,
+        createdAt: agent.createdAt as string | undefined,
+        updatedAt: agent.updatedAt as string | undefined,
+        worktreePath:
+            (agent.worktreePath as string | undefined) ?? labels.worktreePath ?? undefined,
+        branchName: (agent.branchName as string | undefined) ?? labels.branchName ?? undefined,
+    }
+}
+
+export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent | null {
+    switch (event.type) {
+        case "agent_update": {
+            const payload = event.payload as Record<string, unknown>
+            const kind = payload.kind as string | undefined
+
+            if (kind === "remove") {
+                return {
+                    type: "worker.finished",
+                    payload: { ...payload, workerId: event.agentId },
+                }
+            }
+
+            const agent = payload.agent as Record<string, unknown> | undefined
+            if (!agent) {
+                return {
+                    type: "agent_update",
+                    payload: { ...payload, workerId: event.agentId },
+                }
+            }
+
+            const agentId = agent.id as string
+            const status = agent.status as string
+            const requiresAttention = agent.requiresAttention as boolean | undefined
+            const attentionReason = agent.attentionReason as string | undefined
+            const pendingPermissions = agent.pendingPermissions
+
+            if (
+                requiresAttention &&
+                (attentionReason === "permission" ||
+                    (Array.isArray(pendingPermissions) && pendingPermissions.length > 0))
+            ) {
+                return {
+                    type: "worker.blocked",
+                    payload: {
+                        ...payload,
+                        workerId: agentId,
+                        summary: attentionReason,
+                    },
+                }
+            }
+            if (status === "error") {
+                return { type: "worker.failed", payload: { ...payload, workerId: agentId } }
+            }
+            if (status === "closed") {
+                return { type: "worker.finished", payload: { ...payload, workerId: agentId } }
+            }
+            // running, idle, initializing
+            return { type: "worker.started", payload: { ...payload, workerId: agentId } }
         }
-    >()
-    private static readonly APP_VERSION = "0.1.89"
+
+        case "agent_deleted":
+            return {
+                type: "worker.finished",
+                payload: { workerId: event.agentId },
+            }
+
+        case "agent_permission_request":
+            return {
+                type: "permission.requested",
+                payload: {
+                    workerId: event.agentId,
+                    permissionId: event.request?.id,
+                    request: event.request as unknown as Record<string, unknown>,
+                },
+            }
+
+        case "agent_permission_resolved":
+            return {
+                type: "permission.resolved",
+                payload: {
+                    workerId: event.agentId,
+                    permissionId: event.requestId,
+                    resolution: event.resolution as unknown as Record<string, unknown>,
+                },
+            }
+
+        case "agent_stream":
+            return null
+
+        case "error":
+            return {
+                type: "daemon.error",
+                payload: { message: event.message },
+            }
+
+        default:
+            return null
+    }
+}
+
+// ─── PaseoClient Class ────────────────────────────────────────────────────────
+
+export class PaseoClient implements PaseoTransport {
+    private daemon: DaemonClient
+    private serverInfo: ServerInfo | null = null
+    private eventListeners: DaemonEventCallback[] = []
+    private unsubscribes: Array<() => void> = []
 
     constructor(config: DaemonConfig) {
-        this.config = config
-    }
-
-    private get url(): string {
-        const host = this.config.host.includes(":") ? `[${this.config.host}]` : this.config.host
-        return `ws://${host}:${this.config.port}/ws`
+        this.daemon = new DaemonClient(buildDaemonConfig(config))
     }
 
     // ─── Connection ──────────────────────────────────────────────────────
 
-    async connect(): Promise<ServerInfo> {
-        if (this.connected && this.serverInfo) return this.serverInfo
+    async connect(): Promise<void> {
+        await this.daemon.connect()
 
-        return new Promise<ServerInfo>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.cleanupSocket()
-                reject(new Error(`Connection timeout after ${this.config.connectionTimeoutMs}ms`))
-            }, this.config.connectionTimeoutMs)
+        const info = this.daemon.getLastServerInfoMessage()
+        if (info) {
+            this.serverInfo = mapServerInfo(info)
+        }
 
-            try {
-                const headers: Record<string, string> = {}
-                const protocols: string[] = []
-                if (this.config.password) {
-                    headers["Authorization"] = `Bearer ${this.config.password}`
-                    protocols.push(`paseo.bearer.${this.config.password}`)
+        const connUnsub = this.daemon.subscribeConnectionStatus((status: ConnectionState) => {
+            if (status.status === "connected") {
+                const refreshed = this.daemon.getLastServerInfoMessage()
+                if (refreshed) {
+                    this.serverInfo = mapServerInfo(refreshed)
                 }
-
-                const ws = new (WebSocket as any)(
-                    this.url,
-                    protocols.length > 0 ? protocols : undefined,
-                    { headers },
-                )
-                this.ws = ws
-
-                ws.onopen = () => {
-                    this.sendHello()
-                }
-
-                ws.onerror = (err: any) => {
-                    clearTimeout(timeout)
-                    reject(new Error(`WebSocket error: ${err.message || err}`))
-                }
-
-                ws.onclose = () => {
-                    const wasConnected = this.connected
-                    this.connected = false
-                    this.serverInfo = null
-                    this.rejectAllPending("Connection closed")
-                    if (wasConnected) {
-                        this.notifyEvent({ type: "daemon.disconnected", payload: {} })
-                    }
-                }
-
-                ws.onmessage = (msg: MessageEvent) => {
-                    this.handleMessage(msg, (info: ServerInfo) => {
-                        clearTimeout(timeout)
-                        this.connected = true
-                        this.serverInfo = info
-                        resolve(info)
-                    })
-                }
-            } catch (err: any) {
-                clearTimeout(timeout)
-                reject(err)
+                this.notifyEvent({ type: "daemon.connected", payload: {} })
+            } else if (status.status === "disconnected") {
+                this.serverInfo = null
+                this.notifyEvent({ type: "daemon.disconnected", payload: {} })
             }
         })
+        this.unsubscribes.push(connUnsub)
+
+        const eventUnsub = this.daemon.subscribe((event: UpstreamDaemonEvent) => {
+            const translated = translateUpstreamEvent(event)
+            if (translated) {
+                this.notifyEvent(translated)
+            }
+        })
+        this.unsubscribes.push(eventUnsub)
     }
 
-    disconnect(): void {
-        this.cleanupSocket()
-        this.connected = false
+    async close(): Promise<void> {
+        for (const unsub of this.unsubscribes) {
+            unsub()
+        }
+        this.unsubscribes = []
         this.serverInfo = null
-        this.rejectAllPending("Disconnected")
+        await this.daemon.close()
     }
 
     isConnected(): boolean {
-        return this.connected
+        return this.daemon.isConnected
     }
 
     getServerInfo(): ServerInfo | null {
         return this.serverInfo
     }
 
-    // ─── Hello Handshake ─────────────────────────────────────────────────
-
-    private sendHello(): void {
-        const hello: HelloMessage = {
-            type: "hello",
-            clientId: `opencode-paseo-${crypto.randomUUID()}`,
-            clientType: "cli",
-            protocolVersion: 1,
-            appVersion: PaseoClient.APP_VERSION,
-            capabilities: {
-                streaming: false,
-                terminalOutput: false,
-            },
-        }
-        this.ws!.send(JSON.stringify(hello))
-    }
-
     // ─── Data Fetching ───────────────────────────────────────────────────
 
-    async fetchAgents(
-        options?: Pick<FetchAgentsRequest, "scope" | "subscribe">,
-    ): Promise<AgentSummary[]> {
-        const response = await this.sendRequest<{ entries: AgentEntry[] }>({
-            type: "fetch_agents_request",
-            ...(options?.scope ? { scope: options.scope } : {}),
-            ...(options?.subscribe ? { subscribe: options.subscribe } : {}),
-        })
-        return (response.entries ?? []).map((entry) => entry.agent)
+    async fetchAgents(options?: FetchAgentsOptions): Promise<AgentSummary[]> {
+        const result = await this.daemon.fetchAgents(options as Record<string, unknown>)
+        return (result.entries ?? []).map((entry) =>
+            mapAgentSnapshot(entry.agent as unknown as Record<string, unknown>),
+        )
     }
 
     async listTerminals(cwd?: string): Promise<TerminalSummary[]> {
-        const response = await this.sendRequest<{ terminals: TerminalSummary[] }>({
-            type: "list_terminals_request",
-            ...(cwd ? { cwd } : {}),
-        })
-        return response.terminals ?? []
+        const result = await this.daemon.listTerminals(cwd)
+        return (result.terminals ?? []).map((t) => ({
+            id: t.id,
+            name: t.name,
+            title: t.title,
+        }))
     }
 
     async getStatus(): Promise<Record<string, unknown>> {
-        return this.sendRequest<Record<string, unknown>>({ type: "daemon.get_status.request" })
+        const result = await this.daemon.getDaemonStatus()
+        return result as unknown as Record<string, unknown>
     }
 
     async getProvidersSnapshot(cwd?: string): Promise<Array<Record<string, unknown>>> {
-        const response = await this.sendRequest<{ entries: Array<Record<string, unknown>> }>({
-            type: "get_providers_snapshot_request",
-            ...(cwd ? { cwd } : {}),
-        })
-        return response.entries ?? []
+        const result = await this.daemon.getProvidersSnapshot({ cwd })
+        return (result.entries ?? []) as Array<Record<string, unknown>>
     }
 
     // ─── Event Subscription ──────────────────────────────────────────────
@@ -181,230 +268,7 @@ export class PaseoClient {
         }
     }
 
-    // ─── Internal: Request/Response ──────────────────────────────────────
-
-    private async sendRequest<T>(
-        message:
-            | Omit<FetchAgentsRequest, "requestId">
-            | Omit<ListTerminalsRequest, "requestId">
-            | Omit<GetProvidersSnapshotRequest, "requestId">
-            | { type: "daemon.get_status.request" },
-    ): Promise<T> {
-        if (!this.ws || !this.connected) {
-            throw new Error("Not connected to Paseo daemon")
-        }
-
-        const requestId = crypto.randomUUID()
-        const request: SessionRequest = {
-            type: "session",
-            message: {
-                requestId,
-                ...message,
-            } as any,
-        }
-
-        return new Promise<T>((resolve, reject) => {
-            const timer = setTimeout(() => {
-                this.pendingRequests.delete(requestId)
-                reject(new Error(`Request timeout: ${message.type}`))
-            }, this.config.connectionTimeoutMs)
-
-            this.pendingRequests.set(requestId, {
-                resolve: resolve as (value: unknown) => void,
-                reject,
-                timer,
-            })
-
-            this.ws!.send(JSON.stringify(request))
-        })
-    }
-
-    // ─── Internal: Message Handling ──────────────────────────────────────
-
-    private handleMessage(msg: MessageEvent, onConnected?: (info: ServerInfo) => void): void {
-        let data: any
-        try {
-            data = JSON.parse(String(msg.data))
-        } catch {
-            return
-        }
-
-        // Handle pong responses
-        if (data.type === "pong") {
-            return
-        }
-
-        // Handle ping from server — respond with pong
-        if (data.type === "ping") {
-            const pong: PongMessage = { type: "pong" }
-            try {
-                this.ws?.send(JSON.stringify(pong))
-            } catch {
-                // Ignore send errors during ping response
-            }
-            return
-        }
-
-        // Handle session_message or session (responses and events)
-        if ((data.type === "session_message" || data.type === "session") && data.message) {
-            const message = data.message
-
-            // Server info status — handshake confirmation
-            if (message.type === "status" && message.payload?.status === "server_info") {
-                const info: ServerInfo = {
-                    serverId: message.payload.serverId,
-                    hostname: message.payload.hostname,
-                    version: message.payload.version,
-                    features: message.payload.features ?? {},
-                    capabilities: message.payload.capabilities ?? {},
-                }
-                if (onConnected) {
-                    onConnected(info)
-                }
-                return
-            }
-
-            // RPC error response — reject the pending promise
-            if (message.type === "rpc_error" && message.payload?.requestId) {
-                const pending = this.pendingRequests.get(message.payload.requestId)
-                if (pending) {
-                    clearTimeout(pending.timer)
-                    this.pendingRequests.delete(message.payload.requestId)
-                    const errMsg = (message.payload.error as string) ?? "Unknown RPC error"
-                    const errCode = message.payload.code as string | undefined
-                    pending.reject(new Error(errCode ? `${errMsg} (code: ${errCode})` : errMsg))
-                    return
-                }
-            }
-
-            // Response to a pending request
-            if (message.payload?.requestId) {
-                const pending = this.pendingRequests.get(message.payload.requestId)
-                if (pending) {
-                    clearTimeout(pending.timer)
-                    this.pendingRequests.delete(message.payload.requestId)
-                    pending.resolve(message.payload)
-                    return
-                }
-            }
-
-            // Server-pushed event (agent lifecycle, etc.)
-            if (message.type && message.payload) {
-                const translated = this.translateDaemonEvent(message.type, message.payload)
-                if (translated) {
-                    this.notifyEvent(translated)
-                }
-            }
-            return
-        }
-
-        // Fallback: any other message with a type is treated as an event
-        if (data.type) {
-            this.notifyEvent({ type: data.type, payload: data.payload ?? data })
-        }
-    }
-
-    // ─── Internal: Event Translation ─────────────────────────────────────
-
-    private translateDaemonEvent(
-        type: string,
-        payload: Record<string, unknown>,
-    ): DaemonEvent | null {
-        switch (type) {
-            case "agent_update": {
-                // Real shape: { kind: "upsert", agent: { id, status, requiresAttention, ... } }
-                if (payload.kind === "remove" && typeof payload.agentId === "string") {
-                    return {
-                        type: "worker.finished",
-                        payload: { ...payload, workerId: payload.agentId },
-                    }
-                }
-                const agent = payload.agent as Record<string, unknown> | undefined
-                if (!agent) {
-                    return { type, payload }
-                }
-                const agentId = agent.id as string
-                const status = agent.status as string
-                const requiresAttention = agent.requiresAttention as boolean | undefined
-                const attentionReason = agent.attentionReason as string | undefined
-                const pendingPermissions = agent.pendingPermissions
-
-                if (
-                    requiresAttention &&
-                    (attentionReason === "permission" ||
-                        (Array.isArray(pendingPermissions) && pendingPermissions.length > 0))
-                ) {
-                    return {
-                        type: "worker.blocked",
-                        payload: {
-                            ...payload,
-                            workerId: agentId,
-                            summary: agent.attentionReason as string,
-                        },
-                    }
-                }
-                if (status === "error") {
-                    return { type: "worker.failed", payload: { ...payload, workerId: agentId } }
-                }
-                if (status === "closed") {
-                    return { type: "worker.finished", payload: { ...payload, workerId: agentId } }
-                }
-                // running, idle, initializing
-                return { type: "worker.started", payload: { ...payload, workerId: agentId } }
-            }
-            case "agent_permission_request": {
-                // Real shape: { request: { id, ... }, agentId, ... }
-                const request = payload.request as Record<string, unknown> | undefined
-                const permissionId = request?.id as string | undefined
-                const agentId = payload.agentId as string
-                return {
-                    type: "permission.requested",
-                    payload: { ...payload, workerId: agentId, permissionId },
-                }
-            }
-            case "agent_permission_resolved": {
-                // Real shape: { requestId, agentId, resolution, ... }
-                const permissionId = payload.requestId as string | undefined
-                const agentId = payload.agentId as string
-                return {
-                    type: "permission.resolved",
-                    payload: { ...payload, workerId: agentId, permissionId },
-                }
-            }
-            case "agent_deleted":
-                return {
-                    type: "worker.finished",
-                    payload: { ...payload, workerId: payload.agentId },
-                }
-            case "agent_stream":
-                // Streaming output — too noisy for inbox, skip
-                return null
-            default:
-                // Unknown event — forward as-is
-                return { type, payload }
-        }
-    }
-
-    // ─── Internal: Cleanup ───────────────────────────────────────────────
-
-    private cleanupSocket(): void {
-        if (this.ws) {
-            this.ws.onopen = null
-            this.ws.onerror = null
-            this.ws.onclose = null
-            this.ws.onmessage = null
-            this.ws.close()
-            this.ws = null
-        }
-    }
-
-    private rejectAllPending(reason: string): void {
-        for (const [id, pending] of this.pendingRequests) {
-            clearTimeout(pending.timer)
-            pending.reject(new Error(reason))
-        }
-        this.pendingRequests.clear()
-    }
+    // ─── Internal: Event Dispatch ────────────────────────────────────────
 
     private notifyEvent(event: DaemonEvent): void {
         for (const listener of this.eventListeners) {

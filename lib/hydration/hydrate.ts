@@ -4,7 +4,7 @@ import type {
     WorkerSummary,
     TerminalSessionSummary,
 } from "../state/types.js"
-import type { PaseoClient } from "../transport/client.js"
+import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import {
     setConnectionStatus,
@@ -29,7 +29,7 @@ export interface HydrationResult {
 
 export async function hydrate(
     state: PluginState,
-    client: PaseoClient,
+    client: PaseoTransport,
     logger: Logger,
 ): Promise<HydrationResult> {
     let workers = 0
@@ -120,10 +120,10 @@ export async function hydrate(
         for (const t of terminalList) {
             const terminal: TerminalSessionSummary = {
                 id: t.id,
-                title: t.title ?? t.id,
-                cwd: t.cwd ?? "",
-                status: (t.status || "unknown") as TerminalSessionSummary["status"],
-                lineCount: t.lineCount ?? 0,
+                title: t.title ?? t.name ?? t.id,
+                cwd: "",
+                status: "unknown" as TerminalSessionSummary["status"],
+                lineCount: 0,
                 lastReadCursor: 0,
             }
             upsertTerminal(state, terminal)

@@ -1,22 +1,17 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createPluginState } from "../lib/state/state.js"
-import type { PaseoClient } from "../lib/transport/client.js"
+import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
 import { hydrate } from "../lib/hydration/hydrate.js"
 
-// ─── Mock Paseo Client ───────────────────────────────────────────────────────
+// ─── Mock Paseo Transport ────────────────────────────────────────────────────
 
-function createMockClient(overrides: Partial<PaseoClient> = {}): PaseoClient {
+function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTransport {
     return {
         isConnected: () => true,
-        connect: async () => ({
-            serverId: "test-server",
-            version: "0.1.0",
-            features: { workers: true, terminals: true },
-            capabilities: {},
-        }),
-        disconnect: () => {},
+        connect: async () => {},
+        close: async () => {},
         getServerInfo: () => ({
             serverId: "test-server",
             version: "0.1.0",
@@ -30,6 +25,7 @@ function createMockClient(overrides: Partial<PaseoClient> = {}): PaseoClient {
                 provider: "general",
                 status: "running",
                 cwd: "/tmp",
+                model: null,
                 labels: {},
                 requiresAttention: false,
             },
@@ -39,19 +35,18 @@ function createMockClient(overrides: Partial<PaseoClient> = {}): PaseoClient {
                 provider: "explore",
                 status: "idle",
                 cwd: "/tmp",
+                model: null,
                 labels: {},
                 requiresAttention: true,
                 attentionReason: "permission",
             },
         ],
-        listTerminals: async () => [
-            { id: "t1", title: "Terminal 1", cwd: "/tmp", status: "running", lineCount: 50 },
-        ],
+        listTerminals: async () => [{ id: "t1", name: "main", title: "Terminal 1" }],
         getStatus: async () => ({ status: "ok", version: "0.1.0", uptime: 1234 }),
         getProvidersSnapshot: async () => [],
         onEvent: () => () => {},
         ...overrides,
-    } as unknown as PaseoClient
+    }
 }
 
 // ─── Hydration Tests ─────────────────────────────────────────────────────────
@@ -61,7 +56,7 @@ test("hydrate", async (t) => {
 
     await t.test("successful hydration populates state", async () => {
         const state = createPluginState()
-        const client = createMockClient()
+        const client = createMockTransport()
 
         const result = await hydrate(state, client, logger)
 
@@ -75,7 +70,7 @@ test("hydrate", async (t) => {
 
     await t.test("seeds blocking inbox items for blocked workers", async () => {
         const state = createPluginState()
-        const client = createMockClient()
+        const client = createMockTransport()
 
         const result = await hydrate(state, client, logger)
 
@@ -87,9 +82,9 @@ test("hydrate", async (t) => {
 
     await t.test("handles missing server info gracefully", async () => {
         const state = createPluginState()
-        const client = createMockClient({
+        const client = createMockTransport({
             getServerInfo: () => null,
-        } as any)
+        })
 
         const result = await hydrate(state, client, logger)
 
@@ -100,11 +95,11 @@ test("hydrate", async (t) => {
 
     await t.test("tolerates agent fetch failure", async () => {
         const state = createPluginState()
-        const client = createMockClient({
+        const client = createMockTransport({
             fetchAgents: async () => {
                 throw new Error("Agents endpoint unavailable")
             },
-        } as any)
+        })
 
         const result = await hydrate(state, client, logger)
 
@@ -115,11 +110,11 @@ test("hydrate", async (t) => {
 
     await t.test("tolerates terminal fetch failure", async () => {
         const state = createPluginState()
-        const client = createMockClient({
+        const client = createMockTransport({
             listTerminals: async () => {
                 throw new Error("Terminals endpoint unavailable")
             },
-        } as any)
+        })
 
         const result = await hydrate(state, client, logger)
 
@@ -130,7 +125,7 @@ test("hydrate", async (t) => {
 
     await t.test("does not duplicate events on re-hydration", async () => {
         const state = createPluginState()
-        const client = createMockClient()
+        const client = createMockTransport()
 
         await hydrate(state, client, logger)
         const firstCount = state.inbox.size

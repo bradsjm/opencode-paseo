@@ -1,13 +1,13 @@
 import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
-import type { PaseoClient } from "../transport/client.js"
+import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 
 // ─── Daemon Status Tool ──────────────────────────────────────────────────────
 
 export function createStatusTool(
     state: PluginState,
-    client: PaseoClient,
+    _client: PaseoTransport,
     logger: Logger,
 ): ToolDefinition {
     return tool({
