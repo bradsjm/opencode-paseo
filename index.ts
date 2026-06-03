@@ -11,6 +11,7 @@ import {
     createTerminalCreateTool,
     createTerminalCaptureTool,
     createTerminalSendInputTool,
+    createTerminalSendLinesTool,
     createTerminalKillTool,
 } from "./lib/tools/terminal.js"
 import { createPermissionRespondTool } from "./lib/tools/permission.js"
@@ -52,26 +53,25 @@ const server: Plugin = (async (ctx) => {
     const state = createPluginState()
     const client = new PaseoClient(config.daemon)
 
-    logger.info("Paseo plugin initializing")
-
     // Attempt connection to Paseo daemon
     try {
         await client.connect()
-        logger.info("Connected to Paseo daemon")
-
-        // Hydrate state from daemon
-        const hydration = await hydrate(state, client, logger)
-        logger.info("Hydration complete", hydration)
-
-        // Attach live event listener
-        const daemonEventHandler = createDaemonEventHandler(state, logger, config)
-        client.onEvent(daemonEventHandler)
-        logger.info("Live event subscription active")
     } catch (err: any) {
-        logger.error("Failed to connect to Paseo daemon", err.message)
-        state.connectionStatus = "error"
-        state.lastError = err.message
+        logger.warn("Paseo plugin not loading because Paseo daemon was not found", err.message)
+        return {}
     }
+
+    logger.info("Paseo plugin initializing")
+    logger.info("Connected to Paseo daemon")
+
+    // Hydrate state from daemon
+    const hydration = await hydrate(state, client, logger)
+    logger.info("Hydration complete", hydration)
+
+    // Attach live event listener
+    const daemonEventHandler = createDaemonEventHandler(state, logger, config)
+    client.onEvent(daemonEventHandler)
+    logger.info("Live event subscription active")
 
     return {
         dispose: async () => {
@@ -94,6 +94,7 @@ const server: Plugin = (async (ctx) => {
             paseo_terminal_create: createTerminalCreateTool(state, client, logger),
             paseo_terminal_capture: createTerminalCaptureTool(state, client, logger),
             paseo_terminal_send_input: createTerminalSendInputTool(state, client, logger),
+            paseo_terminal_send_lines: createTerminalSendLinesTool(state, client, logger),
             paseo_terminal_kill: createTerminalKillTool(state, client, logger),
             paseo_permission_respond: createPermissionRespondTool(state, client, logger),
             paseo_profile_list: createProfileListTool(ctx.client, logger),

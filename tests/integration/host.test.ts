@@ -110,41 +110,13 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
             query: { directory: projectDir },
         })
 
-        assert.ok(toolIDs.data.includes("paseo_status"))
-        assert.ok(toolIDs.data.includes("paseo_inbox_read"))
-        assert.ok(toolIDs.data.includes("paseo_inbox_status"))
-
-        // Phase 2: Terminal and permission tools
-        assert.ok(toolIDs.data.includes("paseo_terminal_list"))
-        assert.ok(toolIDs.data.includes("paseo_terminal_create"))
-        assert.ok(toolIDs.data.includes("paseo_permission_respond"))
-
-        // Profile tools
-        assert.ok(toolIDs.data.includes("paseo_profile_list"))
-
-        // Phase 3: Worker and worktree tools
-        assert.ok(toolIDs.data.includes("paseo_worker_list"))
-        assert.ok(toolIDs.data.includes("paseo_worker_create"))
-        assert.ok(toolIDs.data.includes("paseo_worker_send"))
-        assert.ok(toolIDs.data.includes("paseo_worker_wait"))
-        assert.ok(toolIDs.data.includes("paseo_worker_cancel"))
-        assert.ok(toolIDs.data.includes("paseo_worker_archive"))
-        assert.ok(toolIDs.data.includes("paseo_worker_update"))
-        assert.ok(toolIDs.data.includes("paseo_worker_inspect"))
-        assert.ok(toolIDs.data.includes("paseo_worktree_list"))
-        assert.ok(toolIDs.data.includes("paseo_worktree_create"))
-        assert.ok(toolIDs.data.includes("paseo_worktree_archive"))
-
-        // Schedule tools
-        assert.ok(toolIDs.data.includes("paseo_schedule_list"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_inspect"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_create"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_update"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_pause"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_resume"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_delete"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_run_once"))
-        assert.ok(toolIDs.data.includes("paseo_schedule_logs"))
+        // Graceful degrade: no Paseo tools registered when daemon is unreachable
+        const paseoTools = toolIDs.data.filter((id: string) => id.startsWith("paseo_"))
+        assert.equal(
+            paseoTools.length,
+            0,
+            `expected no Paseo tools but found: ${paseoTools.join(", ")}`,
+        )
 
         assert.ok(existsSync(logDir), "expected debug log directory to be created")
 
@@ -152,8 +124,9 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
         assert.ok(logFiles.length > 0, "expected at least one debug log file")
 
         const logContent = readFileSync(join(logDir, logFiles[0]!), "utf-8")
-        assert.match(logContent, /Paseo plugin initializing/)
-        assert.match(logContent, /Failed to connect to Paseo daemon/)
+        assert.match(logContent, /Paseo plugin not loading because Paseo daemon was not found/)
+        assert.doesNotMatch(logContent, /Paseo plugin initializing/)
+        assert.doesNotMatch(logContent, /Failed to connect to Paseo daemon/)
     } finally {
         opencode?.server.close()
         restoreEnv(previousEnv)

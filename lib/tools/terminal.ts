@@ -205,12 +205,17 @@ export function createTerminalSendInputTool(
     logger: Logger,
 ): ToolDefinition {
     return tool({
-        description: "Send input (keystrokes/text) to a running Paseo terminal.",
+        description:
+            "Send raw input (keystrokes/text) to a running Paseo terminal. " +
+            "Characters are sent verbatim — this tool does not interpret escape sequences. " +
+            "To press Enter, include an actual newline character in the JSON string value.",
         args: {
             terminalId: tool.schema.string().describe("ID of the terminal to send input to"),
             input: tool.schema
                 .string()
-                .describe("Text or keystrokes to send (supports \\n for Enter, \\t for Tab)"),
+                .describe(
+                    "Raw text or keystrokes to send. Characters are sent as-is with no escape-sequence interpretation.",
+                ),
         },
         async execute(args) {
             logger.info("Tool: paseo_terminal_send_input invoked", {
@@ -226,6 +231,51 @@ export function createTerminalSendInputTool(
                     {
                         terminalId: args.terminalId,
                         sent: args.input.length,
+                    },
+                    null,
+                    2,
+                ),
+            }
+        },
+    })
+}
+
+// ─── Terminal Send Lines Tool ────────────────────────────────────────────────
+
+export function createTerminalSendLinesTool(
+    state: PluginState,
+    client: PaseoTransport,
+    logger: Logger,
+): ToolDefinition {
+    return tool({
+        description:
+            "Send one or more command lines to a running Paseo terminal. " +
+            "Lines are joined with newlines and a trailing newline is appended so each command executes. " +
+            "Use this instead of paseo_terminal_send_input when sending complete shell commands.",
+        args: {
+            terminalId: tool.schema.string().describe("ID of the terminal to send lines to"),
+            lines: tool.schema
+                .array(tool.schema.string())
+                .min(1)
+                .describe("Command lines to send. Each line is separated by a newline."),
+        },
+        async execute(args) {
+            logger.info("Tool: paseo_terminal_send_lines invoked", {
+                terminalId: args.terminalId,
+                lineCount: args.lines.length,
+            })
+
+            const joined = args.lines.join("\n") + "\n"
+
+            await client.sendTerminalInput(args.terminalId, joined)
+
+            return {
+                title: "Lines Sent",
+                output: JSON.stringify(
+                    {
+                        terminalId: args.terminalId,
+                        lineCount: args.lines.length,
+                        sent: joined.length,
                     },
                     null,
                     2,

@@ -5,6 +5,7 @@ export {
     createTerminalCreateTool,
     createTerminalCaptureTool,
     createTerminalSendInputTool,
+    createTerminalSendLinesTool,
     createTerminalKillTool,
 } from "./terminal.js"
 export { createPermissionRespondTool } from "./permission.js"
