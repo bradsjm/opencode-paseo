@@ -1,9 +1,4 @@
-import type {
-    PluginState,
-    InboxEvent,
-    WorkerSummary,
-    TerminalSessionSummary,
-} from "../state/types.js"
+import type { PluginState, InboxEvent, TerminalSessionSummary } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import {
@@ -12,8 +7,8 @@ import {
     upsertWorker,
     upsertTerminal,
     insertInboxEvent,
+    mapAgentToWorkerSummary,
 } from "../state/state.js"
-import { mapDaemonWorkerStatus } from "../state/status.js"
 
 // ─── Startup Hydration ───────────────────────────────────────────────────────
 // Fetches current agents (workers) and terminals from the daemon,
@@ -60,41 +55,11 @@ export async function hydrate(
             subscribe: { subscriptionId: "opencode-paseo" },
         })
         for (const a of agents) {
-            const rawLabels = a.labels
-            const labels: string[] = Array.isArray(rawLabels)
-                ? rawLabels
-                : rawLabels && typeof rawLabels === "object"
-                  ? Object.keys(rawLabels)
-                  : []
-
-            const worker: WorkerSummary = {
-                id: a.id,
-                title: a.title ?? a.model ?? a.id,
-                agent: a.provider ?? "unknown",
-                status: mapDaemonWorkerStatus({
-                    status: a.status,
-                    requiresAttention: a.requiresAttention,
-                    attentionReason: a.attentionReason,
-                    pendingPermissions: a.pendingPermissions,
-                }),
-                cwd: a.cwd ?? "",
-                labels,
-                worktreePath: a.worktreePath,
-                branchName: a.branchName,
-                unreadEventCount: 0,
-                pendingPermissionIds: [],
-            }
+            const worker = mapAgentToWorkerSummary(a)
             upsertWorker(state, worker)
             workers++
 
-            if (
-                mapDaemonWorkerStatus({
-                    status: a.status,
-                    requiresAttention: a.requiresAttention,
-                    attentionReason: a.attentionReason,
-                    pendingPermissions: a.pendingPermissions,
-                }) === "blocked"
-            ) {
+            if (worker.status === "blocked") {
                 const event: InboxEvent = {
                     id: `hydration-worker-blocked-${a.id}`,
                     kind: "worker.blocked",

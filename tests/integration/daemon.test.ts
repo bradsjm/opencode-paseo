@@ -164,4 +164,43 @@ test("real daemon integration", async (t) => {
             await client.close()
         }
     })
+
+    // ─── Phase 3: Worker Operations ──────────────────────────────────────
+
+    await t.test("listWorktrees returns an object", async () => {
+        const client = new PaseoClient(createDaemonConfig())
+        try {
+            await client.connect()
+            const result = await client.listWorktrees({ cwd: process.cwd() })
+
+            assert.ok(typeof result === "object", "listWorktrees should return an object")
+            assert.ok(result !== null, "result should not be null")
+        } finally {
+            await client.close()
+        }
+    })
+
+    await t.test("fetchWorker returns null for unknown worker", async () => {
+        const client = new PaseoClient(createDaemonConfig())
+        try {
+            await client.connect()
+            const result = await client.fetchWorker("nonexistent-worker-id")
+
+            assert.equal(result, null, "fetchWorker should return null for unknown worker")
+        } finally {
+            await client.close()
+        }
+    })
+
+    await t.test("getProvidersSnapshot returns an array", async () => {
+        const client = new PaseoClient(createDaemonConfig())
+        try {
+            await client.connect()
+            const providers = await client.getProvidersSnapshot(process.cwd())
+
+            assert.ok(Array.isArray(providers), "getProvidersSnapshot should return an array")
+        } finally {
+            await client.close()
+        }
+    })
 })

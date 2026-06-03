@@ -63,6 +63,33 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             permissionId: options.permissionId,
             behavior: options.behavior,
         }),
+        // Phase 3: Worker operations
+        createWorker: async (options) => ({
+            id: `w-${Date.now()}`,
+            provider: options.provider ?? "unknown",
+            cwd: options.cwd,
+            model: options.model ?? null,
+            status: "running",
+            title: null,
+        }),
+        sendWorkerMessage: async () => {},
+        waitForWorker: async (workerId) => ({
+            status: "idle" as const,
+            workerId,
+            error: null,
+            lastMessage: null,
+            finalSnapshot: null,
+        }),
+        cancelWorker: async () => {},
+        archiveWorker: async (workerId) => ({
+            workerId,
+            archivedAt: new Date().toISOString(),
+        }),
+        fetchWorker: async () => null,
+        // Phase 3: Worktree operations
+        listWorktrees: async () => ({ worktrees: [] }),
+        createWorktree: async () => ({ worktreePath: "/tmp/wt" }),
+        archiveWorktree: async () => ({ archivedAt: new Date().toISOString() }),
         ...overrides,
     }
 }
@@ -151,5 +178,39 @@ test("hydrate", async (t) => {
         // Re-hydrate with same data
         await hydrate(state, client, logger)
         assert.equal(state.inbox.size, firstCount) // dedup prevents duplicates
+    })
+
+    await t.test("populates Phase 3 worker fields", async () => {
+        const state = createPluginState()
+        const client = createMockTransport({
+            fetchAgents: async () => [
+                {
+                    id: "w-rich",
+                    title: "Rich Worker",
+                    provider: "codex",
+                    status: "running",
+                    cwd: "/repo",
+                    model: "gpt-4",
+                    labels: { lane: "main" },
+                    requiresAttention: false,
+                    runtimeInfo: { currentModeId: "code" },
+                    pendingPermissions: [{ id: "perm-1" }],
+                    worktreePath: "/repo/.worktrees/feature",
+                    branchName: "feature/test",
+                },
+            ],
+        })
+
+        await hydrate(state, client, logger)
+
+        const worker = state.workers.get("w-rich")
+        assert.ok(worker)
+        assert.equal(worker.provider, "codex")
+        assert.equal(worker.model, "gpt-4")
+        assert.equal(worker.currentModeId, "code")
+        assert.equal(worker.worktreePath, "/repo/.worktrees/feature")
+        assert.equal(worker.branchName, "feature/test")
+        assert.deepEqual(worker.pendingPermissionIds, ["perm-1"])
+        assert.equal(worker.pendingPermissions.length, 1)
     })
 })

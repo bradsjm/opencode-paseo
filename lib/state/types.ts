@@ -51,11 +51,19 @@ export interface WorkerSummary {
     agent: string
     status: WorkerStatus
     cwd: string
+    provider: string
+    model: string | null
+    currentModeId: string | null
     labels: string[]
     worktreePath?: string
     branchName?: string
-    unreadEventCount: number
+    pendingPermissions: Array<Record<string, unknown>>
     pendingPermissionIds: string[]
+    runtimeInfo: Record<string, unknown> | null
+    persistence: Record<string, unknown> | null
+    unreadEventCount: number
+    createdAt?: string
+    updatedAt?: string
 }
 
 export interface SessionMapping {

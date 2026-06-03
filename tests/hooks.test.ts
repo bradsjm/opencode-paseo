@@ -130,4 +130,104 @@ test("createDaemonEventHandler", async (t) => {
         assert.equal(event.blocking, true)
         assert.equal(event.resourceId, "t1")
     })
+
+    await t.test("syncs Phase 3 worker fields from agent payload", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "worker.started",
+            payload: {
+                workerId: "w1",
+                agent: {
+                    id: "w1",
+                    title: "Rich Worker",
+                    provider: "codex",
+                    status: "running",
+                    cwd: "/repo",
+                    model: "gpt-4",
+                    labels: { lane: "main" },
+                    runtimeInfo: { currentModeId: "code" },
+                    pendingPermissions: [{ id: "perm-1" }],
+                    worktreePath: "/repo/.wt/feature",
+                    branchName: "feature/x",
+                },
+            },
+        })
+
+        const worker = state.workers.get("w1")
+        assert.ok(worker)
+        assert.equal(worker.provider, "codex")
+        assert.equal(worker.model, "gpt-4")
+        assert.equal(worker.currentModeId, "code")
+        assert.equal(worker.worktreePath, "/repo/.wt/feature")
+        assert.equal(worker.branchName, "feature/x")
+        assert.deepEqual(worker.pendingPermissionIds, ["perm-1"])
+    })
+
+    await t.test("tracks pendingPermissions rich data on permission.requested", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        // First create a worker
+        handler({
+            type: "worker.started",
+            payload: { workerId: "w1", summary: "started" },
+        })
+
+        // Then send a permission request with rich request data
+        handler({
+            type: "permission.requested",
+            payload: {
+                workerId: "w1",
+                permissionId: "perm-1",
+                summary: "Write permission needed",
+                request: { id: "perm-1", type: "write", path: "/repo/file.ts" },
+            },
+        })
+
+        const worker = state.workers.get("w1")
+        assert.ok(worker)
+        assert.ok(worker.pendingPermissionIds.includes("perm-1"))
+        assert.equal(worker.pendingPermissions.length, 1)
+        assert.equal(worker.pendingPermissions[0].id, "perm-1")
+    })
+
+    await t.test("cleans up rich pendingPermissions on permission.resolved", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        // Create worker with pending permission
+        handler({
+            type: "worker.started",
+            payload: {
+                workerId: "w1",
+                agent: {
+                    id: "w1",
+                    provider: "codex",
+                    status: "running",
+                    cwd: "/repo",
+                    model: null,
+                    title: null,
+                    labels: {},
+                    pendingPermissions: [{ id: "perm-1", type: "write" }],
+                },
+            },
+        })
+
+        // Resolve the permission
+        handler({
+            type: "permission.resolved",
+            payload: {
+                workerId: "w1",
+                permissionId: "perm-1",
+                summary: "Permission resolved",
+            },
+        })
+
+        const worker = state.workers.get("w1")
+        assert.ok(worker)
+        assert.ok(!worker.pendingPermissionIds.includes("perm-1"))
+        assert.equal(worker.pendingPermissions.length, 0)
+    })
 })

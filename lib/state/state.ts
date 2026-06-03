@@ -7,6 +7,8 @@ import type {
     TerminalSessionSummary,
     WorkerSummary,
 } from "./types.js"
+import type { AgentSummary } from "../transport/types.js"
+import { mapDaemonWorkerStatus } from "./status.js"
 
 export function createSessionMapping(
     opencodeSessionId: string,
@@ -153,5 +155,70 @@ export function recordCreatedTerminal(
     if (session) {
         session.createdTerminalIds.add(terminal.id)
         session.updatedAt = Date.now()
+    }
+}
+
+// ─── Session-Worker Binding ─────────────────────────────────────────────────────
+// Records a newly created worker in both the global workers map and the
+// session's createdWorkerIds so that subsequent inbox events for this
+// worker are routed to the correct session.
+
+export function recordCreatedWorker(
+    state: PluginState,
+    sessionId: string,
+    worker: WorkerSummary,
+): void {
+    state.workers.set(worker.id, worker)
+    const session = state.sessions.get(sessionId)
+    if (session) {
+        session.createdWorkerIds.add(worker.id)
+        session.updatedAt = Date.now()
+    }
+}
+
+// ─── Agent → WorkerSummary Mapper ────────────────────────────────────────────
+// Shared mapper used by hydration, event syncing, and tool responses to
+// produce a consistent WorkerSummary from a transport-level AgentSummary.
+
+export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
+    const rawLabels = agent.labels
+    const labels: string[] = Array.isArray(rawLabels)
+        ? rawLabels
+        : rawLabels && typeof rawLabels === "object"
+          ? Object.keys(rawLabels)
+          : []
+
+    const pendingPermissions = agent.pendingPermissions ?? []
+    const pendingPermissionIds = pendingPermissions
+        .map((p) => p?.id as string | undefined)
+        .filter((id): id is string => typeof id === "string")
+
+    return {
+        id: agent.id,
+        title: agent.title ?? agent.model ?? agent.id,
+        agent: agent.provider ?? "unknown",
+        provider: agent.provider ?? "unknown",
+        model: agent.model ?? null,
+        currentModeId:
+            (agent.runtimeInfo?.currentModeId as string | undefined) ??
+            (agent.capabilities?.currentModeId as string | undefined) ??
+            null,
+        status: mapDaemonWorkerStatus({
+            status: agent.status,
+            requiresAttention: agent.requiresAttention,
+            attentionReason: agent.attentionReason,
+            pendingPermissions,
+        }),
+        cwd: agent.cwd ?? "",
+        labels,
+        worktreePath: agent.worktreePath,
+        branchName: agent.branchName,
+        pendingPermissions,
+        pendingPermissionIds,
+        runtimeInfo: agent.runtimeInfo ?? null,
+        persistence: (agent.capabilities?.persistence as Record<string, unknown>) ?? null,
+        unreadEventCount: 0,
+        createdAt: agent.createdAt,
+        updatedAt: agent.updatedAt,
     }
 }

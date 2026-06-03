@@ -14,6 +14,20 @@ import {
     createTerminalKillTool,
 } from "./lib/tools/terminal.js"
 import { createPermissionRespondTool } from "./lib/tools/permission.js"
+import {
+    createWorkerListTool,
+    createWorkerCreateTool,
+    createWorkerSendTool,
+    createWorkerWaitTool,
+    createWorkerCancelTool,
+    createWorkerArchiveTool,
+    createWorkerInspectTool,
+} from "./lib/tools/worker.js"
+import {
+    createWorktreeListTool,
+    createWorktreeCreateTool,
+    createWorktreeArchiveTool,
+} from "./lib/tools/worktree.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 
 const server: Plugin = (async (ctx) => {
@@ -58,6 +72,16 @@ const server: Plugin = (async (ctx) => {
             paseo_terminal_send_input: createTerminalSendInputTool(state, client, logger),
             paseo_terminal_kill: createTerminalKillTool(state, client, logger),
             paseo_permission_respond: createPermissionRespondTool(state, client, logger),
+            paseo_worker_list: createWorkerListTool(state, client, logger),
+            paseo_worker_create: createWorkerCreateTool(state, client, logger),
+            paseo_worker_send: createWorkerSendTool(state, client, logger),
+            paseo_worker_wait: createWorkerWaitTool(state, client, logger),
+            paseo_worker_cancel: createWorkerCancelTool(state, client, logger),
+            paseo_worker_archive: createWorkerArchiveTool(state, client, logger),
+            paseo_worker_inspect: createWorkerInspectTool(state, client, logger),
+            paseo_worktree_list: createWorktreeListTool(state, client, logger),
+            paseo_worktree_create: createWorktreeCreateTool(state, client, logger),
+            paseo_worktree_archive: createWorktreeArchiveTool(state, client, logger),
         },
     }
 }) satisfies Plugin

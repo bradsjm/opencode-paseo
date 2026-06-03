@@ -11,8 +11,11 @@ import {
     markAllRead,
     upsertTerminal,
     upsertWorker,
+    recordCreatedWorker,
+    mapAgentToWorkerSummary,
 } from "../lib/state/state.js"
 import type { InboxEvent, TerminalSessionSummary, WorkerSummary } from "../lib/state/types.js"
+import type { AgentSummary } from "../lib/transport/types.js"
 
 // ─── State Creation ──────────────────────────────────────────────────────────
 
@@ -208,14 +211,155 @@ test("upsertWorker", async (t) => {
             id: "w1",
             title: "test worker",
             agent: "general",
+            provider: "general",
+            model: null,
+            currentModeId: null,
             status: "running",
             cwd: "/tmp",
             labels: [],
-            unreadEventCount: 0,
+            pendingPermissions: [],
             pendingPermissionIds: [],
+            runtimeInfo: null,
+            persistence: null,
+            unreadEventCount: 0,
         }
         upsertWorker(state, worker)
         assert.equal(state.workers.size, 1)
         assert.equal(state.workers.get("w1")!.agent, "general")
+        assert.equal(state.workers.get("w1")!.provider, "general")
+    })
+})
+
+// ─── recordCreatedWorker ─────────────────────────────────────────────────────
+
+test("recordCreatedWorker", async (t) => {
+    await t.test("binds worker to session createdWorkerIds", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+
+        const worker: WorkerSummary = {
+            id: "w1",
+            title: "new worker",
+            agent: "general",
+            provider: "general",
+            model: null,
+            currentModeId: null,
+            status: "running",
+            cwd: "/tmp",
+            labels: [],
+            pendingPermissions: [],
+            pendingPermissionIds: [],
+            runtimeInfo: null,
+            persistence: null,
+            unreadEventCount: 0,
+        }
+        recordCreatedWorker(state, "sess-1", worker)
+
+        assert.equal(state.workers.size, 1)
+        const session = state.sessions.get("sess-1")!
+        assert.ok(session.createdWorkerIds.has("w1"))
+    })
+
+    await t.test("routes inbox events for created worker to session", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+
+        const worker: WorkerSummary = {
+            id: "w1",
+            title: "new worker",
+            agent: "general",
+            provider: "general",
+            model: null,
+            currentModeId: null,
+            status: "running",
+            cwd: "/tmp",
+            labels: [],
+            pendingPermissions: [],
+            pendingPermissionIds: [],
+            runtimeInfo: null,
+            persistence: null,
+            unreadEventCount: 0,
+        }
+        recordCreatedWorker(state, "sess-1", worker)
+
+        const event: InboxEvent = {
+            id: "evt-1",
+            kind: "worker.started",
+            resourceId: "w1",
+            blocking: false,
+            summary: "Worker started",
+            read: false,
+            timestamp: Date.now(),
+        }
+        insertInboxEvent(state, event)
+
+        const session = state.sessions.get("sess-1")!
+        assert.equal(session.unreadEvents.size, 1)
+    })
+})
+
+// ─── mapAgentToWorkerSummary ─────────────────────────────────────────────────
+
+test("mapAgentToWorkerSummary", async (t) => {
+    await t.test("maps core fields from AgentSummary", () => {
+        const agent: AgentSummary = {
+            id: "a1",
+            provider: "codex",
+            cwd: "/repo",
+            model: "gpt-4",
+            status: "running",
+            title: "Agent 1",
+            labels: { lane: "main" },
+            pendingPermissions: [{ id: "perm-1", type: "write" }],
+            runtimeInfo: { currentModeId: "code" },
+        }
+
+        const worker = mapAgentToWorkerSummary(agent)
+
+        assert.equal(worker.id, "a1")
+        assert.equal(worker.provider, "codex")
+        assert.equal(worker.agent, "codex")
+        assert.equal(worker.model, "gpt-4")
+        assert.equal(worker.currentModeId, "code")
+        assert.equal(worker.status, "running")
+        assert.deepEqual(worker.labels, ["lane"])
+        assert.deepEqual(worker.pendingPermissionIds, ["perm-1"])
+        assert.equal(worker.pendingPermissions.length, 1)
+    })
+
+    await t.test("derives blocked status from pending permissions", () => {
+        const agent: AgentSummary = {
+            id: "a2",
+            provider: "codex",
+            cwd: "/repo",
+            model: null,
+            status: "running",
+            title: null,
+            labels: {},
+            requiresAttention: true,
+            attentionReason: "permission",
+            pendingPermissions: [{ id: "p1" }],
+        }
+
+        const worker = mapAgentToWorkerSummary(agent)
+        assert.equal(worker.status, "blocked")
+    })
+
+    await t.test("handles missing optional fields", () => {
+        const agent: AgentSummary = {
+            id: "a3",
+            provider: "unknown",
+            cwd: "",
+            model: null,
+            status: "idle",
+            title: null,
+            labels: {},
+        }
+
+        const worker = mapAgentToWorkerSummary(agent)
+        assert.equal(worker.currentModeId, null)
+        assert.equal(worker.runtimeInfo, null)
+        assert.equal(worker.persistence, null)
+        assert.deepEqual(worker.pendingPermissionIds, [])
     })
 })

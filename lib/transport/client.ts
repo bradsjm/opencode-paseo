@@ -20,6 +20,14 @@ import type {
     KilledTerminal,
     RespondPermissionOptions,
     PermissionResponse,
+    CreateWorkerOptions,
+    CreatedWorker,
+    WorkerWaitResult,
+    ArchivedWorker,
+    WorkerInspectResult,
+    WorktreeListOptions,
+    WorktreeCreateOptions,
+    WorktreeArchiveOptions,
 } from "./types.js"
 
 // ─── Paseo Client Adapter ─────────────────────────────────────────────────────
@@ -334,6 +342,119 @@ export class PaseoClient implements PaseoTransport {
             permissionId: options.permissionId,
             behavior: options.behavior,
         }
+    }
+
+    // ─── Worker Operations ───────────────────────────────────────────────
+
+    async createWorker(options: CreateWorkerOptions): Promise<CreatedWorker> {
+        const snapshot = await this.daemon.createAgent({
+            provider: options.provider as Record<string, unknown> | undefined,
+            cwd: options.cwd,
+            initialPrompt: options.initialPrompt,
+            labels: options.labels,
+            worktree: options.worktree as Record<string, unknown> | undefined,
+            worktreeName: options.worktreeName,
+            ...(options.model || options.modeId
+                ? {
+                      config: {
+                          ...(options.model ? { model: options.model } : {}),
+                          ...(options.modeId ? { modeId: options.modeId } : {}),
+                      } as Record<string, unknown>,
+                  }
+                : {}),
+        } as Record<string, unknown>)
+        const mapped = mapAgentSnapshot(snapshot as unknown as Record<string, unknown>)
+        return {
+            id: mapped.id,
+            provider: mapped.provider,
+            cwd: mapped.cwd,
+            model: mapped.model,
+            status: mapped.status,
+            title: mapped.title,
+        }
+    }
+
+    async sendWorkerMessage(workerId: string, message: string): Promise<void> {
+        await this.daemon.sendAgentMessage(workerId, message)
+    }
+
+    async waitForWorker(workerId: string, timeout: number): Promise<WorkerWaitResult> {
+        const result = await this.daemon.waitForFinish(workerId, timeout)
+        return {
+            status: result.status,
+            workerId,
+            error: result.error,
+            lastMessage: result.lastMessage,
+            finalSnapshot: result.final
+                ? mapAgentSnapshot(result.final as unknown as Record<string, unknown>)
+                : null,
+        }
+    }
+
+    async cancelWorker(workerId: string): Promise<void> {
+        await this.daemon.cancelAgent(workerId)
+    }
+
+    async archiveWorker(workerId: string): Promise<ArchivedWorker> {
+        const result = await this.daemon.archiveAgent(workerId)
+        return {
+            workerId,
+            archivedAt: result.archivedAt,
+        }
+    }
+
+    async fetchWorker(workerId: string): Promise<WorkerInspectResult | null> {
+        let result: Awaited<ReturnType<typeof this.daemon.fetchAgent>>
+        try {
+            result = await this.daemon.fetchAgent(workerId)
+        } catch (err: unknown) {
+            // Upstream fetchAgent throws "Agent not found" instead of returning null
+            if (err instanceof Error && err.message.includes("not found")) {
+                return null
+            }
+            throw err
+        }
+        if (!result) {
+            return null
+        }
+        return {
+            agent: mapAgentSnapshot(result.agent as unknown as Record<string, unknown>),
+            project: (result.project as Record<string, unknown>) ?? null,
+        }
+    }
+
+    // ─── Worktree Operations ─────────────────────────────────────────────
+
+    async listWorktrees(options: WorktreeListOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.getPaseoWorktreeList({
+            cwd: options.cwd,
+            repoRoot: options.repoRoot,
+        })
+        return result as unknown as Record<string, unknown>
+    }
+
+    async createWorktree(options: WorktreeCreateOptions): Promise<Record<string, unknown>> {
+        const input: Record<string, unknown> = { cwd: options.cwd }
+        if (options.projectId !== undefined) input.projectId = options.projectId
+        if (options.worktreeSlug !== undefined) input.worktreeSlug = options.worktreeSlug
+        if (options.refName !== undefined) input.refName = options.refName
+        if (options.action !== undefined) input.action = options.action
+        if (options.githubPrNumber !== undefined) input.githubPrNumber = options.githubPrNumber
+        if (options.firstAgentContext !== undefined)
+            input.firstAgentContext = options.firstAgentContext
+        const result = await this.daemon.createPaseoWorktree(
+            input as Parameters<typeof this.daemon.createPaseoWorktree>[0],
+        )
+        return result as unknown as Record<string, unknown>
+    }
+
+    async archiveWorktree(options: WorktreeArchiveOptions): Promise<Record<string, unknown>> {
+        const result = await this.daemon.archivePaseoWorktree({
+            worktreePath: options.worktreePath,
+            repoRoot: options.repoRoot,
+            branchName: options.branchName,
+        })
+        return result as unknown as Record<string, unknown>
     }
 
     // ─── Event Subscription ──────────────────────────────────────────────

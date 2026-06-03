@@ -45,6 +45,70 @@ export interface TerminalSummary {
     title?: string
 }
 
+// ─── Phase 3 Worker Types ─────────────────────────────────────────────────────
+// Plugin-level shapes for worker (agent) mutation and inspection.
+
+export interface CreateWorkerOptions {
+    cwd: string
+    provider?: string
+    model?: string | null
+    modeId?: string
+    initialPrompt?: string
+    labels?: Record<string, string>
+    worktree?: Record<string, unknown>
+    worktreeName?: string
+}
+
+export interface CreatedWorker {
+    id: string
+    provider: string
+    cwd: string
+    model: string | null
+    status: string
+    title: string | null
+}
+
+export interface WorkerWaitResult {
+    status: "idle" | "error" | "permission" | "timeout"
+    workerId: string
+    error: string | null
+    lastMessage: string | null
+    finalSnapshot: AgentSummary | null
+}
+
+export interface ArchivedWorker {
+    workerId: string
+    archivedAt: string
+}
+
+export interface WorkerInspectResult {
+    agent: AgentSummary
+    project: Record<string, unknown> | null
+}
+
+// ─── Phase 3 Worktree Types ───────────────────────────────────────────────────
+
+export interface WorktreeListOptions {
+    cwd?: string
+    repoRoot?: string
+}
+
+export interface WorktreeCreateOptions {
+    cwd: string
+    projectId?: string
+    worktreeSlug?: string
+    refName?: string
+    action?: string
+    githubPrNumber?: number
+    firstAgentContext?: Record<string, unknown>
+}
+
+export interface WorktreeArchiveOptions {
+    worktreePath?: string
+    repoRoot?: string
+    branchName?: string
+}
+
 // ─── Phase 2 Result Types ─────────────────────────────────────────────────────
 // Plugin-level shapes returned by terminal and permission operations.
 
@@ -136,4 +200,17 @@ export interface PaseoTransport {
 
     // Phase 2: Permission operations
     respondToPermission(options: RespondPermissionOptions): Promise<PermissionResponse>
+
+    // Phase 3: Worker operations
+    createWorker(options: CreateWorkerOptions): Promise<CreatedWorker>
+    sendWorkerMessage(workerId: string, message: string): Promise<void>
+    waitForWorker(workerId: string, timeout: number): Promise<WorkerWaitResult>
+    cancelWorker(workerId: string): Promise<void>
+    archiveWorker(workerId: string): Promise<ArchivedWorker>
+    fetchWorker(workerId: string): Promise<WorkerInspectResult | null>
+
+    // Phase 3: Worktree operations
+    listWorktrees(options: WorktreeListOptions): Promise<Record<string, unknown>>
+    createWorktree(options: WorktreeCreateOptions): Promise<Record<string, unknown>>
+    archiveWorktree(options: WorktreeArchiveOptions): Promise<Record<string, unknown>>
 }

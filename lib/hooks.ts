@@ -1,10 +1,15 @@
 import type { Event } from "@opencode-ai/sdk"
-import type { PluginState, InboxEvent } from "./state/types.js"
+import type { PluginState, InboxEvent, WorkerSummary } from "./state/types.js"
 import type { PluginConfig } from "./config.js"
 import type { Logger } from "./logger.js"
-import type { PaseoTransport } from "./transport/types.js"
+import type { PaseoTransport, AgentSummary } from "./transport/types.js"
 import type { Config } from "@opencode-ai/plugin"
-import { insertInboxEvent, markEventRead, upsertWorker } from "./state/state.js"
+import {
+    insertInboxEvent,
+    markEventRead,
+    upsertWorker,
+    mapAgentToWorkerSummary,
+} from "./state/state.js"
 import { mapDaemonWorkerStatus } from "./state/status.js"
 
 function syncWorkerFromPayload(
@@ -17,63 +22,54 @@ function syncWorkerFromPayload(
 
     const current = state.workers.get(workerId)
     const agent = payload.agent as Record<string, unknown> | undefined
-    const rawLabels = agent?.labels
-    const labels = Array.isArray(rawLabels)
-        ? rawLabels.filter((label): label is string => typeof label === "string")
-        : rawLabels && typeof rawLabels === "object"
-          ? Object.keys(rawLabels)
-          : (current?.labels ?? [])
 
-    // Derive pendingPermissionIds from agent payload when available
-    let pendingPermissionIds = current?.pendingPermissionIds ?? []
-    if (agent && Array.isArray(agent.pendingPermissions)) {
-        pendingPermissionIds = agent.pendingPermissions
-            .map((p: unknown) => (p as Record<string, unknown>)?.id as string | undefined)
-            .filter((id): id is string => typeof id === "string")
-    }
-
-    const fallbackStatus =
-        type === "worker.finished"
-            ? "finished"
-            : type === "worker.failed"
-              ? "failed"
-              : type === "worker.blocked"
-                ? "blocked"
-                : "running"
-    const agentStatus =
-        typeof agent?.status === "string"
-            ? mapDaemonWorkerStatus({
-                  status: agent.status,
-                  requiresAttention: agent.requiresAttention as boolean | undefined,
-                  attentionReason: agent.attentionReason as string | null | undefined,
-                  pendingPermissions: Array.isArray(agent.pendingPermissions)
-                      ? agent.pendingPermissions
-                      : undefined,
-              })
-            : fallbackStatus === "running"
-              ? (current?.status ?? fallbackStatus)
-              : fallbackStatus
-
-    upsertWorker(state, {
+    // Build a merged AgentSummary from event data + current state, then
+    // pass through the shared mapper for consistency.
+    const merged: AgentSummary = {
         id: workerId,
-        title:
-            (typeof agent?.title === "string" && agent.title) ||
-            (typeof agent?.model === "string" && agent.model) ||
-            current?.title ||
-            workerId,
-        agent:
-            (typeof agent?.provider === "string" && agent.provider) || current?.agent || "unknown",
-        status: agentStatus,
+        provider:
+            (typeof agent?.provider === "string" && agent.provider) ||
+            current?.provider ||
+            "unknown",
         cwd: (typeof agent?.cwd === "string" && agent.cwd) || current?.cwd || "",
-        labels,
+        model: (typeof agent?.model === "string" && agent.model) || current?.model || null,
+        status:
+            typeof agent?.status === "string"
+                ? (agent.status as string)
+                : (current?.status ?? "unknown"),
+        title: (typeof agent?.title === "string" && agent.title) || current?.title || null,
+        labels: (agent?.labels as Record<string, string>) ?? current?.labels ?? {},
+        requiresAttention: agent?.requiresAttention as boolean | undefined,
+        attentionReason: (agent?.attentionReason as string | null) ?? undefined,
+        pendingPermissions:
+            (agent?.pendingPermissions as Array<Record<string, unknown>>) ??
+            current?.pendingPermissions ??
+            [],
+        capabilities: (agent?.capabilities as Record<string, unknown>) ?? undefined,
+        runtimeInfo:
+            (agent?.runtimeInfo as Record<string, unknown>) ?? current?.runtimeInfo ?? undefined,
         worktreePath:
             (typeof agent?.worktreePath === "string" && agent.worktreePath) ||
             current?.worktreePath,
         branchName:
             (typeof agent?.branchName === "string" && agent.branchName) || current?.branchName,
-        unreadEventCount: current?.unreadEventCount ?? 0,
-        pendingPermissionIds,
-    })
+        createdAt: (agent?.createdAt as string) ?? current?.createdAt,
+        updatedAt: (agent?.updatedAt as string) ?? current?.updatedAt,
+    }
+
+    const worker = mapAgentToWorkerSummary(merged)
+
+    // Preserve unread count from current state
+    worker.unreadEventCount = current?.unreadEventCount ?? 0
+
+    // Apply event-type-driven status overrides when agent snapshot lacks status
+    if (!agent?.status) {
+        if (type === "worker.finished") worker.status = "finished"
+        else if (type === "worker.failed") worker.status = "failed"
+        else if (type === "worker.blocked") worker.status = "blocked"
+    }
+
+    upsertWorker(state, worker)
 }
 
 // ─── Event Handler Factory ───────────────────────────────────────────────────
@@ -155,6 +151,10 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
             const worker = state.workers.get(resourceId)
             if (worker && permId && !worker.pendingPermissionIds.includes(permId)) {
                 worker.pendingPermissionIds = [...worker.pendingPermissionIds, permId]
+                const request = payload.request as Record<string, unknown> | undefined
+                if (request) {
+                    worker.pendingPermissions = [...worker.pendingPermissions, request]
+                }
             }
         }
 
@@ -200,6 +200,9 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
                 if (worker && permId) {
                     worker.pendingPermissionIds = worker.pendingPermissionIds.filter(
                         (id) => id !== permId,
+                    )
+                    worker.pendingPermissions = worker.pendingPermissions.filter(
+                        (p) => p.id !== permId,
                     )
                 }
             }
