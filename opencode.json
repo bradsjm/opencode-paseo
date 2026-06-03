@@ -1,6 +1,4 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "/home/opencode/Workspaces/opencode-paseo/dist/index.js"
-  ]
+  "plugin": []
 }
