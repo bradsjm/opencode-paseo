@@ -290,16 +290,20 @@ export function createWorkerCancelTool(
 ): ToolDefinition {
     return tool({
         description:
-            "Cancel a running Paseo worker's current task. " +
-            "Set forceKill to true for permanent termination: the worker is removed from " +
-            "plugin state and unbound from all sessions. forceKill is destructive and irreversible.",
+            "Cancel a running Paseo worker's current task. Before using forceKill=true, capture " +
+            "any important output or status first, because it may not remain available after " +
+            "permanent termination. Set forceKill to true for permanent termination: the worker " +
+            "is removed from plugin state and unbound from all sessions. forceKill is destructive " +
+            "and irreversible.",
         args: {
             workerId: tool.schema.string().describe("ID of the worker to cancel"),
             forceKill: tool.schema
                 .boolean()
                 .optional()
                 .describe(
-                    "If true, permanently terminate the worker and remove it from state. Defaults to false.",
+                    "If true, permanently terminate the worker and remove it from state. " +
+                        "Destructive and irreversible; capture any needed output or status first. " +
+                        "Defaults to false.",
                 ),
         },
         async execute(args) {

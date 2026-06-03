@@ -4,6 +4,7 @@ import { createPluginState } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
 import {
+    createTerminalKillTool,
     createTerminalSendInputTool,
     createTerminalSendLinesTool,
 } from "../lib/tools/terminal.js"
@@ -255,4 +256,16 @@ test("paseo_terminal_send_lines", async (t) => {
         assert.equal(output.sent, expectedLength)
         assert.equal(output.lineCount, 3)
     })
+})
+
+test("paseo_terminal_kill description warns to capture output first", () => {
+    const logger = new Logger(false)
+    const state = createPluginState()
+    const client = createMockTransport()
+
+    const toolDef = createTerminalKillTool(state, client, logger)
+
+    assert.match(toolDef.description, /capture any important output/i)
+    assert.match(toolDef.description, /paseo_terminal_capture/i)
+    assert.match(toolDef.description, /buffers may not remain available afterward/i)
 })

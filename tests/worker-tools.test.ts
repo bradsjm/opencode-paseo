@@ -219,6 +219,18 @@ test("paseo_worker_cancel", async (t) => {
             /not found in local state/,
         )
     })
+
+    await t.test("description warns that forceKill should capture output first", async () => {
+        const state = createPluginState()
+        const client = createMockTransport()
+
+        const toolDef = createWorkerCancelTool(state, client, logger)
+
+        assert.match(toolDef.description, /Before using forceKill=true/i)
+        assert.match(toolDef.description, /capture any important output or status first/i)
+        assert.match(toolDef.description, /destructive and irreversible/i)
+        assert.match(toolDef.args.forceKill.description ?? "", /capture any needed output or status first/i)
+    })
 })
 
 // ─── Update Tool Tests ───────────────────────────────────────────────────────

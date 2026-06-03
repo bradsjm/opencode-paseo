@@ -293,7 +293,10 @@ export function createTerminalKillTool(
     logger: Logger,
 ): ToolDefinition {
     return tool({
-        description: "Kill a running Paseo terminal session.",
+        description:
+            "Kill a running Paseo terminal session. Destructive: capture any important output " +
+            "with paseo_terminal_capture before killing, because terminal buffers may not remain " +
+            "available afterward.",
         args: {
             terminalId: tool.schema.string().describe("ID of the terminal to kill"),
         },
