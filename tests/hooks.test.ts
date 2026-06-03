@@ -1,10 +1,17 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createPluginState, insertInboxEvent, getOrCreateSession } from "../lib/state/state.js"
+import {
+    createPluginState,
+    insertInboxEvent,
+    getOrCreateSession,
+    recordCreatedWorker,
+} from "../lib/state/state.js"
 import { createDaemonEventHandler, createEventHandler } from "../lib/hooks.js"
 import { Logger } from "../lib/logger.js"
 import type { PluginConfig } from "../lib/config.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
+import type { OpencodeClient } from "../lib/profile.js"
+import type { WorkerSummary } from "../lib/state/types.js"
 
 const mockConfig: PluginConfig = {
     enabled: true,
@@ -378,5 +385,200 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
         const event = Array.from(state.inbox.values())[0]
         assert.equal(event.blocking, false)
         assert.equal(event.metadata?.actionKind, undefined)
+    })
+})
+
+// ─── Nudge Delivery Tests ────────────────────────────────────────────────────
+
+function createMockOpencodeClient(): {
+    client: OpencodeClient
+    calls: Array<{ sessionId: string; text: string }>
+} {
+    const calls: Array<{ sessionId: string; text: string }> = []
+    const client = {
+        session: {
+            prompt: async (args: { path: { id: string }; body?: { parts: Array<{ type: string; text: string; synthetic?: boolean }> } }) => {
+                const text = args.body?.parts?.[0]?.text ?? ""
+                calls.push({ sessionId: args.path.id, text })
+                return { data: {} }
+            },
+        },
+    } as unknown as OpencodeClient
+    return { client, calls }
+}
+
+function seedWorker(state: ReturnType<typeof createPluginState>, id: string): WorkerSummary {
+    const worker: WorkerSummary = {
+        id,
+        title: id,
+        agent: "general",
+        provider: "general",
+        model: null,
+        currentModeId: null,
+        status: "running",
+        cwd: "/tmp",
+        labels: [],
+        pendingPermissions: [],
+        pendingPermissionIds: [],
+        runtimeInfo: null,
+        persistence: null,
+        unreadEventCount: 0,
+    }
+    state.workers.set(id, worker)
+    return worker
+}
+
+test("nudge delivery", async (t) => {
+    const logger = new Logger(false)
+
+    await t.test("sends nudge for blocking event when notifications enabled", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, mockConfig, client)
+
+        handler({
+            type: "worker.blocked",
+            payload: { workerId: "w1", summary: "Worker blocked on question" },
+        })
+
+        assert.equal(calls.length, 1)
+        assert.equal(calls[0].sessionId, "sess-1")
+        assert.ok(calls[0].text.includes("[paseo:worker.blocked]"))
+        assert.ok(calls[0].text.includes("w1"))
+    })
+
+    await t.test("sends nudge for non-blocking event when blockingOnly is false", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, mockConfig, client)
+
+        handler({
+            type: "worker.finished",
+            payload: { workerId: "w1", summary: "Worker completed" },
+        })
+
+        assert.equal(calls.length, 1)
+        assert.ok(calls[0].text.includes("[paseo:worker.finished]"))
+    })
+
+    await t.test("does not send nudge when notifications disabled", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+        const disabledConfig: PluginConfig = {
+            ...mockConfig,
+            notifications: { enabled: false, blockingOnly: false },
+        }
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, disabledConfig, client)
+
+        handler({
+            type: "worker.blocked",
+            payload: { workerId: "w1", summary: "blocked" },
+        })
+
+        assert.equal(calls.length, 0)
+    })
+
+    await t.test("does not send nudge for non-blocking event when blockingOnly is true", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+        const blockingConfig: PluginConfig = {
+            ...mockConfig,
+            notifications: { enabled: true, blockingOnly: true },
+        }
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, blockingConfig, client)
+
+        handler({
+            type: "worker.finished",
+            payload: { workerId: "w1", summary: "Worker completed" },
+        })
+
+        assert.equal(calls.length, 0)
+    })
+
+    await t.test("does not send nudge for worker.started", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, mockConfig, client)
+
+        handler({
+            type: "worker.started",
+            payload: { workerId: "w1", summary: "started" },
+        })
+
+        assert.equal(calls.length, 0)
+    })
+
+    await t.test("does not send nudge when no sessions own the resource", () => {
+        const state = createPluginState()
+        // No session binding for w1
+
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, mockConfig, client)
+
+        handler({
+            type: "worker.blocked",
+            payload: { workerId: "w1", summary: "blocked" },
+        })
+
+        assert.equal(calls.length, 0)
+    })
+
+    await t.test("sends nudge to multiple sessions owning the resource", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        getOrCreateSession(state, "sess-2", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+        state.sessions.get("sess-2")!.createdWorkerIds.add("w1")
+
+        const { client, calls } = createMockOpencodeClient()
+        const handler = createDaemonEventHandler(state, logger, mockConfig, client)
+
+        handler({
+            type: "worker.blocked",
+            payload: { workerId: "w1", summary: "blocked" },
+        })
+
+        assert.equal(calls.length, 2)
+        const sessionIds = calls.map((c) => c.sessionId).sort()
+        assert.deepEqual(sessionIds, ["sess-1", "sess-2"])
+    })
+
+    await t.test("does not send nudge when opencodeClient is not provided", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        seedWorker(state, "w1")
+        state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+        // No opencodeClient passed — backward compatible
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "worker.blocked",
+            payload: { workerId: "w1", summary: "blocked" },
+        })
+
+        // Should not throw, event should still be inserted
+        assert.equal(state.inbox.size, 1)
     })
 })

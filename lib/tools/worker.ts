@@ -84,7 +84,9 @@ export function createWorkerCreateTool(
         description:
             "Create a new Paseo worker (agent) using an OpenCode profile. " +
             `Profiles define the model and mode for the worker. Use paseo_profile_list to see available profiles. ` +
-            `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified.`,
+            `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified. ` +
+            "Workers run asynchronously: you will receive session nudges when the worker finishes, fails, " +
+            "or becomes blocked. Use paseo_worker_wait for explicit blocking waits.",
         args: {
             cwd: tool.schema
                 .string()
@@ -165,6 +167,10 @@ export function createWorkerCreateTool(
                         model: result.model,
                         status: result.status,
                         title: result.title,
+                        async:
+                            "This worker runs asynchronously. You will be notified via session nudge " +
+                            "when it finishes, fails, or needs attention. Use paseo_worker_wait for " +
+                            "explicit blocking waits or paseo_inbox_read to check for events.",
                     },
                     null,
                     2,

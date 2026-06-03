@@ -69,7 +69,7 @@ const server: Plugin = (async (ctx) => {
     logger.info("Hydration complete", hydration)
 
     // Attach live event listener
-    const daemonEventHandler = createDaemonEventHandler(state, logger, config)
+    const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client)
     client.onEvent(daemonEventHandler)
     logger.info("Live event subscription active")
 

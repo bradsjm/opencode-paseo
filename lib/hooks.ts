@@ -4,6 +4,7 @@ import type { PluginConfig } from "./config.js"
 import type { Logger } from "./logger.js"
 import type { PaseoTransport, AgentSummary } from "./transport/types.js"
 import type { Config } from "@opencode-ai/plugin"
+import type { OpencodeClient } from "./profile.js"
 import {
     insertInboxEvent,
     markEventRead,
@@ -11,8 +12,10 @@ import {
     mapAgentToWorkerSummary,
     removeSession,
     buildBlockingMetadata,
+    findSessionsForResource,
 } from "./state/state.js"
 import { mapDaemonWorkerStatus } from "./state/status.js"
+import { shouldNudge, formatNudgeMessage, sendNudge } from "./notifier.js"
 
 function syncWorkerFromPayload(
     state: PluginState,
@@ -101,7 +104,12 @@ export function createEventHandler(
 // ─── Daemon Event Handler ────────────────────────────────────────────────────
 // Processes live events from the Paseo daemon and inserts them into the inbox.
 
-export function createDaemonEventHandler(state: PluginState, logger: Logger, config: PluginConfig) {
+export function createDaemonEventHandler(
+    state: PluginState,
+    logger: Logger,
+    config: PluginConfig,
+    opencodeClient?: OpencodeClient,
+) {
     return (daemonEvent: { type: string; payload: Record<string, unknown> }) => {
         const { type, payload } = daemonEvent
 
@@ -215,6 +223,15 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
                     worker.pendingPermissions = worker.pendingPermissions.filter(
                         (p) => p.id !== permId,
                     )
+                }
+            }
+
+            // Best-effort session nudge delivery
+            if (opencodeClient && shouldNudge(kind, config.notifications)) {
+                const sessionIds = findSessionsForResource(state, resourceId)
+                if (sessionIds.length > 0) {
+                    const message = formatNudgeMessage(kind, resourceId, summary)
+                    sendNudge(opencodeClient, sessionIds, message, logger)
                 }
             }
         }

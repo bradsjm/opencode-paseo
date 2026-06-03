@@ -80,7 +80,8 @@ export function createScheduleCreateTool(
 ): ToolDefinition {
     return tool({
         description:
-            "Create a new Paseo schedule. Defines a recurring prompt execution with a cadence and target agent configuration.",
+            "Create a new Paseo schedule. Defines a recurring prompt execution with a cadence and target agent configuration. " +
+            "Scheduled runs execute asynchronously. Use paseo_schedule_logs to inspect run history.",
         args: {
             prompt: tool.schema.string().describe("Prompt to execute on each scheduled run"),
             name: tool.schema.string().optional().describe("Human-readable name for the schedule"),
@@ -251,7 +252,16 @@ export function createScheduleCreateTool(
 
             return {
                 title: "Schedule Created",
-                output: JSON.stringify(result, null, 2),
+                output: JSON.stringify(
+                    {
+                        ...result,
+                        async:
+                            "Scheduled runs execute asynchronously. Use paseo_schedule_logs to inspect run history " +
+                            "and paseo_inbox_read to check for events.",
+                    },
+                    null,
+                    2,
+                ),
             }
         },
     })
@@ -488,7 +498,8 @@ export function createScheduleRunOnceTool(
 ): ToolDefinition {
     return tool({
         description:
-            "Trigger a single immediate execution of a Paseo schedule. Does not affect the regular cadence.",
+            "Trigger a single immediate execution of a Paseo schedule. Does not affect the regular cadence. " +
+            "The triggered run executes asynchronously. Use paseo_schedule_logs to check run outcomes.",
         args: {
             id: tool.schema.string().describe("ID of the schedule to trigger"),
         },

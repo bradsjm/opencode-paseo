@@ -221,6 +221,26 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
     }
 }
 
+// ─── Resource → Session Reverse Lookup ───────────────────────────────────────
+
+/**
+ * Find all OpenCode session IDs that own a given resource (worker or terminal).
+ * Used by the nudge delivery path to route session prompts to the correct
+ * controller sessions.
+ */
+export function findSessionsForResource(state: PluginState, resourceId: string): string[] {
+    const result: string[] = []
+    for (const session of state.sessions.values()) {
+        if (
+            session.createdWorkerIds.has(resourceId) ||
+            session.createdTerminalIds.has(resourceId)
+        ) {
+            result.push(session.opencodeSessionId)
+        }
+    }
+    return result
+}
+
 // ─── Blocking Metadata Helpers ──────────────────────────────────────────────
 
 /**

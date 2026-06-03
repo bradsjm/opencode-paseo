@@ -17,6 +17,7 @@ import {
     unbindWorkerFromSessions,
     unbindTerminalFromSessions,
     recordCreatedTerminal,
+    findSessionsForResource,
 } from "../lib/state/state.js"
 import type { InboxEvent, TerminalSessionSummary, WorkerSummary } from "../lib/state/types.js"
 import type { AgentSummary } from "../lib/transport/types.js"
@@ -493,5 +494,44 @@ test("unbindTerminalFromSessions", async (t) => {
         getOrCreateSession(state, "sess-1", "/project")
         unbindTerminalFromSessions(state, "unknown")
         // Should not throw
+    })
+})
+
+// ─── findSessionsForResource ────────────────────────────────────────────────
+
+test("findSessionsForResource", async (t) => {
+    await t.test("returns session IDs that own a worker", () => {
+        const state = createPluginState()
+        const s1 = getOrCreateSession(state, "sess-1", "/project")
+        const s2 = getOrCreateSession(state, "sess-2", "/project")
+        s1.createdWorkerIds.add("w1")
+        s2.createdWorkerIds.add("w1")
+        s2.createdWorkerIds.add("w2")
+
+        const result = findSessionsForResource(state, "w1")
+        assert.deepEqual(result.sort(), ["sess-1", "sess-2"])
+    })
+
+    await t.test("returns session IDs that own a terminal", () => {
+        const state = createPluginState()
+        const s1 = getOrCreateSession(state, "sess-1", "/project")
+        s1.createdTerminalIds.add("t1")
+
+        const result = findSessionsForResource(state, "t1")
+        assert.deepEqual(result, ["sess-1"])
+    })
+
+    await t.test("returns empty array for unknown resource", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+
+        const result = findSessionsForResource(state, "unknown")
+        assert.deepEqual(result, [])
+    })
+
+    await t.test("returns empty array when no sessions exist", () => {
+        const state = createPluginState()
+        const result = findSessionsForResource(state, "w1")
+        assert.deepEqual(result, [])
     })
 })
