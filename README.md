@@ -1,104 +1,160 @@
 # opencode-paseo
 
-Lightweight OpenCode plugin for using existing Paseo daemon capabilities from
-inside OpenCode.
+OpenCode plugin that connects to the [Paseo](https://github.com/paseo-run/paseo) daemon. It exposes Paseo's worker orchestration, terminal sessions, permission handling, git worktrees, and scheduled runs as OpenCode tools, and keeps the session informed through an event-driven inbox.
 
-This project is intended to be a thin developer-focused adapter, not a new
-orchestration platform. Paseo already owns local terminals, background agents,
-worktrees, permissions, and daemon events. OpenCode already owns reasoning,
-editing, tool use, and user interaction. This plugin should connect those two
-systems with the smallest useful OpenCode-native surface.
+## Prerequisites
 
-## Why this exists
+- [OpenCode](https://opencode.ai) with plugin support
+- Paseo daemon running locally (default: `localhost:6767`)
 
-OpenCode can run commands, but developer workflows often need stateful local
-resources that outlive one shell call:
+## Installation
 
-- dev servers, watch-mode tests, REPLs, and log tails
-- background Paseo agents that continue working across turns
-- agent permission requests and other blocking events
-- worktree-backed parallel coding workflows
-- existing terminals or workers that should be reused instead of duplicated
+Add the plugin to your OpenCode project configuration (`opencode.json` or `opencode.jsonc`):
 
-The plugin lets OpenCode see Paseo daemon state and events through structured
-tools instead of relying only on ad hoc CLI output and conversation memory.
+```jsonc
+{
+    "plugin": ["@opencode-paseo/opencode-paseo"],
+}
+```
 
-A core goal is to help OpenCode use Paseo's async terminals and background
-workers so long-running local work can continue without forcing LLM models to
-wait unless a workflow explicitly chooses to block. The plugin should make it
-cheap to start work, observe progress, and come back for results later.
+Then install the package:
 
-## Design stance
+```bash
+npm install @opencode-paseo/opencode-paseo
+```
 
-- **Thin adapter:** mirror existing Paseo daemon/CLI contracts where possible.
-- **Async by default:** favor flows where OpenCode can start local work,
-  continue reasoning, and only wait when a task actually needs synchronous
-  completion.
-- **YAGNI:** add only the OpenCode tool or state needed for a real developer
-  workflow.
-- **Ephemeral state:** prefer startup hydration and live daemon events over
-  plugin-owned durable state.
-- **Low maintenance:** keep protocol-specific code isolated so OpenCode and
-  Paseo can evolve without forcing broad plugin rewrites.
-- **Local developer scope:** preserve the localhost daemon boundary unless the
-  product requirements explicitly change.
+On startup the plugin connects to the Paseo daemon via WebSocket, hydrates the local state with existing workers, terminals, and sessions, and subscribes to live daemon events.
+
+## How it works
+
+1. **Connection** — the plugin opens a WebSocket to the Paseo daemon and authenticates with the configured password.
+2. **Hydration** — on connect, it fetches the current daemon state (workers, terminals, sessions) and populates the local inbox.
+3. **Live events** — daemon events (`worker.*`, `terminal.*`, `permission.*`, `session.*`) are mapped to inbox events in real time. Blocking events (worker failures, permission requests, terminal errors) trigger session nudges so the agent notices them.
+4. **Session cleanup** — when an OpenCode session is deleted, the plugin unbinds any Paseo sessions associated with it.
 
 ## Configuration
 
-Config files are loaded in layers. Later layers override earlier layers:
+The plugin reads `paseo.jsonc` (or `paseo.json`) from:
 
-1. Global: `~/.config/opencode/paseo.jsonc`
-2. Config dir: `$OPENCODE_CONFIG_DIR/paseo.jsonc`
-3. Project: `.opencode/paseo.jsonc`
+1. **Global** — `~/.config/opencode/paseo.jsonc` (auto-created if missing)
+2. **OpenCode config dir** — `$OPENCODE_CONFIG_DIR/paseo.jsonc`
+3. **Project** — `.opencode/paseo.jsonc`
 
-JSON files with the same names are also supported. When no global config exists,
-the plugin creates a minimal global `paseo.jsonc` schema stub.
+Later files override earlier ones.
 
-### Config options
-
-| Key                          | Type    | Default       | Description                           |
-| ---------------------------- | ------- | ------------- | ------------------------------------- |
-| `enabled`                    | boolean | `true`        | Enable/disable the plugin             |
-| `debug`                      | boolean | `false`       | Enable debug logging                  |
-| `daemon.host`                | string  | `"127.0.0.1"` | Daemon host (localhost only)          |
-| `daemon.port`                | integer | `6767`        | Daemon WebSocket port                 |
-| `daemon.connectionTimeoutMs` | integer | `3000`        | Connection timeout                    |
-| `daemon.password`            | string  | unset         | Optional bearer token for daemon auth |
-| `output.maxInboxItems`       | integer | `100`         | Max inbox items per response          |
-| `output.maxSummaryLength`    | integer | `500`         | Max event summary length              |
-| `notifications.enabled`      | boolean | `true`        | Accepted but currently unused         |
-| `notifications.blockingOnly` | boolean | `false`       | Accepted but currently unused         |
-| `agents.defaultAgent`        | string  | unset         | Accepted but currently unused         |
-| `agents.defaultModel`        | string  | unset         | Accepted but currently unused         |
+| Key                          | Type      | Default       | Description                   |
+| ---------------------------- | --------- | ------------- | ----------------------------- |
+| `enabled`                    | `boolean` | `true`        | Enable or disable the plugin  |
+| `debug`                      | `boolean` | `false`       | Enable debug logging          |
+| `daemon.host`                | `string`  | `"localhost"` | Daemon host (localhost only)  |
+| `daemon.port`                | `number`  | `6767`        | Daemon port                   |
+| `daemon.password`            | `string`  | —             | Authentication password       |
+| `daemon.connectionTimeoutMs` | `number`  | `5000`        | Connection timeout            |
+| `output.maxInboxItems`       | `number`  | `100`         | Max inbox items in memory     |
+| `output.maxSummaryLength`    | `number`  | `500`         | Max summary text length       |
+| `notifications.enabled`      | `boolean` | `true`        | Enable session nudges         |
+| `notifications.blockingOnly` | `boolean` | `false`       | Only nudge on blocking events |
+| `agents.defaultAgent`        | `string`  | `"main"`      | Default agent name            |
+| `agents.defaultModel`        | `string`  | `"default"`   | Default model for workers     |
 
 ## Tools
 
-The plugin registers OpenCode tools that mirror Paseo daemon operations. Worker
-tools cover the full agent lifecycle:
+The plugin registers the following tools in OpenCode.
 
-| Tool                   | Purpose                                                                                      |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `paseo_worker_list`    | List active workers from the daemon                                                          |
-| `paseo_worker_create`  | Create a new background worker                                                               |
-| `paseo_worker_send`    | Send a message to a worker                                                                   |
-| `paseo_worker_wait`    | Wait for a worker to become idle                                                             |
-| `paseo_worker_cancel`  | Cancel a worker's current task (or permanently kill with `forceKill: true`)                  |
-| `paseo_worker_archive` | Archive a worker (removes from active list)                                                  |
-| `paseo_worker_update`  | Update worker metadata (name, labels) and runtime settings (mode, model, thinking, features) |
-| `paseo_worker_inspect` | Inspect worker state; optionally include activity timeline (`includeActivity: true`)         |
+### Status
 
-`paseo_worker_cancel` with `forceKill: true` is destructive: the worker is
-permanently terminated and removed from plugin state and session bindings.
+| Tool           | Description                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| `paseo_status` | Check daemon connection status and current state summary (workers, terminals, inbox counts, blocking breakdown) |
+
+### Inbox
+
+| Tool                 | Description                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `paseo_inbox_read`   | Read inbox events with filtering by kind, resource ID, and read status. Supports pagination and mark-read. |
+| `paseo_inbox_status` | Get inbox summary: unread count, blocking count, and breakdowns by event kind and resource                 |
+
+### Terminal
+
+| Tool                        | Description                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `paseo_terminal_list`       | List all known terminals (ID, title, status, line count). Optionally filter by working directory.               |
+| `paseo_terminal_create`     | Create a new terminal session bound to the current OpenCode session. Supports initial command and args.         |
+| `paseo_terminal_capture`    | Capture output from a terminal. Returns content with line count. Supports ANSI stripping.                       |
+| `paseo_terminal_send_input` | Send raw keystrokes to a running terminal. Characters are sent verbatim without escape-sequence interpretation. |
+| `paseo_terminal_send_lines` | Send one or more complete command lines to a running terminal. Lines are joined with newlines.                  |
+| `paseo_terminal_kill`       | Kill a running terminal session. Destructive — capture important output first.                                  |
+
+### Permission
+
+| Tool                       | Description                                                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `paseo_permission_respond` | Respond to a pending permission request from a worker. Allow or deny with optional message, interrupt flag, and action selection. |
+
+### Profile
+
+| Tool                 | Description                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `paseo_profile_list` | List available OpenCode agent profiles. Profiles define the model, mode, and behavior for workers. |
+
+### Worker
+
+| Tool                   | Description                                                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `paseo_worker_list`    | List all workers with ID, status, cwd, provider/model/mode, and permission data                                             |
+| `paseo_worker_create`  | Create a new worker using an OpenCode profile. Workers run asynchronously and send session nudges on completion or failure. |
+| `paseo_worker_send`    | Send a text message to an existing worker                                                                                   |
+| `paseo_worker_wait`    | Block until a worker finishes its current task, up to a configurable timeout                                                |
+| `paseo_worker_cancel`  | Cancel a worker's current task. Use `forceKill=true` for permanent termination.                                             |
+| `paseo_worker_archive` | Archive a worker (removed from active list)                                                                                 |
+| `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                          |
+| `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                             |
+
+### Worktree
+
+| Tool                     | Description                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `paseo_worktree_list`    | List git worktrees for a project                                                          |
+| `paseo_worktree_create`  | Create a new git worktree with optional slug, base ref, action, and GitHub PR association |
+| `paseo_worktree_archive` | Archive a git worktree                                                                    |
+
+### Schedule
+
+| Tool                      | Description                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `paseo_schedule_list`     | List all configured schedules with cadence, target, and status                                                            |
+| `paseo_schedule_inspect`  | Inspect a specific schedule's full configuration and status                                                               |
+| `paseo_schedule_create`   | Create a recurring schedule. Supports interval (`every`) or `cron` cadence with targets: `self`, `agent`, or `new-agent`. |
+| `paseo_schedule_update`   | Update schedule properties (name, prompt, cadence, timezone, profile, etc.)                                               |
+| `paseo_schedule_pause`    | Pause a running schedule                                                                                                  |
+| `paseo_schedule_resume`   | Resume a paused schedule                                                                                                  |
+| `paseo_schedule_delete`   | Delete a schedule permanently                                                                                             |
+| `paseo_schedule_run_once` | Trigger a single immediate execution without affecting the regular cadence                                                |
+| `paseo_schedule_logs`     | Retrieve recent execution logs for a schedule                                                                             |
 
 ## Development
 
 ```bash
+# Install dependencies
 pnpm install
-pnpm typecheck
+
+# Build
 pnpm build
+
+# Typecheck
+pnpm typecheck
+
+# Test
 pnpm test
+
+# Integration test (requires opencode CLI)
 pnpm test:integration
+
+# Format and lint
+pnpm format
+pnpm lint
 ```
 
-`pnpm test:integration` requires the `opencode` CLI on `PATH` and a reachable
-local Paseo daemon for live-daemon coverage.
+## License
+
+MIT
