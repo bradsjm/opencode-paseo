@@ -15,6 +15,7 @@ export {
     createWorkerWaitTool,
     createWorkerCancelTool,
     createWorkerArchiveTool,
+    createWorkerUpdateTool,
     createWorkerInspectTool,
 } from "./worker.js"
 export {

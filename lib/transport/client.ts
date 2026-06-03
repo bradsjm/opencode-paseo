@@ -25,6 +25,10 @@ import type {
     WorkerWaitResult,
     ArchivedWorker,
     WorkerInspectResult,
+    UpdateWorkerOptions,
+    WorkerUpdateResult,
+    WorkerActivityOptions,
+    WorkerActivityResult,
     WorktreeListOptions,
     WorktreeCreateOptions,
     WorktreeArchiveOptions,
@@ -423,6 +427,111 @@ export class PaseoClient implements PaseoTransport {
         return {
             agent: mapAgentSnapshot(result.agent as unknown as Record<string, unknown>),
             project: (result.project as Record<string, unknown>) ?? null,
+        }
+    }
+
+    async killWorker(workerId: string): Promise<void> {
+        // Upstream has no dedicated kill; cancelAgent is the closest permanent stop.
+        await this.daemon.cancelAgent(workerId)
+    }
+
+    async updateWorker(options: UpdateWorkerOptions): Promise<WorkerUpdateResult> {
+        const errors: string[] = []
+        let metadataUpdated = false
+        let settingsUpdated = false
+
+        // Metadata: name and labels go through updateAgent
+        if (options.name !== undefined || options.labels !== undefined) {
+            try {
+                const updates: { name?: string; labels?: Record<string, string> } = {}
+                if (options.name !== undefined) updates.name = options.name
+                if (options.labels !== undefined) updates.labels = options.labels
+                await this.daemon.updateAgent(options.workerId, updates)
+                metadataUpdated = true
+            } catch (err: unknown) {
+                errors.push(
+                    `metadata update failed: ${err instanceof Error ? err.message : String(err)}`,
+                )
+            }
+        }
+
+        // Settings: each runtime setting has its own upstream RPC (independent try/catch)
+        if (options.settings) {
+            const s = options.settings
+            let anySettingApplied = false
+
+            if (s.modeId !== undefined) {
+                try {
+                    await this.daemon.setAgentMode(options.workerId, s.modeId)
+                    anySettingApplied = true
+                } catch (err: unknown) {
+                    errors.push(
+                        `setAgentMode failed: ${err instanceof Error ? err.message : String(err)}`,
+                    )
+                }
+            }
+
+            if (s.model !== undefined) {
+                try {
+                    await this.daemon.setAgentModel(options.workerId, s.model)
+                    anySettingApplied = true
+                } catch (err: unknown) {
+                    errors.push(
+                        `setAgentModel failed: ${err instanceof Error ? err.message : String(err)}`,
+                    )
+                }
+            }
+
+            if (s.thinkingOptionId !== undefined) {
+                try {
+                    await this.daemon.setAgentThinkingOption(options.workerId, s.thinkingOptionId)
+                    anySettingApplied = true
+                } catch (err: unknown) {
+                    errors.push(
+                        `setAgentThinkingOption failed: ${err instanceof Error ? err.message : String(err)}`,
+                    )
+                }
+            }
+
+            if (s.features) {
+                for (const [featureId, value] of Object.entries(s.features)) {
+                    try {
+                        await this.daemon.setAgentFeature(options.workerId, featureId, value)
+                        anySettingApplied = true
+                    } catch (err: unknown) {
+                        errors.push(
+                            `setAgentFeature(${featureId}) failed: ${err instanceof Error ? err.message : String(err)}`,
+                        )
+                    }
+                }
+            }
+
+            settingsUpdated = anySettingApplied
+        }
+
+        return {
+            workerId: options.workerId,
+            updated: metadataUpdated || settingsUpdated,
+            metadataUpdated,
+            settingsUpdated,
+            errors,
+        }
+    }
+
+    async fetchWorkerActivity(options: WorkerActivityOptions): Promise<WorkerActivityResult> {
+        try {
+            const timeline = await this.daemon.fetchAgentTimeline(options.workerId, {
+                limit: options.limit,
+            })
+            return {
+                workerId: options.workerId,
+                timeline: timeline as unknown as Record<string, unknown>,
+            }
+        } catch (err: unknown) {
+            if (err instanceof Error && err.message.includes("not found")) {
+                return { workerId: options.workerId, timeline: null }
+            }
+            throw err
         }
     }
 

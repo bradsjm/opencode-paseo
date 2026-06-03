@@ -2,7 +2,11 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
-import { getOrCreateSession, recordCreatedTerminal } from "../state/state.js"
+import {
+    getOrCreateSession,
+    recordCreatedTerminal,
+    unbindTerminalFromSessions,
+} from "../state/state.js"
 
 // ─── Terminal List Tool ──────────────────────────────────────────────────────
 
@@ -248,11 +252,12 @@ export function createTerminalKillTool(
 
             const result = await client.killTerminal(args.terminalId)
 
-            // Update state
+            // Update state and clean up session bindings
             const terminal = state.terminals.get(args.terminalId)
             if (terminal) {
                 terminal.status = "killed"
             }
+            unbindTerminalFromSessions(state, args.terminalId)
 
             return {
                 title: "Terminal Killed",

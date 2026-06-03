@@ -126,6 +126,7 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
         assert.ok(toolIDs.data.includes("paseo_worker_wait"))
         assert.ok(toolIDs.data.includes("paseo_worker_cancel"))
         assert.ok(toolIDs.data.includes("paseo_worker_archive"))
+        assert.ok(toolIDs.data.includes("paseo_worker_update"))
         assert.ok(toolIDs.data.includes("paseo_worker_inspect"))
         assert.ok(toolIDs.data.includes("paseo_worktree_list"))
         assert.ok(toolIDs.data.includes("paseo_worktree_create"))

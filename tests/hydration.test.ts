@@ -81,11 +81,23 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             finalSnapshot: null,
         }),
         cancelWorker: async () => {},
+        killWorker: async () => {},
         archiveWorker: async (workerId) => ({
             workerId,
             archivedAt: new Date().toISOString(),
         }),
         fetchWorker: async () => null,
+        updateWorker: async (options) => ({
+            workerId: options.workerId,
+            updated: false,
+            metadataUpdated: false,
+            settingsUpdated: false,
+            errors: [],
+        }),
+        fetchWorkerActivity: async (options) => ({
+            workerId: options.workerId,
+            timeline: null,
+        }),
         // Phase 3: Worktree operations
         listWorktrees: async () => ({ worktrees: [] }),
         createWorktree: async () => ({ worktreePath: "/tmp/wt" }),

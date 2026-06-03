@@ -17,6 +17,23 @@ export function createStatusTool(
             logger.info("Tool: paseo_status invoked")
 
             const unreadEvents = Array.from(state.inbox.values()).filter((e) => !e.read)
+            const blockingEvents = unreadEvents.filter((e) => e.blocking)
+
+            // Derive actionable blocking summary
+            let permissionRequests = 0
+            let blockedWorkers = 0
+            let terminalErrors = 0
+
+            for (const evt of blockingEvents) {
+                const actionKind = evt.metadata?.actionKind as string | undefined
+                if (actionKind === "permission" || evt.kind === "permission.requested") {
+                    permissionRequests++
+                } else if (actionKind === "worker-question" || evt.kind === "worker.blocked") {
+                    blockedWorkers++
+                } else if (actionKind === "notify-only" || evt.kind === "terminal.error") {
+                    terminalErrors++
+                }
+            }
 
             return {
                 title: "Paseo Status",
@@ -29,7 +46,13 @@ export function createStatusTool(
                         workers: state.workers.size,
                         terminals: state.terminals.size,
                         inboxUnread: unreadEvents.length,
-                        inboxBlocking: unreadEvents.filter((e) => e.blocking).length,
+                        inboxBlocking: blockingEvents.length,
+                        blockingSummary: {
+                            total: blockingEvents.length,
+                            permissionRequests,
+                            blockedWorkers,
+                            terminalErrors,
+                        },
                     },
                     null,
                     2,

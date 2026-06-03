@@ -306,3 +306,16 @@ test("PaseoClient implements all schedule transport methods", () => {
         )
     }
 })
+
+// ─── Worker Extension Methods on PaseoClient ─────────────────────────────────
+
+test("PaseoClient implements extended worker transport methods", () => {
+    const workerMethods = ["killWorker", "updateWorker", "fetchWorkerActivity"]
+    for (const method of workerMethods) {
+        assert.equal(
+            typeof (PaseoClient.prototype as Record<string, unknown>)[method],
+            "function",
+            `PaseoClient.prototype.${method} should be a function`,
+        )
+    }
+})

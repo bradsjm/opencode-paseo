@@ -7,6 +7,8 @@ import {
     recordCreatedWorker,
     upsertWorker,
     mapAgentToWorkerSummary,
+    unbindWorkerFromSessions,
+    getBlockingAction,
 } from "../state/state.js"
 
 // ─── Worker List Tool ────────────────────────────────────────────────────────
@@ -51,6 +53,7 @@ export function createWorkerListTool(
                 pendingPermissionIds: w.pendingPermissionIds,
                 pendingPermissionCount: w.pendingPermissions.length,
                 unreadEventCount: w.unreadEventCount,
+                blockingAction: getBlockingAction(w),
             }))
 
             return {
@@ -301,17 +304,52 @@ export function createWorkerCancelTool(
     logger: Logger,
 ): ToolDefinition {
     return tool({
-        description: "Cancel a running Paseo worker's current task.",
+        description:
+            "Cancel a running Paseo worker's current task. " +
+            "Set forceKill to true for permanent termination: the worker is removed from " +
+            "plugin state and unbound from all sessions. forceKill is destructive and irreversible.",
         args: {
             workerId: tool.schema.string().describe("ID of the worker to cancel"),
+            forceKill: tool.schema
+                .boolean()
+                .optional()
+                .describe(
+                    "If true, permanently terminate the worker and remove it from state. Defaults to false.",
+                ),
         },
         async execute(args) {
-            logger.info("Tool: paseo_worker_cancel invoked", { workerId: args.workerId })
+            const isKill = args.forceKill === true
+            logger.info("Tool: paseo_worker_cancel invoked", {
+                workerId: args.workerId,
+                forceKill: isKill,
+            })
 
             // Verify worker exists in local state
             const worker = state.workers.get(args.workerId)
             if (!worker) {
                 throw new Error(`Worker "${args.workerId}" not found in local state`)
+            }
+
+            if (isKill) {
+                await client.killWorker(args.workerId)
+
+                // Permanent removal: delete from state and unbind sessions
+                state.workers.delete(args.workerId)
+                unbindWorkerFromSessions(state, args.workerId)
+
+                return {
+                    title: "Worker Killed",
+                    output: JSON.stringify(
+                        {
+                            workerId: args.workerId,
+                            action: "killed",
+                            warning:
+                                "Worker was permanently terminated and removed from plugin state.",
+                        },
+                        null,
+                        2,
+                    ),
+                }
             }
 
             await client.cancelWorker(args.workerId)
@@ -324,6 +362,7 @@ export function createWorkerCancelTool(
                 output: JSON.stringify(
                     {
                         workerId: args.workerId,
+                        action: "canceled",
                         status: "canceled",
                     },
                     null,
@@ -359,9 +398,7 @@ export function createWorkerArchiveTool(
 
             // Remove from local state and clean up session bindings
             state.workers.delete(args.workerId)
-            for (const session of state.sessions.values()) {
-                session.createdWorkerIds.delete(args.workerId)
-            }
+            unbindWorkerFromSessions(state, args.workerId)
 
             return {
                 title: "Worker Archived",
@@ -378,6 +415,83 @@ export function createWorkerArchiveTool(
     })
 }
 
+// ─── Worker Update Tool ──────────────────────────────────────────────────────
+
+export function createWorkerUpdateTool(
+    state: PluginState,
+    client: PaseoTransport,
+    logger: Logger,
+): ToolDefinition {
+    return tool({
+        description:
+            "Update a Paseo worker's metadata and runtime settings. " +
+            "Supports name, labels, and settings (modeId, model, thinkingOptionId, features). " +
+            "Pass null for model or thinkingOptionId to clear them.",
+        args: {
+            workerId: tool.schema.string().describe("ID of the worker to update"),
+            name: tool.schema
+                .string()
+                .optional()
+                .describe("New display name for the worker"),
+            labels: tool.schema
+                .record(tool.schema.string(), tool.schema.string())
+                .optional()
+                .describe("Replacement label map"),
+            settings: tool.schema
+                .object({
+                    modeId: tool.schema.string().optional().describe("Mode to switch the worker to"),
+                    model: tool.schema
+                        .string()
+                        .nullable()
+                        .optional()
+                        .describe("Model ID to set, or null to clear"),
+                    thinkingOptionId: tool.schema
+                        .string()
+                        .nullable()
+                        .optional()
+                        .describe("Thinking option ID to set, or null to clear"),
+                    features: tool.schema
+                        .record(tool.schema.string(), tool.schema.unknown())
+                        .optional()
+                        .describe("Map of feature ID to value"),
+                })
+                .optional()
+                .describe("Runtime settings to apply"),
+        },
+        async execute(args) {
+            logger.info("Tool: paseo_worker_update invoked", { workerId: args.workerId })
+
+            // Verify worker exists in local state
+            const worker = state.workers.get(args.workerId)
+            if (!worker) {
+                throw new Error(`Worker "${args.workerId}" not found in local state`)
+            }
+
+            const result = await client.updateWorker({
+                workerId: args.workerId,
+                name: args.name,
+                labels: args.labels,
+                settings: args.settings,
+            })
+
+            // Refresh local state from daemon if update succeeded
+            if (result.updated) {
+                const fetched = await client.fetchWorker(args.workerId)
+                if (fetched) {
+                    const refreshed = mapAgentToWorkerSummary(fetched.agent)
+                    refreshed.unreadEventCount = worker.unreadEventCount
+                    upsertWorker(state, refreshed)
+                }
+            }
+
+            return {
+                title: "Worker Updated",
+                output: JSON.stringify(result, null, 2),
+            }
+        },
+    })
+}
+
 // ─── Worker Inspect Tool ─────────────────────────────────────────────────────
 
 export function createWorkerInspectTool(
@@ -387,78 +501,99 @@ export function createWorkerInspectTool(
 ): ToolDefinition {
     return tool({
         description:
-            "Inspect a Paseo worker. Returns current worker details from fresh daemon-backed data.",
+            "Inspect a Paseo worker. Returns current worker details from fresh daemon-backed data. " +
+            "Optionally includes activity timeline when includeActivity is true.",
         args: {
             workerId: tool.schema.string().describe("ID of the worker to inspect"),
+            includeActivity: tool.schema
+                .boolean()
+                .optional()
+                .describe("If true, include the worker's recent activity timeline"),
+            activityLimit: tool.schema
+                .number()
+                .optional()
+                .describe("Maximum number of activity entries to return (default: daemon default)"),
         },
         async execute(args) {
-            logger.info("Tool: paseo_worker_inspect invoked", { workerId: args.workerId })
+            logger.info("Tool: paseo_worker_inspect invoked", {
+                workerId: args.workerId,
+                includeActivity: args.includeActivity,
+            })
+
+            let snapshot: Record<string, unknown> | null = null
+            let worker = state.workers.get(args.workerId)
 
             // Try fresh daemon fetch first
             const fetched = await client.fetchWorker(args.workerId)
             if (fetched) {
-                const worker = mapAgentToWorkerSummary(fetched.agent)
+                const mapped = mapAgentToWorkerSummary(fetched.agent)
                 const existing = state.workers.get(args.workerId)
                 if (existing) {
-                    worker.unreadEventCount = existing.unreadEventCount
+                    mapped.unreadEventCount = existing.unreadEventCount
                 }
-                upsertWorker(state, worker)
+                upsertWorker(state, mapped)
+                worker = mapped
 
-                return {
-                    title: `Worker Inspect: ${args.workerId}`,
-                    output: JSON.stringify(
-                        {
-                            id: worker.id,
-                            title: worker.title,
-                            status: worker.status,
-                            cwd: worker.cwd,
-                            provider: worker.provider,
-                            model: worker.model,
-                            currentModeId: worker.currentModeId,
-                            worktreePath: worker.worktreePath,
-                            branchName: worker.branchName,
-                            pendingPermissions: worker.pendingPermissions,
-                            pendingPermissionIds: worker.pendingPermissionIds,
-                            runtimeInfo: worker.runtimeInfo,
-                            persistence: worker.persistence,
-                            createdAt: worker.createdAt,
-                            updatedAt: worker.updatedAt,
-                            project: fetched.project,
-                        },
-                        null,
-                        2,
-                    ),
+                snapshot = {
+                    id: mapped.id,
+                    title: mapped.title,
+                    status: mapped.status,
+                    cwd: mapped.cwd,
+                    provider: mapped.provider,
+                    model: mapped.model,
+                    currentModeId: mapped.currentModeId,
+                    worktreePath: mapped.worktreePath,
+                    branchName: mapped.branchName,
+                    pendingPermissions: mapped.pendingPermissions,
+                    pendingPermissionIds: mapped.pendingPermissionIds,
+                    runtimeInfo: mapped.runtimeInfo,
+                    persistence: mapped.persistence,
+                    createdAt: mapped.createdAt,
+                    updatedAt: mapped.updatedAt,
+                    project: fetched.project,
+                    blockingAction: getBlockingAction(mapped),
                 }
+            } else if (worker) {
+                // Fallback to local state
+                snapshot = {
+                    id: worker.id,
+                    title: worker.title,
+                    status: worker.status,
+                    cwd: worker.cwd,
+                    provider: worker.provider,
+                    model: worker.model,
+                    currentModeId: worker.currentModeId,
+                    worktreePath: worker.worktreePath,
+                    branchName: worker.branchName,
+                    pendingPermissions: worker.pendingPermissions,
+                    pendingPermissionIds: worker.pendingPermissionIds,
+                    runtimeInfo: worker.runtimeInfo,
+                    persistence: worker.persistence,
+                    source: "local-cache",
+                    blockingAction: getBlockingAction(worker),
+                }
+            } else {
+                throw new Error(`Worker "${args.workerId}" not found`)
             }
 
-            // Fallback to local state
-            const local = state.workers.get(args.workerId)
-            if (!local) {
-                throw new Error(`Worker "${args.workerId}" not found`)
+            // Optional activity fetch
+            let activity: Record<string, unknown> | null = null
+            if (args.includeActivity) {
+                const activityResult = await client.fetchWorkerActivity({
+                    workerId: args.workerId,
+                    limit: args.activityLimit,
+                })
+                activity = activityResult.timeline
+            }
+
+            const output: Record<string, unknown> = { ...snapshot }
+            if (args.includeActivity) {
+                output.activity = activity
             }
 
             return {
                 title: `Worker Inspect: ${args.workerId}`,
-                output: JSON.stringify(
-                    {
-                        id: local.id,
-                        title: local.title,
-                        status: local.status,
-                        cwd: local.cwd,
-                        provider: local.provider,
-                        model: local.model,
-                        currentModeId: local.currentModeId,
-                        worktreePath: local.worktreePath,
-                        branchName: local.branchName,
-                        pendingPermissions: local.pendingPermissions,
-                        pendingPermissionIds: local.pendingPermissionIds,
-                        runtimeInfo: local.runtimeInfo,
-                        persistence: local.persistence,
-                        source: "local-cache",
-                    },
-                    null,
-                    2,
-                ),
+                output: JSON.stringify(output, null, 2),
             }
         },
     })

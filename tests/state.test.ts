@@ -13,6 +13,10 @@ import {
     upsertWorker,
     recordCreatedWorker,
     mapAgentToWorkerSummary,
+    removeSession,
+    unbindWorkerFromSessions,
+    unbindTerminalFromSessions,
+    recordCreatedTerminal,
 } from "../lib/state/state.js"
 import type { InboxEvent, TerminalSessionSummary, WorkerSummary } from "../lib/state/types.js"
 import type { AgentSummary } from "../lib/transport/types.js"
@@ -361,5 +365,133 @@ test("mapAgentToWorkerSummary", async (t) => {
         assert.equal(worker.runtimeInfo, null)
         assert.equal(worker.persistence, null)
         assert.deepEqual(worker.pendingPermissionIds, [])
+    })
+})
+
+// ─── removeSession ───────────────────────────────────────────────────────────
+
+test("removeSession", async (t) => {
+    await t.test("removes session and clears bindings", () => {
+        const state = createPluginState()
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("w1")
+        session.createdTerminalIds.add("t1")
+
+        // Add an unread event to the session
+        const event: InboxEvent = {
+            id: "evt-1",
+            kind: "worker.started",
+            resourceId: "w1",
+            blocking: false,
+            summary: "test",
+            read: false,
+            timestamp: Date.now(),
+        }
+        insertInboxEvent(state, event)
+        assert.equal(session.unreadEvents.size, 1)
+
+        const removed = removeSession(state, "sess-1")
+        assert.equal(removed, true)
+        assert.equal(state.sessions.size, 0)
+    })
+
+    await t.test("returns false for unknown session", () => {
+        const state = createPluginState()
+        const removed = removeSession(state, "unknown")
+        assert.equal(removed, false)
+    })
+
+    await t.test("does not delete global worker/terminal entries", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+
+        const worker: WorkerSummary = {
+            id: "w1",
+            title: "worker",
+            agent: "general",
+            provider: "general",
+            model: null,
+            currentModeId: null,
+            status: "running",
+            cwd: "/tmp",
+            labels: [],
+            pendingPermissions: [],
+            pendingPermissionIds: [],
+            runtimeInfo: null,
+            persistence: null,
+            unreadEventCount: 0,
+        }
+        recordCreatedWorker(state, "sess-1", worker)
+
+        const terminal: TerminalSessionSummary = {
+            id: "t1",
+            title: "terminal",
+            cwd: "/tmp",
+            status: "running",
+            lineCount: 0,
+            lastReadCursor: 0,
+        }
+        recordCreatedTerminal(state, "sess-1", terminal)
+
+        assert.equal(state.workers.size, 1)
+        assert.equal(state.terminals.size, 1)
+
+        removeSession(state, "sess-1")
+
+        // Global entries should still exist
+        assert.equal(state.workers.size, 1)
+        assert.equal(state.terminals.size, 1)
+    })
+})
+
+// ─── unbindWorkerFromSessions ────────────────────────────────────────────────
+
+test("unbindWorkerFromSessions", async (t) => {
+    await t.test("removes worker ID from all sessions", () => {
+        const state = createPluginState()
+        const s1 = getOrCreateSession(state, "sess-1", "/project")
+        const s2 = getOrCreateSession(state, "sess-2", "/project")
+        s1.createdWorkerIds.add("w1")
+        s2.createdWorkerIds.add("w1")
+        s2.createdWorkerIds.add("w2")
+
+        unbindWorkerFromSessions(state, "w1")
+
+        assert.ok(!s1.createdWorkerIds.has("w1"))
+        assert.ok(!s2.createdWorkerIds.has("w1"))
+        assert.ok(s2.createdWorkerIds.has("w2"))
+    })
+
+    await t.test("is a no-op for unknown worker", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        unbindWorkerFromSessions(state, "unknown")
+        // Should not throw
+    })
+})
+
+// ─── unbindTerminalFromSessions ──────────────────────────────────────────────
+
+test("unbindTerminalFromSessions", async (t) => {
+    await t.test("removes terminal ID from all sessions", () => {
+        const state = createPluginState()
+        const s1 = getOrCreateSession(state, "sess-1", "/project")
+        const s2 = getOrCreateSession(state, "sess-2", "/project")
+        s1.createdTerminalIds.add("t1")
+        s2.createdTerminalIds.add("t1")
+        s2.createdTerminalIds.add("t2")
+
+        unbindTerminalFromSessions(state, "t1")
+
+        assert.ok(!s1.createdTerminalIds.has("t1"))
+        assert.ok(!s2.createdTerminalIds.has("t1"))
+        assert.ok(s2.createdTerminalIds.has("t2"))
+    })
+
+    await t.test("is a no-op for unknown terminal", () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        unbindTerminalFromSessions(state, "unknown")
+        // Should not throw
     })
 })

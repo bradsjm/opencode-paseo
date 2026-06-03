@@ -21,6 +21,7 @@ import {
     createWorkerWaitTool,
     createWorkerCancelTool,
     createWorkerArchiveTool,
+    createWorkerUpdateTool,
     createWorkerInspectTool,
 } from "./lib/tools/worker.js"
 import {
@@ -40,6 +41,7 @@ import {
     createScheduleLogsTool,
 } from "./lib/tools/schedule.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
+import { resetPluginState } from "./lib/state/state.js"
 
 const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
@@ -71,6 +73,16 @@ const server: Plugin = (async (ctx) => {
     }
 
     return {
+        dispose: async () => {
+            try {
+                await client.close()
+                logger.info("Paseo client closed")
+            } catch (err: any) {
+                logger.error("Error closing Paseo client during dispose", err.message)
+            }
+            resetPluginState(state)
+            logger.info("Paseo plugin disposed")
+        },
         event: createEventHandler(state, client, logger, config),
         config: createConfigHandler(config, logger),
         tool: {
@@ -89,6 +101,7 @@ const server: Plugin = (async (ctx) => {
             paseo_worker_wait: createWorkerWaitTool(state, client, logger),
             paseo_worker_cancel: createWorkerCancelTool(state, client, logger),
             paseo_worker_archive: createWorkerArchiveTool(state, client, logger),
+            paseo_worker_update: createWorkerUpdateTool(state, client, logger),
             paseo_worker_inspect: createWorkerInspectTool(state, client, logger),
             paseo_worktree_list: createWorktreeListTool(state, client, logger),
             paseo_worktree_create: createWorktreeCreateTool(state, client, logger),

@@ -207,6 +207,42 @@ export interface ScheduleInspectOptions {
     id: string
 }
 
+// ─── Worker Update Types ──────────────────────────────────────────────────────
+
+export interface WorkerUpdateSettings {
+    modeId?: string
+    model?: string | null
+    thinkingOptionId?: string | null
+    features?: Record<string, unknown>
+}
+
+export interface UpdateWorkerOptions {
+    workerId: string
+    name?: string
+    labels?: Record<string, string>
+    settings?: WorkerUpdateSettings
+}
+
+export interface WorkerUpdateResult {
+    workerId: string
+    updated: boolean
+    metadataUpdated: boolean
+    settingsUpdated: boolean
+    errors: string[]
+}
+
+// ─── Worker Activity Types ────────────────────────────────────────────────────
+
+export interface WorkerActivityOptions {
+    workerId: string
+    limit?: number
+}
+
+export interface WorkerActivityResult {
+    workerId: string
+    timeline: Record<string, unknown> | null
+}
+
 // ─── Normalized Daemon Event ──────────────────────────────────────────────────
 // The adapter translates upstream DaemonClient events into this shape
 // before delivering them to plugin consumers.
@@ -252,8 +288,11 @@ export interface PaseoTransport {
     sendWorkerMessage(workerId: string, message: string): Promise<void>
     waitForWorker(workerId: string, timeout: number): Promise<WorkerWaitResult>
     cancelWorker(workerId: string): Promise<void>
+    killWorker(workerId: string): Promise<void>
     archiveWorker(workerId: string): Promise<ArchivedWorker>
     fetchWorker(workerId: string): Promise<WorkerInspectResult | null>
+    updateWorker(options: UpdateWorkerOptions): Promise<WorkerUpdateResult>
+    fetchWorkerActivity(options: WorkerActivityOptions): Promise<WorkerActivityResult>
 
     // Phase 3: Worktree operations
     listWorktrees(options: WorktreeListOptions): Promise<Record<string, unknown>>

@@ -2,10 +2,12 @@ import type {
     PluginState,
     SessionMapping,
     InboxEvent,
+    InboxEventKind,
     ConnectionStatus,
     CapabilitySnapshot,
     TerminalSessionSummary,
     WorkerSummary,
+    WorkerStatus,
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
 import { mapDaemonWorkerStatus } from "./status.js"
@@ -174,6 +176,106 @@ export function recordCreatedWorker(
         session.createdWorkerIds.add(worker.id)
         session.updatedAt = Date.now()
     }
+}
+
+// ─── Session Lifecycle Helpers ───────────────────────────────────────────────
+
+/**
+ * Remove a session mapping and clear its unread/pending references.
+ * This is the canonical cleanup helper for session.deleted and dispose paths.
+ * It does NOT delete global worker/terminal entries — only session bindings.
+ */
+export function removeSession(state: PluginState, sessionId: string): boolean {
+    const session = state.sessions.get(sessionId)
+    if (!session) return false
+
+    // Clear session-scoped unread and pending maps
+    session.unreadEvents.clear()
+    session.pendingPermissions.clear()
+    session.createdTerminalIds.clear()
+    session.createdWorkerIds.clear()
+
+    state.sessions.delete(sessionId)
+    return true
+}
+
+/**
+ * Remove a worker ID from all session bindings.
+ * Used when a worker is archived or otherwise permanently removed.
+ * Does NOT delete the worker from state.workers — caller handles that.
+ */
+export function unbindWorkerFromSessions(state: PluginState, workerId: string): void {
+    for (const session of state.sessions.values()) {
+        session.createdWorkerIds.delete(workerId)
+    }
+}
+
+/**
+ * Remove a terminal ID from all session bindings.
+ * Used when a terminal is killed or otherwise permanently removed.
+ * Does NOT delete the terminal from state.terminals — caller handles that.
+ */
+export function unbindTerminalFromSessions(state: PluginState, terminalId: string): void {
+    for (const session of state.sessions.values()) {
+        session.createdTerminalIds.delete(terminalId)
+    }
+}
+
+// ─── Blocking Metadata Helpers ──────────────────────────────────────────────
+
+/**
+ * Build controller-actionable metadata for a blocking inbox event.
+ * Used by both the live daemon event handler and the hydration path
+ * to ensure consistent actionKind/suggestedTool enrichment.
+ */
+export function buildBlockingMetadata(
+    kind: InboxEventKind,
+    resourceId: string,
+    extra?: Record<string, unknown>,
+): Record<string, unknown> {
+    if (kind === "permission.requested") {
+        return {
+            ...extra,
+            actionKind: "permission",
+            workerId: resourceId,
+            permissionId: extra?.permissionId as string | undefined,
+            suggestedTool: "paseo_permission_respond",
+        }
+    }
+    if (kind === "worker.blocked") {
+        return {
+            ...extra,
+            actionKind: "worker-question",
+            workerId: resourceId,
+            suggestedTool: "paseo_worker_send",
+        }
+    }
+    if (kind === "terminal.error") {
+        return {
+            ...extra,
+            actionKind: "notify-only",
+            terminalId: resourceId,
+        }
+    }
+    return extra ?? {}
+}
+
+/**
+ * Determine the suggested controller action for a worker based on its
+ * current status and pending permission state.
+ * Returns the tool ID the controller should use, or null if no action needed.
+ */
+export function getBlockingAction(w: {
+    status: WorkerStatus
+    pendingPermissionIds: string[]
+}): string | null {
+    if (w.status === "blocked") {
+        if (w.pendingPermissionIds.length > 0) {
+            return "paseo_permission_respond"
+        }
+        return "paseo_worker_send"
+    }
+    return null
 }
 
 // ─── Agent → WorkerSummary Mapper ────────────────────────────────────────────

@@ -9,6 +9,8 @@ import {
     markEventRead,
     upsertWorker,
     mapAgentToWorkerSummary,
+    removeSession,
+    buildBlockingMetadata,
 } from "./state/state.js"
 import { mapDaemonWorkerStatus } from "./state/status.js"
 
@@ -87,8 +89,10 @@ export function createEventHandler(
         if (event.type === "session.deleted") {
             const sessionId = event.properties.info.id
             if (sessionId) {
-                state.sessions.delete(sessionId)
-                logger.info("Session removed", { sessionId })
+                const removed = removeSession(state, sessionId)
+                if (removed) {
+                    logger.info("Session removed", { sessionId })
+                }
             }
         }
     }
@@ -163,6 +167,13 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
             kind === "permission.requested" ||
             kind === "terminal.error"
 
+        // Enrich blocking events with controller-actionable metadata
+        const actionMetadata = blocking
+            ? buildBlockingMetadata(kind, resourceId, {
+                  permissionId: payload.permissionId as string | undefined,
+              })
+            : {}
+
         const event: InboxEvent = {
             id: `evt-${state.eventCounter + 1}-${type}-${resourceId}`,
             kind,
@@ -171,7 +182,7 @@ export function createDaemonEventHandler(state: PluginState, logger: Logger, con
             summary,
             read: false,
             timestamp: Date.now(),
-            metadata: payload,
+            metadata: { ...payload, ...actionMetadata },
         }
 
         const inserted = insertInboxEvent(state, event)

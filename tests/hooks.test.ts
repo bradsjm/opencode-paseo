@@ -1,9 +1,10 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createPluginState, insertInboxEvent } from "../lib/state/state.js"
-import { createDaemonEventHandler } from "../lib/hooks.js"
+import { createPluginState, insertInboxEvent, getOrCreateSession } from "../lib/state/state.js"
+import { createDaemonEventHandler, createEventHandler } from "../lib/hooks.js"
 import { Logger } from "../lib/logger.js"
 import type { PluginConfig } from "../lib/config.js"
+import type { PaseoTransport } from "../lib/transport/types.js"
 
 const mockConfig: PluginConfig = {
     enabled: true,
@@ -229,5 +230,153 @@ test("createDaemonEventHandler", async (t) => {
         assert.ok(worker)
         assert.ok(!worker.pendingPermissionIds.includes("perm-1"))
         assert.equal(worker.pendingPermissions.length, 0)
+    })
+})
+
+// ─── Event Handler Tests (session.deleted) ───────────────────────────────────
+
+test("createEventHandler", async (t) => {
+    const logger = new Logger(false)
+    const mockTransport = {} as PaseoTransport
+
+    await t.test("handles session.deleted by removing session", async () => {
+        const state = createPluginState()
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("w1")
+
+        const handler = createEventHandler(state, mockTransport, logger, mockConfig)
+
+        await handler({
+            event: {
+                type: "session.deleted",
+                properties: {
+                    info: { id: "sess-1" },
+                },
+            } as any,
+        })
+
+        assert.equal(state.sessions.size, 0)
+    })
+
+    await t.test("session.deleted is a no-op for unknown session", async () => {
+        const state = createPluginState()
+        const handler = createEventHandler(state, mockTransport, logger, mockConfig)
+
+        await handler({
+            event: {
+                type: "session.deleted",
+                properties: {
+                    info: { id: "unknown" },
+                },
+            } as any,
+        })
+
+        assert.equal(state.sessions.size, 0)
+    })
+
+    await t.test("session.deleted clears unread and pending state", async () => {
+        const state = createPluginState()
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("w1")
+
+        // Add a blocking event to the session
+        insertInboxEvent(state, {
+            id: "evt-1",
+            kind: "worker.blocked",
+            resourceId: "w1",
+            blocking: true,
+            summary: "blocked",
+            read: false,
+            timestamp: Date.now(),
+        })
+
+        assert.equal(session.unreadEvents.size, 1)
+        assert.equal(session.pendingPermissions.size, 1)
+
+        const handler = createEventHandler(state, mockTransport, logger, mockConfig)
+        await handler({
+            event: {
+                type: "session.deleted",
+                properties: {
+                    info: { id: "sess-1" },
+                },
+            } as any,
+        })
+
+        // Session should be gone, and global inbox should still have the event
+        assert.equal(state.sessions.size, 0)
+        assert.equal(state.inbox.size, 1)
+    })
+})
+
+// ─── Blocking Event Metadata Tests ───────────────────────────────────────────
+
+test("createDaemonEventHandler blocking metadata", async (t) => {
+    const logger = new Logger(false)
+
+    await t.test("permission.requested includes action metadata", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "permission.requested",
+            payload: {
+                workerId: "w1",
+                permissionId: "perm-1",
+                summary: "Write permission needed",
+            },
+        })
+
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.blocking, true)
+        assert.equal(event.metadata?.actionKind, "permission")
+        assert.equal(event.metadata?.workerId, "w1")
+        assert.equal(event.metadata?.permissionId, "perm-1")
+        assert.equal(event.metadata?.suggestedTool, "paseo_permission_respond")
+    })
+
+    await t.test("worker.blocked includes action metadata", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "worker.blocked",
+            payload: { workerId: "w1", summary: "Worker blocked on question" },
+        })
+
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.blocking, true)
+        assert.equal(event.metadata?.actionKind, "worker-question")
+        assert.equal(event.metadata?.workerId, "w1")
+        assert.equal(event.metadata?.suggestedTool, "paseo_worker_send")
+    })
+
+    await t.test("terminal.error includes action metadata", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "terminal.error",
+            payload: { terminalId: "t1", summary: "Terminal crashed" },
+        })
+
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.blocking, true)
+        assert.equal(event.metadata?.actionKind, "notify-only")
+        assert.equal(event.metadata?.terminalId, "t1")
+    })
+
+    await t.test("non-blocking events have no action metadata", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "worker.started",
+            payload: { workerId: "w1", summary: "started" },
+        })
+
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.blocking, false)
+        assert.equal(event.metadata?.actionKind, undefined)
     })
 })

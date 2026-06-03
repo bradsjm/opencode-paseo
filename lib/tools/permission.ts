@@ -71,6 +71,9 @@ export function createPermissionRespondTool(
                 worker.pendingPermissionIds = worker.pendingPermissionIds.filter(
                     (id) => id !== args.permissionId,
                 )
+                worker.pendingPermissions = worker.pendingPermissions.filter(
+                    (p) => p.id !== args.permissionId,
+                )
             }
 
             return {
@@ -80,6 +83,7 @@ export function createPermissionRespondTool(
                         workerId: result.workerId,
                         permissionId: result.permissionId,
                         behavior: result.behavior,
+                        message: `Permission ${result.behavior === "allow" ? "allowed" : "denied"}. Worker ${result.workerId} may continue.`,
                     },
                     null,
                     2,

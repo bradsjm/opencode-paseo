@@ -8,6 +8,7 @@ import {
     upsertTerminal,
     insertInboxEvent,
     mapAgentToWorkerSummary,
+    buildBlockingMetadata,
 } from "../state/state.js"
 
 // ─── Startup Hydration ───────────────────────────────────────────────────────
@@ -60,6 +61,9 @@ export async function hydrate(
             workers++
 
             if (worker.status === "blocked") {
+                // Determine if the block is a permission request or a general question
+                const hasPermissions = worker.pendingPermissionIds.length > 0
+                const blockKind = hasPermissions ? "permission.requested" : "worker.blocked"
                 const event: InboxEvent = {
                     id: `hydration-worker-blocked-${a.id}`,
                     kind: "worker.blocked",
@@ -68,6 +72,9 @@ export async function hydrate(
                     summary: a.attentionReason ?? `Worker "${a.title ?? a.id}" requires attention`,
                     read: false,
                     timestamp: Date.now(),
+                    metadata: buildBlockingMetadata(blockKind, a.id, {
+                        permissionId: hasPermissions ? worker.pendingPermissionIds[0] : undefined,
+                    }),
                 }
                 if (insertInboxEvent(state, event)) {
                     inboxSeeded++
