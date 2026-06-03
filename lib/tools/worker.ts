@@ -2,6 +2,14 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
+import type { OpencodeClient } from "../profile.js"
+import {
+    listProfiles,
+    normalizeProfileName,
+    resolveProfile,
+    profileToWorkerFields,
+    DEFAULT_PROFILE,
+} from "../profile.js"
 import {
     getOrCreateSession,
     recordCreatedWorker,
@@ -69,28 +77,25 @@ export function createWorkerListTool(
 export function createWorkerCreateTool(
     state: PluginState,
     client: PaseoTransport,
+    opencodeClient: OpencodeClient,
     logger: Logger,
 ): ToolDefinition {
     return tool({
         description:
-            "Create a new Paseo worker (agent). Validates the provider against the current provider snapshot for the target cwd before creation. Model and modeId are passed through to the daemon for validation.",
+            "Create a new Paseo worker (agent) using an OpenCode profile. " +
+            `Profiles define the model and mode for the worker. Use paseo_profile_list to see available profiles. ` +
+            `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified.`,
         args: {
             cwd: tool.schema
                 .string()
                 .optional()
                 .describe("Working directory for the worker (defaults to session directory)"),
-            provider: tool.schema
+            profile: tool.schema
                 .string()
                 .optional()
-                .describe("Provider ID to use (validated against daemon provider snapshot)"),
-            model: tool.schema
-                .string()
-                .optional()
-                .describe("Model ID to use (validated against daemon provider snapshot)"),
-            modeId: tool.schema
-                .string()
-                .optional()
-                .describe("Mode ID to use (validated against daemon provider snapshot)"),
+                .describe(
+                    `OpenCode profile name to use (default: "${DEFAULT_PROFILE}"). Use paseo_profile_list to see available profiles.`,
+                ),
             initialPrompt: tool.schema
                 .string()
                 .optional()
@@ -106,46 +111,24 @@ export function createWorkerCreateTool(
         },
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
+            const profileName = normalizeProfileName(args.profile)
+
             logger.info("Tool: paseo_worker_create invoked", {
                 cwd,
-                provider: args.provider,
-                model: args.model,
+                profile: profileName,
             })
 
-            // Validate provider against current snapshot
-            if (args.provider || args.model || args.modeId) {
-                try {
-                    const providers = await client.getProvidersSnapshot(cwd)
-                    if (args.provider) {
-                        const found = providers.some(
-                            (p) => p.id === args.provider || p.provider === args.provider,
-                        )
-                        if (!found) {
-                            const available = providers
-                                .map((p) => p.id || p.provider)
-                                .filter(Boolean)
-                                .join(", ")
-                            throw new Error(
-                                `Provider "${args.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
-                            )
-                        }
-                    }
-                } catch (err: any) {
-                    if (err.message?.includes("not found in daemon provider snapshot")) {
-                        throw err
-                    }
-                    logger.warn(
-                        "Provider validation skipped due to snapshot fetch failure",
-                        err.message,
-                    )
-                }
-            }
+            // Resolve profile into daemon payload fields
+            const profiles = await listProfiles(opencodeClient, cwd)
+            const profile = resolveProfile(profiles, profileName)
+            const workerFields = profileToWorkerFields(profile)
 
             const result = await client.createWorker({
                 cwd,
-                provider: args.provider,
-                model: args.model,
-                modeId: args.modeId,
+                profile: profileName,
+                provider: workerFields.provider,
+                model: workerFields.model,
+                modeId: workerFields.modeId,
                 initialPrompt: args.initialPrompt,
                 labels: args.labels as Record<string, string> | undefined,
                 worktreeName: args.worktreeName,
@@ -168,6 +151,7 @@ export function createWorkerCreateTool(
             logger.info("Worker created", {
                 workerId: result.id,
                 sessionId: context.sessionID,
+                profile: profileName,
             })
 
             return {
@@ -175,6 +159,7 @@ export function createWorkerCreateTool(
                 output: JSON.stringify(
                     {
                         id: result.id,
+                        profile: profileName,
                         provider: result.provider,
                         cwd: result.cwd,
                         model: result.model,
@@ -429,17 +414,17 @@ export function createWorkerUpdateTool(
             "Pass null for model or thinkingOptionId to clear them.",
         args: {
             workerId: tool.schema.string().describe("ID of the worker to update"),
-            name: tool.schema
-                .string()
-                .optional()
-                .describe("New display name for the worker"),
+            name: tool.schema.string().optional().describe("New display name for the worker"),
             labels: tool.schema
                 .record(tool.schema.string(), tool.schema.string())
                 .optional()
                 .describe("Replacement label map"),
             settings: tool.schema
                 .object({
-                    modeId: tool.schema.string().optional().describe("Mode to switch the worker to"),
+                    modeId: tool.schema
+                        .string()
+                        .optional()
+                        .describe("Mode to switch the worker to"),
                     model: tool.schema
                         .string()
                         .nullable()

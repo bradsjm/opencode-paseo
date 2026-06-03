@@ -119,6 +119,9 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
         assert.ok(toolIDs.data.includes("paseo_terminal_create"))
         assert.ok(toolIDs.data.includes("paseo_permission_respond"))
 
+        // Profile tools
+        assert.ok(toolIDs.data.includes("paseo_profile_list"))
+
         // Phase 3: Worker and worktree tools
         assert.ok(toolIDs.data.includes("paseo_worker_list"))
         assert.ok(toolIDs.data.includes("paseo_worker_create"))

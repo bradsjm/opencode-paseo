@@ -6,9 +6,11 @@ import type { WorkerSummary } from "../lib/state/types.js"
 import { Logger } from "../lib/logger.js"
 import {
     createWorkerCancelTool,
+    createWorkerCreateTool,
     createWorkerUpdateTool,
     createWorkerInspectTool,
 } from "../lib/tools/worker.js"
+import type { OpencodeClient } from "../lib/profile.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
@@ -173,10 +175,7 @@ test("paseo_worker_cancel", async (t) => {
         })
 
         const toolDef = createWorkerCancelTool(state, client, logger)
-        const result = await toolDef.execute(
-            { workerId: "w1", forceKill: true },
-            mockContext(),
-        )
+        const result = await toolDef.execute({ workerId: "w1", forceKill: true }, mockContext())
 
         assert.ok(killCalled)
         assert.ok(!state.workers.has("w1"))
@@ -294,6 +293,183 @@ test("paseo_worker_update", async (t) => {
             model: "gpt-4",
             thinkingOptionId: null,
             features: { streaming: true },
+        })
+    })
+
+    // ─── Worker Create Tool Tests ──────────────────────────────────────────────
+
+    function mockOpencodeClient(
+        agents: Array<Record<string, unknown>> = [
+            {
+                name: "build",
+                description: "Build agent",
+                mode: "primary",
+                model: { providerID: "openai", modelID: "gpt-5.4" },
+            },
+            {
+                name: "review",
+                description: "Code reviewer",
+                mode: "subagent",
+                model: { providerID: "anthropic", modelID: "claude-3" },
+            },
+        ],
+    ): OpencodeClient {
+        return {
+            app: {
+                agents: async () => ({ data: agents }),
+            },
+        } as unknown as OpencodeClient
+    }
+
+    test("paseo_worker_create", async (t) => {
+        const logger = new Logger(false)
+
+        await t.test("defaults to build profile when no profile specified", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w1",
+                        provider: "openai",
+                        cwd: "/tmp",
+                        model: "gpt-5.4",
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient()
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            const result = await toolDef.execute({}, mockContext())
+
+            assert.equal(receivedOptions.profile, "build")
+            assert.equal(receivedOptions.modeId, "build")
+            assert.equal(receivedOptions.provider, "openai")
+            assert.equal(receivedOptions.model, "gpt-5.4")
+            const output = JSON.parse((result as { output: string }).output)
+            assert.equal(output.profile, "build")
+            assert.equal(output.id, "w1")
+        })
+
+        await t.test("uses specified profile", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w2",
+                        provider: "anthropic",
+                        cwd: "/tmp",
+                        model: "claude-3",
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient()
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            await toolDef.execute({ profile: "review" }, mockContext())
+
+            assert.equal(receivedOptions.profile, "review")
+            assert.equal(receivedOptions.modeId, "review")
+            assert.equal(receivedOptions.provider, "anthropic")
+            assert.equal(receivedOptions.model, "claude-3")
+        })
+
+        await t.test("normalizes empty/whitespace profile to build", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w3",
+                        provider: "openai",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient()
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            await toolDef.execute({ profile: "   " }, mockContext())
+
+            assert.equal(receivedOptions.profile, "build")
+            assert.equal(receivedOptions.modeId, "build")
+        })
+
+        await t.test("throws clear error for unknown profile", async () => {
+            const state = createPluginState()
+            const client = createMockTransport()
+            const opencode = mockOpencodeClient()
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            await assert.rejects(
+                () => toolDef.execute({ profile: "nonexistent" }, mockContext()),
+                /Profile "nonexistent" not found\. Available profiles: build, review/,
+            )
+        })
+
+        await t.test("passes initialPrompt and labels through", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w4",
+                        provider: "openai",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient()
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            await toolDef.execute(
+                {
+                    initialPrompt: "Fix the bug",
+                    labels: { priority: "high" },
+                },
+                mockContext(),
+            )
+
+            assert.equal(receivedOptions.initialPrompt, "Fix the bug")
+            assert.deepEqual(receivedOptions.labels, { priority: "high" })
+        })
+
+        await t.test("binds worker to session after creation", async () => {
+            const state = createPluginState()
+            const client = createMockTransport({
+                createWorker: async () => ({
+                    id: "w5",
+                    provider: "openai",
+                    cwd: "/tmp",
+                    model: null,
+                    status: "running" as const,
+                    title: null,
+                }),
+            })
+            const opencode = mockOpencodeClient()
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            await toolDef.execute({}, mockContext())
+
+            assert.ok(state.workers.has("w5"))
+            const session = state.sessions.get("sess-1")
+            assert.ok(session)
+            assert.ok(session.createdWorkerIds.has("w5"))
         })
     })
 

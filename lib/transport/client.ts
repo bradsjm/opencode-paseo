@@ -354,22 +354,31 @@ export class PaseoClient implements PaseoTransport {
     // ─── Worker Operations ───────────────────────────────────────────────
 
     async createWorker(options: CreateWorkerOptions): Promise<CreatedWorker> {
-        const snapshot = await this.daemon.createAgent({
+        // Assemble the daemon create-agent payload.
+        // background/detached are always forced to true: the plugin creates workers
+        // that must run independently of the current session lifecycle.
+        // The installed @getpaseo/client CreateAgentRequestOptions does not expose
+        // these fields in its typed surface, so they are injected via the
+        // Record<string, unknown> escape hatch that the daemon client already accepts.
+        const payload: Record<string, unknown> = {
             provider: options.provider as Record<string, unknown> | undefined,
             cwd: options.cwd,
             initialPrompt: options.initialPrompt,
             labels: options.labels,
             worktree: options.worktree as Record<string, unknown> | undefined,
             worktreeName: options.worktreeName,
-            ...(options.model || options.modeId
-                ? {
-                      config: {
-                          ...(options.model ? { model: options.model } : {}),
-                          ...(options.modeId ? { modeId: options.modeId } : {}),
-                      } as Record<string, unknown>,
-                  }
-                : {}),
-        } as Record<string, unknown>)
+            background: true,
+            detached: true,
+        }
+
+        if (options.model || options.modeId) {
+            payload.config = {
+                ...(options.model ? { model: options.model } : {}),
+                ...(options.modeId ? { modeId: options.modeId } : {}),
+            }
+        }
+
+        const snapshot = await this.daemon.createAgent(payload)
         const mapped = mapAgentSnapshot(snapshot as unknown as Record<string, unknown>)
         return {
             id: mapped.id,

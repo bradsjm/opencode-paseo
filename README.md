@@ -76,16 +76,16 @@ the plugin creates a minimal global `paseo.jsonc` schema stub.
 The plugin registers OpenCode tools that mirror Paseo daemon operations. Worker
 tools cover the full agent lifecycle:
 
-| Tool                       | Purpose                                                        |
-| -------------------------- | -------------------------------------------------------------- |
-| `paseo_worker_list`        | List active workers from the daemon                            |
-| `paseo_worker_create`      | Create a new background worker                                 |
-| `paseo_worker_send`        | Send a message to a worker                                     |
-| `paseo_worker_wait`        | Wait for a worker to become idle                               |
-| `paseo_worker_cancel`      | Cancel a worker's current task (or permanently kill with `forceKill: true`) |
-| `paseo_worker_archive`     | Archive a worker (removes from active list)                    |
-| `paseo_worker_update`      | Update worker metadata (name, labels) and runtime settings (mode, model, thinking, features) |
-| `paseo_worker_inspect`     | Inspect worker state; optionally include activity timeline (`includeActivity: true`) |
+| Tool                   | Purpose                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `paseo_worker_list`    | List active workers from the daemon                                                          |
+| `paseo_worker_create`  | Create a new background worker                                                               |
+| `paseo_worker_send`    | Send a message to a worker                                                                   |
+| `paseo_worker_wait`    | Wait for a worker to become idle                                                             |
+| `paseo_worker_cancel`  | Cancel a worker's current task (or permanently kill with `forceKill: true`)                  |
+| `paseo_worker_archive` | Archive a worker (removes from active list)                                                  |
+| `paseo_worker_update`  | Update worker metadata (name, labels) and runtime settings (mode, model, thinking, features) |
+| `paseo_worker_inspect` | Inspect worker state; optionally include activity timeline (`includeActivity: true`)         |
 
 `paseo_worker_cancel` with `forceKill: true` is destructive: the worker is
 permanently terminated and removed from plugin state and session bindings.

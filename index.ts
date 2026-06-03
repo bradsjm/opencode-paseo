@@ -14,6 +14,7 @@ import {
     createTerminalKillTool,
 } from "./lib/tools/terminal.js"
 import { createPermissionRespondTool } from "./lib/tools/permission.js"
+import { createProfileListTool } from "./lib/tools/profile.js"
 import {
     createWorkerListTool,
     createWorkerCreateTool,
@@ -95,8 +96,9 @@ const server: Plugin = (async (ctx) => {
             paseo_terminal_send_input: createTerminalSendInputTool(state, client, logger),
             paseo_terminal_kill: createTerminalKillTool(state, client, logger),
             paseo_permission_respond: createPermissionRespondTool(state, client, logger),
+            paseo_profile_list: createProfileListTool(ctx.client, logger),
             paseo_worker_list: createWorkerListTool(state, client, logger),
-            paseo_worker_create: createWorkerCreateTool(state, client, logger),
+            paseo_worker_create: createWorkerCreateTool(state, client, ctx.client, logger),
             paseo_worker_send: createWorkerSendTool(state, client, logger),
             paseo_worker_wait: createWorkerWaitTool(state, client, logger),
             paseo_worker_cancel: createWorkerCancelTool(state, client, logger),

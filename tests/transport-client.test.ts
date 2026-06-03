@@ -319,3 +319,98 @@ test("PaseoClient implements extended worker transport methods", () => {
         )
     }
 })
+
+// ─── createWorker Payload Assembly ───────────────────────────────────────────
+
+test("PaseoClient.createWorker always sets background and detached to true", async () => {
+    // We test the payload assembly by constructing a PaseoClient with a mocked
+    // DaemonClient and verifying the arguments passed to createAgent.
+    let capturedPayload: Record<string, unknown> | null = null
+
+    // Create a minimal mock that intercepts createAgent
+    const mockDaemon = {
+        connect: async () => {},
+        close: async () => {},
+        isConnected: true,
+        subscribeConnectionStatus: () => () => {},
+        subscribe: () => () => {},
+        getLastServerInfoMessage: () => null,
+        createAgent: async (payload: Record<string, unknown>) => {
+            capturedPayload = payload
+            return {
+                id: "w1",
+                provider: "test",
+                cwd: "/tmp",
+                model: null,
+                status: "running",
+                title: null,
+                labels: {},
+            }
+        },
+    }
+
+    // Construct PaseoClient and replace internal daemon
+    const client = new PaseoClient({
+        host: "127.0.0.1",
+        port: 1,
+        connectionTimeoutMs: 100,
+    })
+    // Access private daemon field for testing
+    ;(client as any).daemon = mockDaemon
+
+    await client.createWorker({
+        cwd: "/tmp",
+        provider: "test",
+        modeId: "build",
+        model: "gpt-4",
+    })
+
+    assert.ok(capturedPayload, "createAgent should have been called")
+    assert.equal(capturedPayload!.background, true, "background must be true")
+    assert.equal(capturedPayload!.detached, true, "detached must be true")
+    assert.equal(capturedPayload!.cwd, "/tmp")
+    assert.equal(capturedPayload!.provider, "test")
+    const config = capturedPayload!.config as Record<string, unknown>
+    assert.ok(config, "config should be present when model/modeId provided")
+    assert.equal(config.model, "gpt-4")
+    assert.equal(config.modeId, "build")
+})
+
+test("PaseoClient.createWorker sets background/detached even without model/modeId", async () => {
+    let capturedPayload: Record<string, unknown> | null = null
+
+    const mockDaemon = {
+        connect: async () => {},
+        close: async () => {},
+        isConnected: true,
+        subscribeConnectionStatus: () => () => {},
+        subscribe: () => () => {},
+        getLastServerInfoMessage: () => null,
+        createAgent: async (payload: Record<string, unknown>) => {
+            capturedPayload = payload
+            return {
+                id: "w2",
+                provider: "test",
+                cwd: "/tmp",
+                model: null,
+                status: "running",
+                title: null,
+                labels: {},
+            }
+        },
+    }
+
+    const client = new PaseoClient({
+        host: "127.0.0.1",
+        port: 1,
+        connectionTimeoutMs: 100,
+    })
+    ;(client as any).daemon = mockDaemon
+
+    await client.createWorker({ cwd: "/tmp" })
+
+    assert.ok(capturedPayload)
+    assert.equal(capturedPayload!.background, true)
+    assert.equal(capturedPayload!.detached, true)
+    assert.equal(capturedPayload!.config, undefined, "config should be absent when no model/modeId")
+})

@@ -50,6 +50,7 @@ export interface TerminalSummary {
 
 export interface CreateWorkerOptions {
     cwd: string
+    profile?: string
     provider?: string
     model?: string | null
     modeId?: string
