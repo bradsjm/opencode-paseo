@@ -43,43 +43,6 @@ cheap to start work, observe progress, and come back for results later.
 - **Local developer scope:** preserve the localhost daemon boundary unless the
   product requirements explicitly change.
 
-See `PLAN.md` for the authoritative technical roadmap for post-Phase-1 work.
-`SPEC.md` is deprecated for planning and retained only as a Phase 1
-implementation reference.
-
-## Current status
-
-Phase 1 is implemented. The plugin currently provides visibility and inbox
-primitives that lay the groundwork for later async terminal and worker tools.
-Today it:
-
-1. loads layered plugin configuration;
-2. enforces a localhost-only daemon host;
-3. connects to the local Paseo daemon over WebSocket;
-4. hydrates current Paseo workers and terminals at startup;
-5. keeps in-memory connection, capability, worker, terminal, session, and inbox
-   state;
-6. seeds unread inbox entries for workers that already require attention;
-7. translates selected live daemon events into a compact inbox model; and
-8. registers three OpenCode tools.
-
-The plugin currently does **not** create terminals, send terminal input, spawn
-workers, respond to permissions, manage worktrees, or schedule jobs. The async
-execution goal described above is the design direction for future phases, not a
-claim that this Phase 1 build already exposes those controls.
-
-## Tools
-
-| Tool                 | Description                                     |
-| -------------------- | ----------------------------------------------- |
-| `paseo_status`       | Daemon connection status and state summary      |
-| `paseo_inbox_read`   | Read inbox events with filtering and pagination |
-| `paseo_inbox_status` | Inbox summary: unread, blocking, breakdowns     |
-
-These tools are intentionally read-oriented in Phase 1. Their job is to give
-OpenCode enough live state to avoid blind polling and prepare for later
-non-blocking terminal and worker workflows.
-
 ## Configuration
 
 Config files are loaded in layers. Later layers override earlier layers:
@@ -120,15 +83,3 @@ pnpm test:integration
 
 `pnpm test:integration` requires the `opencode` CLI on `PATH` and a reachable
 local Paseo daemon for live-daemon coverage.
-
-## Current constraints
-
-- Localhost-only daemon connection is enforced in config validation.
-- State is in-memory and process-local.
-- No daemon restart recovery or reconnect loop beyond initial connection.
-- No terminal promotion or automatic shell rerouting.
-- No auto-approval of permissions.
-- No direct terminal control, worker control, worktree, or schedule tools in the
-  current plugin phase.
-- Async terminal/worker execution is a design goal, but the current release only
-  exposes the visibility and inbox pieces needed to support that direction.
