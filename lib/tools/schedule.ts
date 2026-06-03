@@ -2,6 +2,27 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState } from "../state/types.js"
 import type { PaseoTransport, ScheduleCadence } from "../transport/types.js"
 import type { Logger } from "../logger.js"
+import {
+    listProfiles,
+    profileToWorkerFields,
+    resolveProfile,
+    type OpencodeClient,
+} from "../profile.js"
+
+async function resolveScheduleProfileConfig(
+    opencodeClient: OpencodeClient,
+    profileName: string,
+    cwd: string,
+): Promise<{ provider: string; model?: string; modeId: string }> {
+    const trimmedProfile = profileName.trim()
+    if (!trimmedProfile) {
+        throw new Error("profile must not be empty for 'new-agent' target")
+    }
+
+    const profiles = await listProfiles(opencodeClient, cwd)
+    const profile = resolveProfile(profiles, trimmedProfile)
+    return profileToWorkerFields(profile)
+}
 
 // ─── Schedule List Tool ──────────────────────────────────────────────────────
 
@@ -54,6 +75,7 @@ export function createScheduleInspectTool(
 export function createScheduleCreateTool(
     state: PluginState,
     client: PaseoTransport,
+    opencodeClient: OpencodeClient,
     logger: Logger,
 ): ToolDefinition {
     return tool({
@@ -85,11 +107,11 @@ export function createScheduleCreateTool(
                 .string()
                 .optional()
                 .describe("Agent ID (required for 'self' or 'agent' target types)"),
-            provider: tool.schema
+            profile: tool.schema
                 .string()
                 .optional()
                 .describe(
-                    "Provider ID (required for 'new-agent' target, validated against daemon)",
+                    "OpenCode profile name for 'new-agent' target. Required for scheduled new-agent runs.",
                 ),
             cwd: tool.schema
                 .string()
@@ -97,14 +119,6 @@ export function createScheduleCreateTool(
                 .describe(
                     "Working directory (required for 'new-agent' target, defaults to session directory)",
                 ),
-            model: tool.schema
-                .string()
-                .optional()
-                .describe("Model ID (optional for 'new-agent' target, validated against daemon)"),
-            modeId: tool.schema
-                .string()
-                .optional()
-                .describe("Mode ID (optional for 'new-agent' target)"),
             maxRuns: tool.schema
                 .number()
                 .int()
@@ -154,45 +168,44 @@ export function createScheduleCreateTool(
                       })()
 
             // Build target
-            const target = (() => {
-                switch (args.targetType) {
-                    case "self":
-                    case "agent":
-                        if (!args.agentId) {
-                            throw new Error(
-                                `agentId is required for target type '${args.targetType}'`,
-                            )
-                        }
-                        return { type: args.targetType, agentId: args.agentId }
-                    case "new-agent": {
-                        const cwd = args.cwd ?? context.directory
-                        if (!cwd) {
-                            throw new Error("cwd is required for 'new-agent' target")
-                        }
-                        if (!args.provider) {
-                            throw new Error("provider is required for 'new-agent' target")
-                        }
-                        return {
-                            type: "new-agent" as const,
-                            config: {
-                                provider: args.provider,
-                                cwd,
-                                model: args.model,
-                                modeId: args.modeId,
-                            },
-                        }
-                    }
-                }
-            })()
+            let target:
+                | { type: "self"; agentId: string }
+                | { type: "agent"; agentId: string }
+                | {
+                      type: "new-agent"
+                      config: { provider: string; cwd: string; model?: string; modeId?: string }
+                  }
 
-            // Validate provider/model for new-agent targets
-            if (args.targetType === "new-agent") {
-                const cwd = args.cwd ?? context.directory
-                try {
-                    const providers = await client.getProvidersSnapshot(cwd)
-                    if (args.provider) {
+            switch (args.targetType) {
+                case "self":
+                case "agent":
+                    if (args.profile?.trim()) {
+                        throw new Error(`profile is only supported for target type 'new-agent'`)
+                    }
+                    if (!args.agentId) {
+                        throw new Error(`agentId is required for target type '${args.targetType}'`)
+                    }
+                    target = { type: args.targetType, agentId: args.agentId }
+                    break
+                case "new-agent": {
+                    const cwd = args.cwd ?? context.directory
+                    if (!cwd) {
+                        throw new Error("cwd is required for 'new-agent' target")
+                    }
+                    if (!args.profile?.trim()) {
+                        throw new Error("profile is required for 'new-agent' target")
+                    }
+
+                    const resolvedProfile = await resolveScheduleProfileConfig(
+                        opencodeClient,
+                        args.profile,
+                        cwd,
+                    )
+
+                    try {
+                        const providers = await client.getProvidersSnapshot(cwd)
                         const found = providers.some(
-                            (p) => p.id === args.provider || p.provider === args.provider,
+                            (p) => p.id === resolvedProfile.provider || p.provider === resolvedProfile.provider,
                         )
                         if (!found) {
                             const available = providers
@@ -200,18 +213,29 @@ export function createScheduleCreateTool(
                                 .filter(Boolean)
                                 .join(", ")
                             throw new Error(
-                                `Provider "${args.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
+                                `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
                             )
                         }
+                    } catch (err: any) {
+                        if (err.message?.includes("not found in daemon provider snapshot")) {
+                            throw err
+                        }
+                        logger.warn(
+                            "Provider validation skipped due to snapshot fetch failure",
+                            err.message,
+                        )
                     }
-                } catch (err: any) {
-                    if (err.message?.includes("not found in daemon provider snapshot")) {
-                        throw err
+
+                    target = {
+                        type: "new-agent",
+                        config: {
+                            provider: resolvedProfile.provider,
+                            cwd,
+                            model: resolvedProfile.model,
+                            modeId: resolvedProfile.modeId,
+                        },
                     }
-                    logger.warn(
-                        "Provider validation skipped due to snapshot fetch failure",
-                        err.message,
-                    )
+                    break
                 }
             }
 
@@ -238,6 +262,7 @@ export function createScheduleCreateTool(
 export function createScheduleUpdateTool(
     state: PluginState,
     client: PaseoTransport,
+    opencodeClient: OpencodeClient,
     logger: Logger,
 ): ToolDefinition {
     return tool({
@@ -264,12 +289,10 @@ export function createScheduleUpdateTool(
                 .string()
                 .optional()
                 .describe("New IANA timezone (for 'cron' cadence)"),
-            provider: tool.schema
+            profile: tool.schema
                 .string()
                 .optional()
-                .describe("New provider ID for new-agent schedules"),
-            model: tool.schema.string().optional().describe("New model ID for new-agent schedules"),
-            modeId: tool.schema.string().optional().describe("New mode ID for new-agent schedules"),
+                .describe("New OpenCode profile for new-agent schedules"),
             cwd: tool.schema
                 .string()
                 .optional()
@@ -309,13 +332,15 @@ export function createScheduleUpdateTool(
 
             // Build optional newAgentConfig
             let newAgentConfig:
-                | { provider?: string; model?: string | null; modeId?: string | null; cwd?: string }
+                | { provider?: string; model?: string; modeId?: string; cwd?: string }
                 | undefined
-            if (args.provider || args.model || args.modeId || args.cwd) {
+
+            if (args.profile !== undefined && !args.profile.trim()) {
+                throw new Error("profile must not be empty")
+            }
+
+            if (args.profile || args.cwd) {
                 newAgentConfig = {
-                    provider: args.provider,
-                    model: args.model,
-                    modeId: args.modeId,
                     cwd: args.cwd,
                 }
             }
@@ -325,15 +350,24 @@ export function createScheduleUpdateTool(
                 throw new Error("prompt must not be empty")
             }
 
-            // Validate provider for newAgentConfig if provided
-            if (newAgentConfig?.provider) {
+            // Resolve and validate profile-backed provider for newAgentConfig if provided
+            if (newAgentConfig && args.profile) {
                 const cwd = newAgentConfig.cwd ?? context.directory
+                const resolvedProfile = await resolveScheduleProfileConfig(
+                    opencodeClient,
+                    args.profile,
+                    cwd,
+                )
                 try {
+                    newAgentConfig.provider = resolvedProfile.provider
+                    newAgentConfig.model = resolvedProfile.model
+                    newAgentConfig.modeId = resolvedProfile.modeId
+
                     const providers = await client.getProvidersSnapshot(cwd)
                     const found = providers.some(
                         (p) =>
-                            p.id === newAgentConfig.provider ||
-                            p.provider === newAgentConfig.provider,
+                            p.id === resolvedProfile.provider ||
+                            p.provider === resolvedProfile.provider,
                     )
                     if (!found) {
                         const available = providers
@@ -341,7 +375,7 @@ export function createScheduleUpdateTool(
                             .filter(Boolean)
                             .join(", ")
                         throw new Error(
-                            `Provider "${newAgentConfig.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
+                            `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
                         )
                     }
                 } catch (err: any) {

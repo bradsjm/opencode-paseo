@@ -80,14 +80,20 @@ export function resolveProfile(profiles: ProfileSummary[], name: string): Profil
  * Returns an object suitable for merging into CreateWorkerOptions.
  */
 export function profileToWorkerFields(profile: ProfileSummary): {
-    provider?: string
-    model?: string | null
+    provider: string
+    model?: string
     modeId: string
 } {
+    const providerID = profile.providerID?.trim()
+    const modelID = profile.modelID?.trim()
+    const hasFullModel = Boolean(providerID && modelID)
+
     return {
-        // Profile name maps directly to daemon modeId
+        // OpenCode profile model metadata identifies the routed model, while Paseo
+        // worker creation uses the OpenCode runtime provider plus a provider/model
+        // model string.
         modeId: profile.name,
-        ...(profile.providerID ? { provider: profile.providerID } : {}),
-        ...(profile.modelID ? { model: profile.modelID } : {}),
+        provider: "opencode",
+        ...(hasFullModel ? { model: `${providerID}/${modelID}` } : {}),
     }
 }

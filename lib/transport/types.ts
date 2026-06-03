@@ -196,8 +196,8 @@ export interface ScheduleUpdateOptions {
     cadence?: ScheduleCadence
     newAgentConfig?: {
         provider?: string
-        model?: string | null
-        modeId?: string | null
+        model?: string
+        modeId?: string
         cwd?: string
     }
     maxRuns?: number

@@ -344,9 +344,9 @@ test("paseo_worker_update", async (t) => {
                     receivedOptions = opts
                     return {
                         id: "w1",
-                        provider: "openai",
+                        provider: "opencode",
                         cwd: "/tmp",
-                        model: "gpt-5.4",
+                        model: "openai/gpt-5.4",
                         status: "running" as const,
                         title: null,
                     }
@@ -359,8 +359,8 @@ test("paseo_worker_update", async (t) => {
 
             assert.equal(receivedOptions.profile, "build")
             assert.equal(receivedOptions.modeId, "build")
-            assert.equal(receivedOptions.provider, "openai")
-            assert.equal(receivedOptions.model, "gpt-5.4")
+            assert.equal(receivedOptions.provider, "opencode")
+            assert.equal(receivedOptions.model, "openai/gpt-5.4")
             const output = JSON.parse((result as { output: string }).output)
             assert.equal(output.profile, "build")
             assert.equal(output.id, "w1")
@@ -374,9 +374,9 @@ test("paseo_worker_update", async (t) => {
                     receivedOptions = opts
                     return {
                         id: "w2",
-                        provider: "anthropic",
+                        provider: "opencode",
                         cwd: "/tmp",
-                        model: "claude-3",
+                        model: "anthropic/claude-3",
                         status: "running" as const,
                         title: null,
                     }
@@ -389,8 +389,8 @@ test("paseo_worker_update", async (t) => {
 
             assert.equal(receivedOptions.profile, "review")
             assert.equal(receivedOptions.modeId, "review")
-            assert.equal(receivedOptions.provider, "anthropic")
-            assert.equal(receivedOptions.model, "claude-3")
+            assert.equal(receivedOptions.provider, "opencode")
+            assert.equal(receivedOptions.model, "anthropic/claude-3")
         })
 
         await t.test("normalizes empty/whitespace profile to build", async () => {
@@ -416,6 +416,42 @@ test("paseo_worker_update", async (t) => {
 
             assert.equal(receivedOptions.profile, "build")
             assert.equal(receivedOptions.modeId, "build")
+            assert.equal(receivedOptions.provider, "opencode")
+            assert.equal(receivedOptions.model, "openai/gpt-5.4")
+        })
+
+        await t.test("uses opencode provider and omits model for partial profile model metadata", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w-partial",
+                        provider: "opencode",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient([
+                {
+                    name: "partial",
+                    description: "Partial agent",
+                    mode: "primary",
+                    model: { providerID: "openai", modelID: null },
+                },
+            ])
+
+            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            await toolDef.execute({ profile: "partial" }, mockContext())
+
+            assert.equal(receivedOptions.profile, "partial")
+            assert.equal(receivedOptions.modeId, "partial")
+            assert.equal(receivedOptions.provider, "opencode")
+            assert.equal(receivedOptions.model, undefined)
         })
 
         await t.test("throws clear error for unknown profile", async () => {
@@ -438,7 +474,7 @@ test("paseo_worker_update", async (t) => {
                     receivedOptions = opts
                     return {
                         id: "w4",
-                        provider: "openai",
+                        provider: "opencode",
                         cwd: "/tmp",
                         model: null,
                         status: "running" as const,

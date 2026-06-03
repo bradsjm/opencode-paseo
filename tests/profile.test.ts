@@ -127,7 +127,7 @@ test("resolveProfile", async (t) => {
 // ─── profileToWorkerFields ───────────────────────────────────────────────────
 
 test("profileToWorkerFields", async (t) => {
-    await t.test("maps profile name to modeId and model fields", () => {
+    await t.test("maps profile name to opencode provider and joined model string", () => {
         const result = profileToWorkerFields({
             name: "build",
             description: "Build agent",
@@ -137,11 +137,11 @@ test("profileToWorkerFields", async (t) => {
             prompt: null,
         })
         assert.equal(result.modeId, "build")
-        assert.equal(result.provider, "openai")
-        assert.equal(result.model, "gpt-5.4")
+        assert.equal(result.provider, "opencode")
+        assert.equal(result.model, "openai/gpt-5.4")
     })
 
-    await t.test("omits provider when null", () => {
+    await t.test("omits model when providerID is missing", () => {
         const result = profileToWorkerFields({
             name: "custom",
             description: null,
@@ -151,11 +151,11 @@ test("profileToWorkerFields", async (t) => {
             prompt: null,
         })
         assert.equal(result.modeId, "custom")
-        assert.equal(result.provider, undefined)
-        assert.equal(result.model, "some-model")
+        assert.equal(result.provider, "opencode")
+        assert.equal(result.model, undefined)
     })
 
-    await t.test("omits model when null", () => {
+    await t.test("omits model when modelID is missing", () => {
         const result = profileToWorkerFields({
             name: "custom",
             description: null,
@@ -165,11 +165,11 @@ test("profileToWorkerFields", async (t) => {
             prompt: null,
         })
         assert.equal(result.modeId, "custom")
-        assert.equal(result.provider, "anthropic")
+        assert.equal(result.provider, "opencode")
         assert.equal(result.model, undefined)
     })
 
-    await t.test("omits both provider and model when both null", () => {
+    await t.test("keeps opencode provider and omits model when both model parts are null", () => {
         const result = profileToWorkerFields({
             name: "bare",
             description: null,
@@ -179,7 +179,7 @@ test("profileToWorkerFields", async (t) => {
             prompt: null,
         })
         assert.equal(result.modeId, "bare")
-        assert.equal(result.provider, undefined)
+        assert.equal(result.provider, "opencode")
         assert.equal(result.model, undefined)
     })
 })
