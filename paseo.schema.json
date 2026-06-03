@@ -1,0 +1,102 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "OpenCode Paseo Plugin Configuration",
+    "description": "Configuration for the opencode-paseo plugin",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable or disable the Paseo plugin"
+        },
+        "debug": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable debug logging"
+        },
+        "daemon": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Paseo daemon connection settings",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "default": "127.0.0.1",
+                    "description": "Daemon host address (localhost only for MVP)"
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "default": 6767,
+                    "description": "Daemon WebSocket port"
+                },
+                "connectionTimeoutMs": {
+                    "type": "integer",
+                    "minimum": 500,
+                    "maximum": 30000,
+                    "default": 3000,
+                    "description": "Connection timeout in milliseconds"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "Optional bearer token for daemon authentication"
+                }
+            }
+        },
+        "output": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Output limits for tool responses",
+            "properties": {
+                "maxInboxItems": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "default": 100,
+                    "description": "Maximum inbox items returned per tool call"
+                },
+                "maxSummaryLength": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 5000,
+                    "default": 500,
+                    "description": "Maximum character length for event summaries"
+                }
+            }
+        },
+        "notifications": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Notification and TUI toast settings",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable TUI notifications for Paseo events"
+                },
+                "blockingOnly": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Only notify for blocking events (e.g., pending permissions)"
+                }
+            }
+        },
+        "agents": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Default agent configuration hints",
+            "properties": {
+                "defaultAgent": {
+                    "type": "string",
+                    "description": "Default agent name for new workers"
+                },
+                "defaultModel": {
+                    "type": "string",
+                    "description": "Default model for new workers"
+                }
+            }
+        }
+    }
+}
