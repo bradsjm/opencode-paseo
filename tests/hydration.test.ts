@@ -5,6 +5,8 @@ import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
 import { hydrate } from "../lib/hydration/hydrate.js"
 
+const outputConfig = { maxInboxItems: 100, maxSummaryLength: 32 }
+
 // ─── Mock Paseo Transport ────────────────────────────────────────────────────
 
 function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTransport {
@@ -115,7 +117,7 @@ test("hydrate", async (t) => {
         const state = createPluginState()
         const client = createMockTransport()
 
-        const result = await hydrate(state, client, logger)
+        const result = await hydrate(state, client, logger, outputConfig)
 
         assert.equal(result.workers, 2)
         assert.equal(result.terminals, 1)
@@ -129,12 +131,41 @@ test("hydrate", async (t) => {
         const state = createPluginState()
         const client = createMockTransport()
 
-        const result = await hydrate(state, client, logger)
+        const result = await hydrate(state, client, logger, outputConfig)
 
         // w2 is blocked = 1 blocking event
         assert.ok(result.inboxSeeded >= 1)
         const blockingEvents = Array.from(state.inbox.values()).filter((e) => e.blocking)
         assert.ok(blockingEvents.length >= 1)
+        assert.equal(blockingEvents[0]?.kind, "worker.blocked")
+    })
+
+    await t.test("seeds permission.requested for permission-blocked workers", async () => {
+        const state = createPluginState()
+        const client = createMockTransport({
+            fetchAgents: async () => [
+                {
+                    id: "w-perm",
+                    title: "Worker Permission",
+                    provider: "general",
+                    status: "running",
+                    cwd: "/tmp",
+                    model: null,
+                    labels: {},
+                    requiresAttention: true,
+                    attentionReason: "A very long permission request summary that should truncate",
+                    pendingPermissions: [{ id: "perm-1", type: "write" }],
+                },
+            ],
+        })
+
+        await hydrate(state, client, logger, outputConfig)
+
+        const event = state.inbox.get("hydration-permission-perm-1")
+        assert.ok(event)
+        assert.equal(event.kind, "permission.requested")
+        assert.equal(event.metadata?.permissionId, "perm-1")
+        assert.ok(event.summary.length <= outputConfig.maxSummaryLength)
     })
 
     await t.test("handles missing server info gracefully", async () => {
@@ -143,7 +174,7 @@ test("hydrate", async (t) => {
             getServerInfo: () => null,
         })
 
-        const result = await hydrate(state, client, logger)
+        const result = await hydrate(state, client, logger, outputConfig)
 
         // Still proceeds with agent/terminal hydration
         assert.equal(result.workers, 2)
@@ -158,7 +189,7 @@ test("hydrate", async (t) => {
             },
         })
 
-        const result = await hydrate(state, client, logger)
+        const result = await hydrate(state, client, logger, outputConfig)
 
         assert.equal(result.workers, 0)
         assert.equal(result.terminals, 1) // terminals still work
@@ -173,7 +204,7 @@ test("hydrate", async (t) => {
             },
         })
 
-        const result = await hydrate(state, client, logger)
+        const result = await hydrate(state, client, logger, outputConfig)
 
         assert.equal(result.workers, 2) // agents still work
         assert.equal(result.terminals, 0)
@@ -184,11 +215,11 @@ test("hydrate", async (t) => {
         const state = createPluginState()
         const client = createMockTransport()
 
-        await hydrate(state, client, logger)
+        await hydrate(state, client, logger, outputConfig)
         const firstCount = state.inbox.size
 
         // Re-hydrate with same data
-        await hydrate(state, client, logger)
+        await hydrate(state, client, logger, outputConfig)
         assert.equal(state.inbox.size, firstCount) // dedup prevents duplicates
     })
 
@@ -213,7 +244,7 @@ test("hydrate", async (t) => {
             ],
         })
 
-        await hydrate(state, client, logger)
+        await hydrate(state, client, logger, outputConfig)
 
         const worker = state.workers.get("w-rich")
         assert.ok(worker)

@@ -89,7 +89,12 @@ test("createDaemonEventHandler", async (t) => {
 
         handler({
             type: "permission.requested",
-            payload: { workerId: "w1", summary: "Write permission needed" },
+            payload: {
+                workerId: "w1",
+                permissionId: "perm-1",
+                request: { id: "perm-1", type: "write" },
+                summary: "Write permission needed",
+            },
         })
 
         const event = Array.from(state.inbox.values())[0]
@@ -97,13 +102,16 @@ test("createDaemonEventHandler", async (t) => {
         assert.equal(event.blocking, true)
     })
 
-    await t.test("ignores unknown event types", () => {
+    await t.test("inserts daemon.connected event into inbox", () => {
         const state = createPluginState()
         const handler = createDaemonEventHandler(state, logger, mockConfig)
 
-        handler({ type: "unknown.event", payload: {} })
+        handler({ type: "daemon.connected", payload: {} })
 
-        assert.equal(state.inbox.size, 0)
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(state.connectionStatus, "connected")
+        assert.equal(event.kind, "daemon.connected")
+        assert.equal(event.resourceId, "daemon")
     })
 
     await t.test("deduplicates events with same generated ID", () => {
@@ -124,19 +132,28 @@ test("createDaemonEventHandler", async (t) => {
         assert.equal(state.inbox.size, 2)
     })
 
-    await t.test("handles terminal.error as blocking", () => {
+    await t.test("inserts daemon.disconnected event into inbox", () => {
         const state = createPluginState()
         const handler = createDaemonEventHandler(state, logger, mockConfig)
 
-        handler({
-            type: "terminal.error",
-            payload: { terminalId: "t1", summary: "Terminal crashed" },
-        })
+        handler({ type: "daemon.disconnected", payload: {} })
 
         const event = Array.from(state.inbox.values())[0]
-        assert.equal(event.kind, "terminal.error")
-        assert.equal(event.blocking, true)
-        assert.equal(event.resourceId, "t1")
+        assert.equal(state.connectionStatus, "error")
+        assert.equal(state.lastError, "Daemon disconnected")
+        assert.equal(event.kind, "daemon.disconnected")
+        assert.equal(event.resourceId, "daemon")
+    })
+
+    await t.test("handles daemon.error by updating diagnostics without inbox insert", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({ type: "daemon.error", payload: { message: "Daemon exploded" } })
+
+        assert.equal(state.connectionStatus, "error")
+        assert.equal(state.lastError, "Daemon exploded")
+        assert.equal(state.inbox.size, 0)
     })
 
     await t.test("syncs Phase 3 worker fields from agent payload", () => {
@@ -330,6 +347,7 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
             payload: {
                 workerId: "w1",
                 permissionId: "perm-1",
+                request: { id: "perm-1", type: "write" },
                 summary: "Write permission needed",
             },
         })
@@ -358,21 +376,6 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
         assert.equal(event.metadata?.suggestedTool, "paseo_worker_send")
     })
 
-    await t.test("terminal.error includes action metadata", () => {
-        const state = createPluginState()
-        const handler = createDaemonEventHandler(state, logger, mockConfig)
-
-        handler({
-            type: "terminal.error",
-            payload: { terminalId: "t1", summary: "Terminal crashed" },
-        })
-
-        const event = Array.from(state.inbox.values())[0]
-        assert.equal(event.blocking, true)
-        assert.equal(event.metadata?.actionKind, "notify-only")
-        assert.equal(event.metadata?.terminalId, "t1")
-    })
-
     await t.test("non-blocking events have no action metadata", () => {
         const state = createPluginState()
         const handler = createDaemonEventHandler(state, logger, mockConfig)
@@ -385,6 +388,37 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
         const event = Array.from(state.inbox.values())[0]
         assert.equal(event.blocking, false)
         assert.equal(event.metadata?.actionKind, undefined)
+    })
+
+    await t.test("truncates stored live-event summaries", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, {
+            ...mockConfig,
+            output: { ...mockConfig.output, maxSummaryLength: 10 },
+        })
+
+        handler({
+            type: "worker.finished",
+            payload: { workerId: "w1", summary: "123456789012345" },
+        })
+
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.summary, "123456789…")
+    })
+
+    await t.test("evicts oldest inbox events when maxInboxItems is exceeded", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, {
+            ...mockConfig,
+            output: { maxInboxItems: 1, maxSummaryLength: 500 },
+        })
+
+        handler({ type: "worker.started", payload: { workerId: "w1", summary: "first" } })
+        handler({ type: "worker.finished", payload: { workerId: "w2", summary: "second" } })
+
+        assert.equal(state.inbox.size, 1)
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.resourceId, "w2")
     })
 })
 

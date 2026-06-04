@@ -27,25 +27,26 @@ test("shouldNudge", async (t) => {
         assert.equal(shouldNudge("permission.resolved", enabledBlockingOnly), false)
     })
 
+    await t.test("never nudges daemon lifecycle events", () => {
+        assert.equal(shouldNudge("daemon.connected", enabledAll), false)
+        assert.equal(shouldNudge("daemon.disconnected", enabledAll), false)
+    })
+
     await t.test("blocking events nudge when blockingOnly is true", () => {
         assert.equal(shouldNudge("worker.blocked", enabledBlockingOnly), true)
         assert.equal(shouldNudge("permission.requested", enabledBlockingOnly), true)
-        assert.equal(shouldNudge("terminal.error", enabledBlockingOnly), true)
     })
 
     await t.test("non-blocking events do not nudge when blockingOnly is true", () => {
         assert.equal(shouldNudge("worker.finished", enabledBlockingOnly), false)
         assert.equal(shouldNudge("worker.failed", enabledBlockingOnly), false)
-        assert.equal(shouldNudge("terminal.exited", enabledBlockingOnly), false)
     })
 
     await t.test("all eligible events nudge when blockingOnly is false", () => {
         assert.equal(shouldNudge("worker.blocked", enabledAll), true)
         assert.equal(shouldNudge("permission.requested", enabledAll), true)
-        assert.equal(shouldNudge("terminal.error", enabledAll), true)
         assert.equal(shouldNudge("worker.finished", enabledAll), true)
         assert.equal(shouldNudge("worker.failed", enabledAll), true)
-        assert.equal(shouldNudge("terminal.exited", enabledAll), true)
     })
 })
 
@@ -69,11 +70,8 @@ test("formatNudgeMessage", async (t) => {
         )
     })
 
-    await t.test("handles terminal event kind", () => {
-        const msg = formatNudgeMessage("terminal.exited", "t1", "Terminal process exited")
-        assert.equal(
-            msg,
-            "[paseo:terminal.exited] Terminal process exited (resource: t1)",
-        )
+    await t.test("handles daemon lifecycle kind", () => {
+        const msg = formatNudgeMessage("daemon.disconnected", "daemon", "Daemon disconnected")
+        assert.equal(msg, "[paseo:daemon.disconnected] Daemon disconnected (resource: daemon)")
     })
 })

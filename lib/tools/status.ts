@@ -22,7 +22,6 @@ export function createStatusTool(
             // Derive actionable blocking summary
             let permissionRequests = 0
             let blockedWorkers = 0
-            let terminalErrors = 0
 
             for (const evt of blockingEvents) {
                 const actionKind = evt.metadata?.actionKind as string | undefined
@@ -30,8 +29,6 @@ export function createStatusTool(
                     permissionRequests++
                 } else if (actionKind === "worker-question" || evt.kind === "worker.blocked") {
                     blockedWorkers++
-                } else if (actionKind === "notify-only" || evt.kind === "terminal.error") {
-                    terminalErrors++
                 }
             }
 
@@ -51,7 +48,6 @@ export function createStatusTool(
                             total: blockingEvents.length,
                             permissionRequests,
                             blockedWorkers,
-                            terminalErrors,
                         },
                     },
                     null,
