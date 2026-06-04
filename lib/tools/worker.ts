@@ -24,9 +24,18 @@ import {
     recordCreatedWorker,
     upsertWorker,
     mapAgentToWorkerSummary,
-    unbindWorkerFromSessions,
+    removeWorkerFromState,
     getBlockingAction,
 } from "../state/state.js"
+
+function isWorkerMissingUpstreamError(err: unknown): err is Error {
+    return (
+        err instanceof Error &&
+        /\b(agent|worker)\b.*\bnot found\b|\bnot found\b.*\b(agent|worker)\b/i.test(
+            err.message,
+        )
+    )
+}
 
 // ─── Worker List Tool ────────────────────────────────────────────────────────
 
@@ -44,14 +53,24 @@ export function createWorkerListTool(
 
             // Refresh from daemon
             try {
+                const preexistingWorkerIds = new Set(state.workers.keys())
                 const agents = await client.fetchAgents(undefined)
+                const fetchedWorkerIds = new Set<string>()
+
                 for (const a of agents) {
+                    fetchedWorkerIds.add(a.id)
                     const worker = mapAgentToWorkerSummary(a)
                     const existing = state.workers.get(a.id)
                     if (existing) {
                         worker.unreadEventCount = existing.unreadEventCount
                     }
                     upsertWorker(state, worker)
+                }
+
+                for (const workerId of preexistingWorkerIds) {
+                    if (!fetchedWorkerIds.has(workerId)) {
+                        removeWorkerFromState(state, workerId)
+                    }
                 }
             } catch (err: any) {
                 logger.warn("Worker list refresh failed", err.message)
@@ -648,8 +667,7 @@ export function createWorkerCancelTool(
                 await client.killWorker(args.workerId)
 
                 // Permanent removal: delete from state and unbind sessions
-                state.workers.delete(args.workerId)
-                unbindWorkerFromSessions(state, args.workerId)
+                removeWorkerFromState(state, args.workerId)
 
                 return {
                     title: "Worker Killed",
@@ -708,18 +726,29 @@ export function createWorkerArchiveTool(
                 throw new Error(`Worker "${args.workerId}" not found in local state`)
             }
 
-            const result = await client.archiveWorker(args.workerId)
+            let archivedAt: string | null = null
+            let alreadyRemovedUpstream = false
+
+            try {
+                const result = await client.archiveWorker(args.workerId)
+                archivedAt = result.archivedAt
+            } catch (err: unknown) {
+                if (!isWorkerMissingUpstreamError(err)) {
+                    throw err
+                }
+                alreadyRemovedUpstream = true
+            }
 
             // Remove from local state and clean up session bindings
-            state.workers.delete(args.workerId)
-            unbindWorkerFromSessions(state, args.workerId)
+            removeWorkerFromState(state, args.workerId)
 
             return {
                 title: "Worker Archived",
                 output: JSON.stringify(
                     {
-                        workerId: result.workerId,
-                        archivedAt: result.archivedAt,
+                        workerId: args.workerId,
+                        archivedAt,
+                        alreadyRemovedUpstream,
                     },
                     null,
                     2,

@@ -1,13 +1,15 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createPluginState } from "../lib/state/state.js"
+import { createPluginState, insertInboxEvent } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 import { Logger } from "../lib/logger.js"
 import {
+    createWorkerArchiveTool,
     createWorkerCancelTool,
     createWorkerCreateTool,
     createWorkerInspectTool,
+    createWorkerListTool,
     createWorkerUpdateTool,
     createWorkerWaitTool,
 } from "../lib/tools/worker.js"
@@ -527,6 +529,168 @@ test("paseo_worker_cancel", async (t) => {
         assert.match(toolDef.description, /destructive and irreversible/i)
         const forceKillArg = toolDef.args.forceKill as { description?: string }
         assert.match(forceKillArg.description ?? "", /capture any needed output or status first/i)
+    })
+})
+
+// ─── Archive Tool Tests ──────────────────────────────────────────────────────
+
+test("paseo_worker_archive", async (t) => {
+    const logger = new Logger(false)
+
+    await t.test("successful archive removes local worker state and actionable refs", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        insertInboxEvent(state, {
+            id: "evt-1",
+            kind: "worker.blocked",
+            resourceId: "w1",
+            blocking: true,
+            summary: "needs approval",
+            read: false,
+            timestamp: Date.now(),
+        })
+
+        const toolDef = createWorkerArchiveTool(state, createMockTransport(), logger)
+        const result = await toolDef.execute({ workerId: "w1" }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(state.workers.has("w1"), false)
+        assert.equal(state.sessions.get("sess-1")?.createdWorkerIds.has("w1"), false)
+        assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-1"), false)
+        assert.equal(state.sessions.get("sess-1")?.pendingPermissions.has("evt-1"), false)
+        assert.equal(state.inbox.has("evt-1"), true)
+        assert.equal(output.workerId, "w1")
+        assert.equal(output.alreadyRemovedUpstream, false)
+        assert.equal(typeof output.archivedAt, "string")
+    })
+
+    await t.test("upstream not found still cleans local state", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        insertInboxEvent(state, {
+            id: "evt-1",
+            kind: "worker.started",
+            resourceId: "w1",
+            blocking: false,
+            summary: "started",
+            read: false,
+            timestamp: Date.now(),
+        })
+        const client = createMockTransport({
+            archiveWorker: async () => {
+                throw new Error("Agent not found")
+            },
+        })
+
+        const toolDef = createWorkerArchiveTool(state, client, logger)
+        const result = await toolDef.execute({ workerId: "w1" }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(state.workers.has("w1"), false)
+        assert.equal(state.sessions.get("sess-1")?.createdWorkerIds.has("w1"), false)
+        assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-1"), false)
+        assert.equal(state.inbox.has("evt-1"), true)
+        assert.equal(output.workerId, "w1")
+        assert.equal(output.archivedAt, null)
+        assert.equal(output.alreadyRemovedUpstream, true)
+    })
+
+    await t.test("non-not-found archive errors still fail and keep local state", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        const client = createMockTransport({
+            archiveWorker: async () => {
+                throw new Error("daemon unavailable")
+            },
+        })
+
+        const toolDef = createWorkerArchiveTool(state, client, logger)
+        await assert.rejects(() => toolDef.execute({ workerId: "w1" }, mockContext()), /daemon unavailable/)
+        assert.equal(state.workers.has("w1"), true)
+        assert.equal(state.sessions.get("sess-1")?.createdWorkerIds.has("w1"), true)
+    })
+})
+
+// ─── List Tool Tests ─────────────────────────────────────────────────────────
+
+test("paseo_worker_list", async (t) => {
+    const logger = new Logger(false)
+
+    await t.test("successful refresh prunes workers missing from daemon results", async () => {
+        const state = createPluginState()
+        const stale = seedWorker(state, "w-stale")
+        stale.status = "finished"
+        seedWorker(state, "w-live")
+        state.sessions.get("sess-1")?.createdWorkerIds.add("w-stale")
+        insertInboxEvent(state, {
+            id: "evt-stale",
+            kind: "worker.blocked",
+            resourceId: "w-stale",
+            blocking: true,
+            summary: "stale worker event",
+            read: false,
+            timestamp: Date.now(),
+        })
+
+        const client = createMockTransport({
+            fetchAgents: async () => [
+                {
+                    id: "w-live",
+                    provider: "test",
+                    cwd: "/tmp",
+                    model: null,
+                    status: "running",
+                    title: "Live Worker",
+                    labels: {},
+                    pendingPermissions: [],
+                },
+                {
+                    id: "w-new",
+                    provider: "test",
+                    cwd: "/tmp",
+                    model: null,
+                    status: "idle",
+                    title: "New Worker",
+                    labels: {},
+                    pendingPermissions: [],
+                },
+            ],
+        })
+
+        const toolDef = createWorkerListTool(state, client, logger)
+        const result = await toolDef.execute({}, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(state.workers.has("w-stale"), false)
+        assert.equal(state.workers.has("w-live"), true)
+        assert.equal(state.workers.has("w-new"), true)
+        assert.equal(state.sessions.get("sess-1")?.createdWorkerIds.has("w-stale"), false)
+        assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-stale"), false)
+        assert.equal(state.sessions.get("sess-1")?.pendingPermissions.has("evt-stale"), false)
+        assert.equal(state.inbox.has("evt-stale"), true)
+        assert.equal(output.count, 2)
+        assert.deepEqual(
+            output.workers.map((worker: { id: string }) => worker.id).sort(),
+            ["w-live", "w-new"],
+        )
+    })
+
+    await t.test("failed refresh does not prune local workers", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        const client = createMockTransport({
+            fetchAgents: async () => {
+                throw new Error("fetch failed")
+            },
+        })
+
+        const toolDef = createWorkerListTool(state, client, logger)
+        const result = await toolDef.execute({}, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(state.workers.has("w1"), true)
+        assert.equal(output.count, 1)
+        assert.equal(output.workers[0].id, "w1")
     })
 })
 

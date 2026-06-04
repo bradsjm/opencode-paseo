@@ -14,6 +14,7 @@ import {
     recordCreatedWorker,
     mapAgentToWorkerSummary,
     removeSession,
+    removeWorkerFromState,
     unbindWorkerFromSessions,
     unbindTerminalFromSessions,
     recordCreatedTerminal,
@@ -487,6 +488,110 @@ test("removeSession", async (t) => {
         // Global entries should still exist
         assert.equal(state.workers.size, 1)
         assert.equal(state.terminals.size, 1)
+    })
+})
+
+// ─── removeWorkerFromState ───────────────────────────────────────────────────
+
+test("removeWorkerFromState", async (t) => {
+    await t.test(
+        "removes worker, clears session bindings/actionable refs, and preserves inbox history",
+        () => {
+            const state = createPluginState()
+            const session = getOrCreateSession(state, "sess-1", "/project")
+            const otherSession = getOrCreateSession(state, "sess-2", "/project")
+
+            const worker: WorkerSummary = {
+                id: "w1",
+                title: "worker",
+                agent: "general",
+                provider: "general",
+                model: null,
+                currentModeId: null,
+                status: "running",
+                cwd: "/tmp",
+                labels: [],
+                pendingPermissions: [],
+                pendingPermissionIds: [],
+                runtimeInfo: null,
+                persistence: null,
+                unreadEventCount: 0,
+            }
+            const otherWorker: WorkerSummary = {
+                ...worker,
+                id: "w2",
+                title: "other worker",
+            }
+
+            recordCreatedWorker(state, "sess-1", worker)
+            recordCreatedWorker(state, "sess-2", worker)
+            recordCreatedWorker(state, "sess-2", otherWorker)
+
+            insertInboxEvent(state, {
+                id: "evt-1",
+                kind: "worker.started",
+                resourceId: "w1",
+                blocking: false,
+                summary: "worker event",
+                read: false,
+                timestamp: Date.now(),
+            })
+            insertInboxEvent(state, {
+                id: "evt-2",
+                kind: "worker.blocked",
+                resourceId: "w1",
+                blocking: true,
+                summary: "permission needed",
+                read: false,
+                timestamp: Date.now(),
+            })
+            insertInboxEvent(state, {
+                id: "evt-3",
+                kind: "worker.started",
+                resourceId: "w2",
+                blocking: false,
+                summary: "other worker event",
+                read: false,
+                timestamp: Date.now(),
+            })
+
+            removeWorkerFromState(state, "w1")
+
+            assert.equal(state.workers.has("w1"), false)
+            assert.equal(state.workers.has("w2"), true)
+            assert.equal(session.createdWorkerIds.has("w1"), false)
+            assert.equal(otherSession.createdWorkerIds.has("w1"), false)
+            assert.equal(otherSession.createdWorkerIds.has("w2"), true)
+            assert.equal(session.unreadEvents.size, 0)
+            assert.equal(session.pendingPermissions.size, 0)
+            assert.equal(otherSession.unreadEvents.has("evt-1"), false)
+            assert.equal(otherSession.unreadEvents.has("evt-2"), false)
+            assert.equal(otherSession.unreadEvents.has("evt-3"), true)
+            assert.equal(otherSession.pendingPermissions.has("evt-2"), false)
+            assert.equal(state.inbox.has("evt-1"), true)
+            assert.equal(state.inbox.has("evt-2"), true)
+            assert.equal(state.inbox.has("evt-3"), true)
+        },
+    )
+
+    await t.test("is idempotent for missing workers while still clearing stale session refs", () => {
+        const state = createPluginState()
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("ghost")
+        session.unreadEvents.set("evt-ghost", {
+            id: "evt-ghost",
+            kind: "worker.finished",
+            resourceId: "ghost",
+            blocking: false,
+            summary: "ghost worker",
+            read: false,
+            timestamp: Date.now(),
+        })
+
+        removeWorkerFromState(state, "ghost")
+
+        assert.equal(session.createdWorkerIds.has("ghost"), false)
+        assert.equal(session.unreadEvents.has("evt-ghost"), false)
     })
 })
 

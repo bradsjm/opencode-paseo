@@ -1,5 +1,6 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
+import { removeWorkerFromState } from "../state/state.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 
@@ -151,6 +152,10 @@ export function createWorktreeArchiveTool(
                 repoRoot: args.repoRoot ?? cwd,
                 branchName: args.branchName,
             })
+
+            for (const workerId of result.removedAgents ?? []) {
+                removeWorkerFromState(state, workerId)
+            }
 
             return {
                 title: "Worktree Archived",

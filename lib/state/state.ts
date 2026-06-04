@@ -167,6 +167,30 @@ export function unbindWorkerFromSessions(state: PluginState, workerId: string): 
 }
 
 /**
+ * Permanently remove a worker from local state and clear session-scoped
+ * actionable references for that worker. Global inbox history is preserved.
+ */
+export function removeWorkerFromState(state: PluginState, workerId: string): void {
+    state.workers.delete(workerId)
+
+    for (const session of state.sessions.values()) {
+        session.createdWorkerIds.delete(workerId)
+
+        for (const [eventId, event] of session.unreadEvents.entries()) {
+            if (event.resourceId === workerId) {
+                session.unreadEvents.delete(eventId)
+            }
+        }
+
+        for (const [eventId, event] of session.pendingPermissions.entries()) {
+            if (event.resourceId === workerId) {
+                session.pendingPermissions.delete(eventId)
+            }
+        }
+    }
+}
+
+/**
  * Remove a terminal ID from all session bindings.
  * Used when a terminal is killed or otherwise permanently removed.
  * Does NOT delete the terminal from state.terminals — caller handles that.
