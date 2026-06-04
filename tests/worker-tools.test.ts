@@ -9,6 +9,7 @@ import {
     createWorkerCancelTool,
     createWorkerCreateTool,
     createWorkerInspectTool,
+    createWorkerLaunchStatusTool,
     createWorkerListTool,
     createWorkerUpdateTool,
     createWorkerWaitTool,
@@ -17,6 +18,7 @@ import type { OpencodeClient } from "../lib/profile.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 import type { DaemonEvent, DaemonEventCallback } from "../lib/transport/types.js"
 import type { PluginConfig } from "../lib/config.js"
+import { createWorkerLaunchQueueController } from "../lib/worker-launch/queue.js"
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
@@ -164,6 +166,20 @@ function mockContext(): ToolContext {
         metadata: () => {},
         ask: async () => {},
     }
+}
+
+function createDeferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void
+    let reject!: (reason?: unknown) => void
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res
+        reject = rej
+    })
+    return { promise, resolve, reject }
+}
+
+async function flushAsyncWork(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve))
 }
 
 // ─── Wait Tool Tests ─────────────────────────────────────────────────────────
@@ -605,7 +621,10 @@ test("paseo_worker_archive", async (t) => {
         })
 
         const toolDef = createWorkerArchiveTool(state, client, logger)
-        await assert.rejects(() => toolDef.execute({ workerId: "w1" }, mockContext()), /daemon unavailable/)
+        await assert.rejects(
+            () => toolDef.execute({ workerId: "w1" }, mockContext()),
+            /daemon unavailable/,
+        )
         assert.equal(state.workers.has("w1"), true)
         assert.equal(state.sessions.get("sess-1")?.createdWorkerIds.has("w1"), true)
     })
@@ -669,10 +688,10 @@ test("paseo_worker_list", async (t) => {
         assert.equal(state.sessions.get("sess-1")?.pendingPermissions.has("evt-stale"), false)
         assert.equal(state.inbox.has("evt-stale"), true)
         assert.equal(output.count, 2)
-        assert.deepEqual(
-            output.workers.map((worker: { id: string }) => worker.id).sort(),
-            ["w-live", "w-new"],
-        )
+        assert.deepEqual(output.workers.map((worker: { id: string }) => worker.id).sort(), [
+            "w-live",
+            "w-new",
+        ])
     })
 
     await t.test("failed refresh does not prune local workers", async () => {
@@ -791,41 +810,56 @@ test("paseo_worker_update", async (t) => {
             app: {
                 agents: async () => ({ data: agents }),
             },
+            session: {
+                prompt: async () => ({ data: null }),
+            },
         } as unknown as OpencodeClient
     }
 
     test("paseo_worker_create", async (t) => {
         const logger = new Logger(false)
 
-        await t.test("defaults to build profile when no profile specified", async () => {
-            const state = createPluginState()
-            let receivedOptions: any = null
-            const client = createMockTransport({
-                createWorker: async (opts) => {
-                    receivedOptions = opts
-                    return {
-                        id: "w1",
-                        provider: "opencode",
-                        cwd: "/tmp",
-                        model: "openai/gpt-5.4",
-                        status: "running" as const,
-                        title: null,
-                    }
-                },
-            })
-            const opencode = mockOpencodeClient()
+        await t.test(
+            "returns queued receipt and defaults to build profile when no profile specified",
+            async () => {
+                const state = createPluginState()
+                let receivedOptions: any = null
+                const client = createMockTransport({
+                    createWorker: async (opts) => {
+                        receivedOptions = opts
+                        return {
+                            id: "w1",
+                            provider: "opencode",
+                            cwd: "/tmp",
+                            model: "openai/gpt-5.4",
+                            status: "running" as const,
+                            title: null,
+                        }
+                    },
+                })
+                const opencode = mockOpencodeClient()
+                const workerLaunchQueue = createWorkerLaunchQueueController(
+                    state,
+                    client,
+                    opencode,
+                    logger,
+                )
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
-            const result = await toolDef.execute({}, mockContext())
+                const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+                const result = await toolDef.execute({}, mockContext())
 
-            assert.equal(receivedOptions.profile, "build")
-            assert.equal(receivedOptions.modeId, "build")
-            assert.equal(receivedOptions.provider, "opencode")
-            assert.equal(receivedOptions.model, "openai/gpt-5.4")
-            const output = JSON.parse((result as { output: string }).output)
-            assert.equal(output.profile, "build")
-            assert.equal(output.id, "w1")
-        })
+                assert.equal(receivedOptions.profile, "build")
+                assert.equal(receivedOptions.modeId, "build")
+                assert.equal(receivedOptions.provider, "opencode")
+                assert.equal(receivedOptions.model, "openai/gpt-5.4")
+                const output = JSON.parse((result as { output: string }).output)
+                assert.equal(output.profile, "build")
+                assert.equal(output.status, "queued")
+                assert.equal(output.position, 1)
+                assert.equal(typeof output.launchId, "string")
+                assert.equal("id" in output, false)
+            },
+        )
 
         await t.test("uses specified profile", async () => {
             const state = createPluginState()
@@ -844,8 +878,14 @@ test("paseo_worker_update", async (t) => {
                 },
             })
             const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
             await toolDef.execute({ profile: "review" }, mockContext())
 
             assert.equal(receivedOptions.profile, "review")
@@ -871,8 +911,14 @@ test("paseo_worker_update", async (t) => {
                 },
             })
             const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
             await toolDef.execute({ profile: "   " }, mockContext())
 
             assert.equal(receivedOptions.profile, "build")
@@ -907,8 +953,14 @@ test("paseo_worker_update", async (t) => {
                         model: { providerID: "openai", modelID: null },
                     },
                 ])
+                const workerLaunchQueue = createWorkerLaunchQueueController(
+                    state,
+                    client,
+                    opencode,
+                    logger,
+                )
 
-                const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+                const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
                 await toolDef.execute({ profile: "partial" }, mockContext())
 
                 assert.equal(receivedOptions.profile, "partial")
@@ -922,8 +974,14 @@ test("paseo_worker_update", async (t) => {
             const state = createPluginState()
             const client = createMockTransport()
             const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
             await assert.rejects(
                 () => toolDef.execute({ profile: "nonexistent" }, mockContext()),
                 /Profile "nonexistent" not found\. Available profiles: build, review/,
@@ -947,42 +1005,242 @@ test("paseo_worker_update", async (t) => {
                 },
             })
             const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
-            await toolDef.execute(
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+            const result = await toolDef.execute(
                 {
                     initialPrompt: "Fix the bug",
-                    labels: { priority: "high" },
+                    labels: {
+                        priority: "high",
+                        "opencodePaseo.launchId": "user-launch",
+                        "opencodePaseo.sessionId": "user-session",
+                        "opencodePaseo.worktreeName": "user-worktree",
+                    },
+                    worktreeName: "repo-worktree",
                 },
                 mockContext(),
             )
 
+            const output = JSON.parse((result as { output: string }).output)
             assert.equal(receivedOptions.initialPrompt, "Fix the bug")
-            assert.deepEqual(receivedOptions.labels, { priority: "high" })
+            assert.deepEqual(receivedOptions.labels, {
+                priority: "high",
+                "opencodePaseo.launchId": output.launchId,
+                "opencodePaseo.sessionId": "sess-1",
+                "opencodePaseo.worktreeName": "repo-worktree",
+            })
         })
 
-        await t.test("binds worker to session after creation", async () => {
+        await t.test("reports queued position behind an active launch", async () => {
             const state = createPluginState()
+            const firstCreate = createDeferred<{
+                id: string
+                provider: string
+                cwd: string
+                model: string | null
+                status: "running"
+                title: null
+            }>()
+            let createCount = 0
             const client = createMockTransport({
-                createWorker: async () => ({
-                    id: "w5",
-                    provider: "openai",
-                    cwd: "/tmp",
-                    model: null,
-                    status: "running" as const,
-                    title: null,
-                }),
+                createWorker: async () => {
+                    createCount += 1
+                    if (createCount === 1) {
+                        return firstCreate.promise
+                    }
+
+                    return {
+                        id: "w6",
+                        provider: "openai",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
             })
             const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+            const first = JSON.parse(
+                ((await toolDef.execute({}, mockContext())) as { output: string }).output,
+            )
+            const second = JSON.parse(
+                ((await toolDef.execute({}, mockContext())) as { output: string }).output,
+            )
+
+            assert.equal(first.position, 1)
+            assert.equal(second.position, 2)
+            assert.equal(state.activeWorkerLaunchId, first.launchId)
+
+            firstCreate.resolve({
+                id: "w5",
+                provider: "openai",
+                cwd: "/tmp",
+                model: null,
+                status: "running",
+                title: null,
+            })
+            await flushAsyncWork()
+        })
+
+        await t.test("binds worker to session after queued launch completes", async () => {
+            const state = createPluginState()
+            const launchComplete = createDeferred<{
+                id: string
+                provider: string
+                cwd: string
+                model: string | null
+                status: "running"
+                title: null
+            }>()
+            const client = createMockTransport({
+                createWorker: async () => launchComplete.promise,
+            })
+            const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
+
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
             await toolDef.execute({}, mockContext())
+
+            launchComplete.resolve({
+                id: "w5",
+                provider: "openai",
+                cwd: "/tmp",
+                model: null,
+                status: "running",
+                title: null,
+            })
+            await flushAsyncWork()
 
             assert.ok(state.workers.has("w5"))
             const session = state.sessions.get("sess-1")
             assert.ok(session)
             assert.ok(session.createdWorkerIds.has("w5"))
         })
+
+        await t.test(
+            "paseo_worker_launch_status returns queued, starting, created, and failed states",
+            async () => {
+                const state = createPluginState()
+                const firstLaunch = createDeferred<{
+                    id: string
+                    provider: string
+                    cwd: string
+                    model: string | null
+                    status: "running"
+                    title: null
+                }>()
+                let callCount = 0
+                const client = createMockTransport({
+                    createWorker: async () => {
+                        callCount += 1
+                        if (callCount === 1) {
+                            return firstLaunch.promise
+                        }
+                        throw new Error("daemon unavailable")
+                    },
+                })
+                const opencode = mockOpencodeClient()
+                const workerLaunchQueue = createWorkerLaunchQueueController(
+                    state,
+                    client,
+                    opencode,
+                    logger,
+                )
+
+                const createTool = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+                const statusTool = createWorkerLaunchStatusTool(workerLaunchQueue, logger)
+
+                const first = JSON.parse(
+                    ((await createTool.execute({}, mockContext())) as { output: string }).output,
+                )
+                const second = JSON.parse(
+                    ((await createTool.execute({}, mockContext())) as { output: string }).output,
+                )
+
+                const queued = JSON.parse(
+                    (
+                        (await statusTool.execute(
+                            { launchId: second.launchId },
+                            mockContext(),
+                        )) as {
+                            output: string
+                        }
+                    ).output,
+                )
+                assert.equal(queued.status, "queued")
+                assert.equal(queued.position, 1)
+                assert.equal(queued.workerId, undefined)
+
+                const starting = JSON.parse(
+                    (
+                        (await statusTool.execute({ launchId: first.launchId }, mockContext())) as {
+                            output: string
+                        }
+                    ).output,
+                )
+                assert.equal(starting.status, "starting")
+                assert.equal(typeof starting.startedAt, "string")
+
+                firstLaunch.resolve({
+                    id: "w-started",
+                    provider: "opencode",
+                    cwd: "/tmp",
+                    model: null,
+                    status: "running",
+                    title: null,
+                })
+                await flushAsyncWork()
+
+                const created = JSON.parse(
+                    (
+                        (await statusTool.execute({ launchId: first.launchId }, mockContext())) as {
+                            output: string
+                        }
+                    ).output,
+                )
+                assert.equal(created.status, "created")
+                assert.equal(created.workerId, "w-started")
+                assert.equal(typeof created.finishedAt, "string")
+
+                await flushAsyncWork()
+                const failed = JSON.parse(
+                    (
+                        (await statusTool.execute(
+                            { launchId: second.launchId },
+                            mockContext(),
+                        )) as {
+                            output: string
+                        }
+                    ).output,
+                )
+                assert.equal(failed.status, "failed")
+                assert.match(failed.error, /daemon unavailable/)
+
+                await assert.rejects(
+                    () => statusTool.execute({ launchId: "missing-launch" }, mockContext()),
+                    /Worker launch "missing-launch" not found/,
+                )
+            },
+        )
     })
 
     await t.test("refreshes local state after successful update", async () => {

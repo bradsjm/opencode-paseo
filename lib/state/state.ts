@@ -8,6 +8,9 @@ import type {
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
 import { mapDaemonWorkerStatus } from "./status.js"
+
+const INTERNAL_WORKER_LABEL_PREFIX = "opencodePaseo."
+
 export {
     insertInboxEvent,
     markEventRead,
@@ -43,6 +46,9 @@ export function createPluginState(): PluginState {
         terminals: new Map(),
         workers: new Map(),
         inbox: new Map(),
+        workerLaunches: new Map(),
+        workerLaunchQueue: [],
+        activeWorkerLaunchId: null,
         eventCounter: 0,
     }
 }
@@ -55,6 +61,9 @@ export function resetPluginState(state: PluginState): void {
     state.terminals.clear()
     state.workers.clear()
     state.inbox.clear()
+    state.workerLaunches.clear()
+    state.workerLaunchQueue = []
+    state.activeWorkerLaunchId = null
     state.eventCounter = 0
 }
 
@@ -208,9 +217,11 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
 export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
     const rawLabels = agent.labels
     const labels: string[] = Array.isArray(rawLabels)
-        ? rawLabels
+        ? rawLabels.filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
         : rawLabels && typeof rawLabels === "object"
-          ? Object.keys(rawLabels)
+          ? Object.keys(rawLabels).filter(
+                (label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX),
+            )
           : []
 
     const pendingPermissions = agent.pendingPermissions ?? []

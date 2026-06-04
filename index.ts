@@ -19,6 +19,7 @@ import { createProfileListTool } from "./lib/tools/profile.js"
 import {
     createWorkerListTool,
     createWorkerCreateTool,
+    createWorkerLaunchStatusTool,
     createWorkerSendTool,
     createWorkerWaitTool,
     createWorkerCancelTool,
@@ -44,6 +45,7 @@ import {
 } from "./lib/tools/schedule.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 import { resetPluginState } from "./lib/state/state.js"
+import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
 
 const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
@@ -52,6 +54,7 @@ const server: Plugin = (async (ctx) => {
     const logger = new Logger(config.debug)
     const state = createPluginState()
     const client = new PaseoClient(config.daemon)
+    const workerLaunchQueue = createWorkerLaunchQueueController(state, client, ctx.client, logger)
 
     // Attempt connection to Paseo daemon
     try {
@@ -99,7 +102,8 @@ const server: Plugin = (async (ctx) => {
             paseo_permission_respond: createPermissionRespondTool(state, client, logger),
             paseo_profile_list: createProfileListTool(ctx.client, logger),
             paseo_worker_list: createWorkerListTool(state, client, logger),
-            paseo_worker_create: createWorkerCreateTool(state, client, ctx.client, logger),
+            paseo_worker_create: createWorkerCreateTool(ctx.client, workerLaunchQueue, logger),
+            paseo_worker_launch_status: createWorkerLaunchStatusTool(workerLaunchQueue, logger),
             paseo_worker_send: createWorkerSendTool(state, client, logger),
             paseo_worker_wait: createWorkerWaitTool(state, client, config, logger),
             paseo_worker_cancel: createWorkerCancelTool(state, client, logger),

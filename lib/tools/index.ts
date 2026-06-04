@@ -12,6 +12,7 @@ export { createPermissionRespondTool } from "./permission.js"
 export {
     createWorkerListTool,
     createWorkerCreateTool,
+    createWorkerLaunchStatusTool,
     createWorkerSendTool,
     createWorkerWaitTool,
     createWorkerCancelTool,

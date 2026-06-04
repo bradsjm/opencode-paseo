@@ -77,6 +77,28 @@ export interface SessionMapping {
     updatedAt: number
 }
 
+export type WorkerLaunchStatus = "queued" | "starting" | "created" | "failed"
+
+export interface WorkerLaunchRecord {
+    launchId: string
+    status: WorkerLaunchStatus
+    sessionId: string
+    projectRoot: string
+    profile: string
+    cwd: string
+    worktreeName: string | null
+    initialPrompt: string | null
+    labels: Record<string, string>
+    provider: string
+    model?: string
+    modeId: string
+    enqueuedAt: string
+    startedAt: string | null
+    finishedAt: string | null
+    workerId: string | null
+    error: string | null
+}
+
 // ─── Plugin State ────────────────────────────────────────────────────────────
 
 export interface CapabilitySnapshot {
@@ -108,6 +130,15 @@ export interface PluginState {
 
     /** Global inbox events (across sessions), keyed by event ID */
     inbox: Map<string, InboxEvent>
+
+    /** Known worker launch requests keyed by launch ID */
+    workerLaunches: Map<string, WorkerLaunchRecord>
+
+    /** FIFO queue of pending worker launch IDs */
+    workerLaunchQueue: string[]
+
+    /** Currently active worker launch ID, if any */
+    activeWorkerLaunchId: string | null
 
     /** Monotonic event counter for cursor-based pagination */
     eventCounter: number

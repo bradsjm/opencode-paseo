@@ -2,6 +2,7 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState, WorkerStatus, WorkerSummary } from "../state/types.js"
 import type { PluginConfig } from "../config.js"
 import { shouldNudge } from "../notifier.js"
+import type { WorkerLaunchQueueController } from "../worker-launch/queue.js"
 import type {
     DaemonEvent,
     MultiWorkerWaitResult,
@@ -20,8 +21,6 @@ import {
     DEFAULT_PROFILE,
 } from "../profile.js"
 import {
-    getOrCreateSession,
-    recordCreatedWorker,
     upsertWorker,
     mapAgentToWorkerSummary,
     removeWorkerFromState,
@@ -31,9 +30,7 @@ import {
 function isWorkerMissingUpstreamError(err: unknown): err is Error {
     return (
         err instanceof Error &&
-        /\b(agent|worker)\b.*\bnot found\b|\bnot found\b.*\b(agent|worker)\b/i.test(
-            err.message,
-        )
+        /\b(agent|worker)\b.*\bnot found\b|\bnot found\b.*\b(agent|worker)\b/i.test(err.message)
     )
 }
 
@@ -103,18 +100,17 @@ export function createWorkerListTool(
 // ─── Worker Create Tool ──────────────────────────────────────────────────────
 
 export function createWorkerCreateTool(
-    state: PluginState,
-    client: PaseoTransport,
     opencodeClient: OpencodeClient,
+    workerLaunchQueue: WorkerLaunchQueueController,
     logger: Logger,
 ): ToolDefinition {
     return tool({
         description:
-            "Create a new Paseo worker (agent) using an OpenCode profile. " +
+            "Queue a new Paseo worker (agent) launch using an OpenCode profile. " +
             `Profiles define the model and mode for the worker. Use paseo_profile_list to see available profiles. ` +
             `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified. ` +
-            "Workers run asynchronously: you will receive session nudges when the worker finishes, fails, " +
-            "or becomes blocked. Use paseo_worker_wait for explicit blocking waits.",
+            "This tool returns a launch receipt immediately; queued launches are executed FIFO with one active launch per plugin instance. " +
+            "Use paseo_worker_launch_status to check launch progress and worker ID once created.",
         args: {
             cwd: tool.schema
                 .string()
@@ -153,52 +149,79 @@ export function createWorkerCreateTool(
             const profile = resolveProfile(profiles, profileName)
             const workerFields = profileToWorkerFields(profile)
 
-            const result = await client.createWorker({
-                cwd,
+            const receipt = workerLaunchQueue.enqueueWorkerLaunch({
+                sessionId: context.sessionID,
+                projectRoot: context.worktree ?? context.directory,
                 profile: profileName,
                 provider: workerFields.provider,
                 model: workerFields.model,
                 modeId: workerFields.modeId,
+                cwd,
                 initialPrompt: args.initialPrompt,
                 labels: args.labels as Record<string, string> | undefined,
                 worktreeName: args.worktreeName,
             })
 
-            // Build WorkerSummary and bind to session
-            const worker = mapAgentToWorkerSummary({
-                id: result.id,
-                provider: result.provider,
-                cwd: result.cwd,
-                model: result.model,
-                status: result.status,
-                title: result.title,
-                labels: (args.labels ?? {}) as Record<string, string>,
-            })
+            void workerLaunchQueue.drainWorkerLaunchQueue()
 
-            getOrCreateSession(state, context.sessionID, context.worktree)
-            recordCreatedWorker(state, context.sessionID, worker)
-
-            logger.info("Worker created", {
-                workerId: result.id,
+            logger.info("Worker launch queued", {
+                launchId: receipt.launchId,
                 sessionId: context.sessionID,
                 profile: profileName,
             })
 
             return {
-                title: "Worker Created",
+                title: "Worker Launch Queued",
                 output: JSON.stringify(
                     {
-                        id: result.id,
-                        profile: profileName,
-                        provider: result.provider,
-                        cwd: result.cwd,
-                        model: result.model,
-                        status: result.status,
-                        title: result.title,
-                        async:
-                            "This worker runs asynchronously. You will be notified via session nudge " +
-                            "when it finishes, fails, or needs attention. Use paseo_worker_wait for " +
-                            "explicit blocking waits or paseo_inbox_read to check for events.",
+                        launchId: receipt.launchId,
+                        status: receipt.status,
+                        position: receipt.position,
+                        profile: receipt.profile,
+                        cwd: receipt.cwd,
+                        worktreeName: receipt.worktreeName,
+                        message:
+                            "Worker launch queued. Use paseo_worker_launch_status with the launchId " +
+                            "to monitor progress and retrieve the workerId once created.",
+                    },
+                    null,
+                    2,
+                ),
+            }
+        },
+    })
+}
+
+export function createWorkerLaunchStatusTool(
+    workerLaunchQueue: WorkerLaunchQueueController,
+    logger: Logger,
+): ToolDefinition {
+    return tool({
+        description:
+            "Get the status of a queued Paseo worker launch. Returns queued/starting/created/failed state and workerId when available.",
+        args: {
+            launchId: tool.schema.string().describe("ID of the worker launch to inspect"),
+        },
+        async execute(args) {
+            logger.info("Tool: paseo_worker_launch_status invoked", { launchId: args.launchId })
+
+            const status = workerLaunchQueue.getWorkerLaunchStatus(args.launchId)
+
+            return {
+                title: "Worker Launch Status",
+                output: JSON.stringify(
+                    {
+                        launchId: status.launchId,
+                        status: status.status,
+                        profile: status.profile,
+                        cwd: status.cwd,
+                        worktreeName: status.worktreeName,
+                        enqueuedAt: status.enqueuedAt,
+                        startedAt: status.startedAt,
+                        finishedAt: status.finishedAt,
+                        ...(status.position !== undefined ? { position: status.position } : {}),
+                        ...(status.workerId ? { workerId: status.workerId } : {}),
+                        ...(status.error ? { error: status.error } : {}),
                     },
                     null,
                     2,

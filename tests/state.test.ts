@@ -34,6 +34,9 @@ test("createPluginState", async (t) => {
         assert.equal(state.terminals.size, 0)
         assert.equal(state.workers.size, 0)
         assert.equal(state.inbox.size, 0)
+        assert.equal(state.workerLaunches.size, 0)
+        assert.deepEqual(state.workerLaunchQueue, [])
+        assert.equal(state.activeWorkerLaunchId, null)
         assert.equal(state.eventCounter, 0)
     })
 })
@@ -51,9 +54,32 @@ test("resetPluginState", async (t) => {
             read: false,
             timestamp: Date.now(),
         })
+        state.workerLaunches.set("launch-1", {
+            launchId: "launch-1",
+            status: "queued",
+            sessionId: "sess-1",
+            projectRoot: "/project",
+            profile: "build",
+            cwd: "/project",
+            worktreeName: null,
+            initialPrompt: null,
+            labels: {},
+            provider: "opencode",
+            modeId: "build",
+            enqueuedAt: new Date().toISOString(),
+            startedAt: null,
+            finishedAt: null,
+            workerId: null,
+            error: null,
+        })
+        state.workerLaunchQueue.push("launch-1")
+        state.activeWorkerLaunchId = "launch-active"
         resetPluginState(state)
         assert.equal(state.connectionStatus, "disconnected")
         assert.equal(state.inbox.size, 0)
+        assert.equal(state.workerLaunches.size, 0)
+        assert.deepEqual(state.workerLaunchQueue, [])
+        assert.equal(state.activeWorkerLaunchId, null)
     })
 })
 
@@ -413,6 +439,26 @@ test("mapAgentToWorkerSummary", async (t) => {
         assert.equal(worker.persistence, null)
         assert.deepEqual(worker.pendingPermissionIds, [])
     })
+
+    await t.test("filters internal opencodePaseo labels from worker summaries", () => {
+        const agent: AgentSummary = {
+            id: "a4",
+            provider: "openai",
+            cwd: "/tmp/project",
+            model: null,
+            status: "running",
+            title: "Worker 4",
+            labels: {
+                visible: "true",
+                "opencodePaseo.launchId": "launch-1",
+                "opencodePaseo.sessionId": "sess-1",
+            },
+        }
+
+        const worker = mapAgentToWorkerSummary(agent)
+
+        assert.deepEqual(worker.labels, ["visible"])
+    })
 })
 
 // ─── removeSession ───────────────────────────────────────────────────────────
@@ -574,25 +620,28 @@ test("removeWorkerFromState", async (t) => {
         },
     )
 
-    await t.test("is idempotent for missing workers while still clearing stale session refs", () => {
-        const state = createPluginState()
-        const session = getOrCreateSession(state, "sess-1", "/project")
-        session.createdWorkerIds.add("ghost")
-        session.unreadEvents.set("evt-ghost", {
-            id: "evt-ghost",
-            kind: "worker.finished",
-            resourceId: "ghost",
-            blocking: false,
-            summary: "ghost worker",
-            read: false,
-            timestamp: Date.now(),
-        })
+    await t.test(
+        "is idempotent for missing workers while still clearing stale session refs",
+        () => {
+            const state = createPluginState()
+            const session = getOrCreateSession(state, "sess-1", "/project")
+            session.createdWorkerIds.add("ghost")
+            session.unreadEvents.set("evt-ghost", {
+                id: "evt-ghost",
+                kind: "worker.finished",
+                resourceId: "ghost",
+                blocking: false,
+                summary: "ghost worker",
+                read: false,
+                timestamp: Date.now(),
+            })
 
-        removeWorkerFromState(state, "ghost")
+            removeWorkerFromState(state, "ghost")
 
-        assert.equal(session.createdWorkerIds.has("ghost"), false)
-        assert.equal(session.unreadEvents.has("evt-ghost"), false)
-    })
+            assert.equal(session.createdWorkerIds.has("ghost"), false)
+            assert.equal(session.unreadEvents.has("evt-ghost"), false)
+        },
+    )
 })
 
 // ─── unbindWorkerFromSessions ────────────────────────────────────────────────
