@@ -1,15 +1,24 @@
 # opencode-paseo
 
-OpenCode plugin that connects to the [Paseo](https://github.com/paseo-run/paseo) daemon. It exposes Paseo's worker orchestration, terminal sessions, permission handling, git worktrees, and scheduled runs as OpenCode tools, and keeps the session informed through an event-driven inbox.
+OpenCode plugin that connects to a local [Paseo](https://github.com/paseo-run/paseo) daemon and exposes daemon capabilities as OpenCode tools. The plugin also keeps per-session state for workers, terminals, chat rooms, queued launches, and inbox events so OpenCode can react to blocking or notable daemon activity.
+
+## Features
+
+- Connects to the Paseo daemon over WebSocket and hydrates local state on startup.
+- Registers OpenCode tools for chat, inbox, loops, permissions, profiles, schedules, terminals, workers, and worktrees.
+- Maps daemon events into an inbox with unread/blocking summaries.
+- Nudges owning OpenCode sessions for blocking events and chat mentions.
+- Tracks both durable queued worker launches and ephemeral `paseo_worker_run` sessions.
+- Emits a synthetic `worker.stalled` inbox event when an owned running worker goes quiet past the configured threshold.
 
 ## Prerequisites
 
 - [OpenCode](https://opencode.ai) with plugin support
-- Paseo daemon running locally (default: `localhost:6767`)
+- A local Paseo daemon reachable on `127.0.0.1`, `localhost`, or `::1`
 
 ## Installation
 
-Add the plugin to your OpenCode project configuration (`opencode.json` or `opencode.jsonc`):
+Add the plugin to your OpenCode project config:
 
 ```jsonc
 {
@@ -17,171 +26,189 @@ Add the plugin to your OpenCode project configuration (`opencode.json` or `openc
 }
 ```
 
-Then install the package:
+Install the package:
 
 ```bash
-npm install @opencode-paseo/opencode-paseo
+pnpm add @opencode-paseo/opencode-paseo
 ```
 
-On startup the plugin connects to the Paseo daemon via WebSocket, hydrates the local state with existing workers, terminals, and sessions, and subscribes to live daemon events.
+## Runtime flow
 
-## How it works
-
-1. **Connection** — the plugin opens a WebSocket to the Paseo daemon and authenticates with the configured password.
-2. **Hydration** — on connect, it fetches the current daemon state (workers, terminals, sessions) and populates the local inbox.
-3. **Live events** — daemon events (`worker.*`, `terminal.*`, `permission.*`, `session.*`) are mapped to inbox events in real time. Blocking events (worker failures, permission requests, terminal errors) trigger session nudges so the agent notices them.
-4. **Session cleanup** — when an OpenCode session is deleted, the plugin unbinds durable session ownership and best-effort cancels any tracked ephemeral `paseo_worker_run` workers.
+1. `index.ts` loads config, logger, in-memory state, and the transport client.
+2. The plugin connects to the daemon. If the daemon is unavailable, the plugin returns an empty plugin surface.
+3. `lib/hydration/hydrate.ts` seeds workers, terminals, chat rooms, capabilities, and any blocking inbox items from current daemon state.
+4. `lib/hooks/daemon-events.ts` translates live daemon events into state updates, inbox events, and nudges.
+5. `lib/chat/watch.ts` watches worker chat rooms and creates `chat.mentioned` inbox events when known workers are mentioned.
+6. On `session.deleted`, the plugin unbinds session ownership and best-effort cancels tracked ephemeral workers created by `paseo_worker_run`.
 
 ## Configuration
 
-The plugin reads `paseo.jsonc` (or `paseo.json`) from:
+The plugin loads `paseo.jsonc` or `paseo.json` from these layers, with later layers overriding earlier ones:
 
-1. **Global** — `~/.config/opencode/paseo.jsonc` (auto-created as a commented JSONC stub if missing)
-2. **OpenCode config dir** — `$OPENCODE_CONFIG_DIR/paseo.jsonc`
-3. **Project** — `.opencode/paseo.jsonc`
+1. Global: `~/.config/opencode/paseo.jsonc` or `~/.config/opencode/paseo.json`
+2. OpenCode config dir: `$OPENCODE_CONFIG_DIR/paseo.jsonc` or `$OPENCODE_CONFIG_DIR/paseo.json`
+3. Project: nearest `.opencode/paseo.jsonc` or `.opencode/paseo.json`
 
-Later files override earlier ones.
+If no global config exists, `getConfig()` auto-creates `~/.config/opencode/paseo.jsonc` as a commented JSONC stub.
 
-| Key                                | Type      | Default       | Description                                                                            |
-| ---------------------------------- | --------- | ------------- | -------------------------------------------------------------------------------------- |
-| `enabled`                          | `boolean` | `true`        | Enable or disable the plugin                                                           |
-| `debug`                            | `boolean` | `false`       | Enable debug logging                                                                   |
-| `daemon.host`                      | `string`  | `"127.0.0.1"` | Daemon host (`127.0.0.1`, `localhost`, or `::1` only)                                  |
-| `daemon.port`                      | `number`  | `6767`        | Daemon port                                                                            |
-| `daemon.password`                  | `string`  | —             | Authentication password                                                                |
-| `daemon.connectionTimeoutMs`       | `number`  | `3000`        | Connection timeout                                                                     |
-| `output.maxInboxItems`             | `number`  | `100`         | Max inbox items in memory                                                              |
-| `output.maxSummaryLength`          | `number`  | `500`         | Max summary text length                                                                |
-| `notifications.enabled`            | `boolean` | `true`        | Enable session nudges                                                                  |
-| `notifications.blockingOnly`       | `boolean` | `false`       | Only nudge on blocking events                                                          |
-| `notifications.stalledThresholdMs` | `number`  | `120000`      | Inactivity threshold before a running worker gets a best-effort `worker.stalled` event |
-| `agents.defaultAgent`              | `string`  | —             | Default agent name                                                                     |
-| `agents.defaultModel`              | `string`  | —             | Default model for workers                                                              |
+| Key                                | Type      | Default       | Notes                                                              |
+| ---------------------------------- | --------- | ------------- | ------------------------------------------------------------------ |
+| `enabled`                          | `boolean` | `true`        | Enables or disables the plugin entirely.                           |
+| `debug`                            | `boolean` | `false`       | Enables plugin debug logging.                                      |
+| `daemon.host`                      | `string`  | `"127.0.0.1"` | Runtime is restricted to `127.0.0.1`, `localhost`, or `::1`.       |
+| `daemon.port`                      | `number`  | `6767`        | Daemon port.                                                       |
+| `daemon.password`                  | `string`  | unset         | Optional daemon authentication password.                           |
+| `daemon.connectionTimeoutMs`       | `number`  | `3000`        | WebSocket connection timeout.                                      |
+| `output.maxInboxItems`             | `number`  | `100`         | Maximum inbox items retained in memory.                            |
+| `output.maxSummaryLength`          | `number`  | `500`         | Maximum summary length for inbox text.                             |
+| `notifications.enabled`            | `boolean` | `true`        | Enables OpenCode nudges from plugin events.                        |
+| `notifications.blockingOnly`       | `boolean` | `false`       | Restricts nudges to blocking events only.                          |
+| `notifications.stalledThresholdMs` | `number`  | `120000`      | Quiet-period threshold before emitting synthetic `worker.stalled`. |
+| `agents.defaultAgent`              | `string`  | unset         | Optional default agent name.                                       |
+| `agents.defaultModel`              | `string`  | unset         | Optional default model name.                                       |
 
-Malformed config files and invalid values surface a warning toast and that layer is ignored. If `daemon.host` is set outside the localhost-only allowlist, the plugin warns and enforces `127.0.0.1` at runtime.
+Malformed config files or invalid values trigger a warning toast and that config layer is ignored. If `daemon.host` is outside the localhost allowlist, the plugin warns and enforces `127.0.0.1` at runtime.
 
-The plugin also performs a best-effort stalled-worker heuristic: if an owned worker remains effectively active (`running`/`initializing`, not `idle`, not permission-blocked) without new upstream activity for at least `notifications.stalledThresholdMs`, the plugin emits a synthetic non-blocking `worker.stalled` inbox event and, when non-blocking notifications are enabled, nudges the owning OpenCode session. The stall clears automatically when activity resumes or the worker leaves the running path.
-
-## Tools
-
-The plugin registers the following tools in OpenCode.
+## Tool surface
 
 ### Status
 
-| Tool           | Description                                                                                                     |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| `paseo_status` | Check daemon connection status and current state summary (workers, terminals, inbox counts, blocking breakdown) |
+| Tool           | Description                                                      |
+| -------------- | ---------------------------------------------------------------- |
+| `paseo_status` | Check daemon connection status and current plugin state summary. |
+
+### Chat
+
+| Tool                 | Description                                                                     |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `paseo_chat_create`  | Create a new Paseo chat room.                                                   |
+| `paseo_chat_list`    | List all Paseo chat rooms.                                                      |
+| `paseo_chat_inspect` | Inspect a specific chat room.                                                   |
+| `paseo_chat_delete`  | Delete a chat room permanently.                                                 |
+| `paseo_chat_post`    | Post a message to a chat room.                                                  |
+| `paseo_chat_read`    | Read chat messages with optional `limit`, `since`, and `authorAgentId` filters. |
+| `paseo_chat_wait`    | Wait for newer chat messages after the latest currently known message.          |
+
+When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin watches that room and emits `chat.mentioned` inbox events when known workers are mentioned with exact `@<worker-id>` tokens.
 
 ### Inbox
 
-| Tool                 | Description                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `paseo_inbox_read`   | Read inbox events with filtering by kind, resource ID, and read status. Supports pagination and mark-read. |
-| `paseo_inbox_status` | Get inbox summary: unread count, blocking count, and breakdowns by event kind and resource                 |
+| Tool                 | Description                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
+| `paseo_inbox_read`   | Read inbox events with filters for unread status, kind, and resource ID. |
+| `paseo_inbox_status` | Return unread/blocking counts plus kind and resource breakdowns.         |
 
 ### Terminal
 
-| Tool                        | Description                                                                                                     |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `paseo_terminal_list`       | List all known terminals (ID, title, status, line count). Optionally filter by working directory.               |
-| `paseo_terminal_create`     | Create a new terminal session bound to the current OpenCode session. Supports initial command and args.         |
-| `paseo_terminal_capture`    | Capture output from a terminal. Returns content with line count. Supports ANSI stripping.                       |
-| `paseo_terminal_send_input` | Send raw keystrokes to a running terminal. Characters are sent verbatim without escape-sequence interpretation. |
-| `paseo_terminal_send_lines` | Send one or more complete command lines to a running terminal. Lines are joined with newlines.                  |
-| `paseo_terminal_kill`       | Kill a running terminal session. Destructive — capture important output first.                                  |
+| Tool                        | Description                                                     |
+| --------------------------- | --------------------------------------------------------------- |
+| `paseo_terminal_list`       | List known terminals, optionally filtered by working directory. |
+| `paseo_terminal_create`     | Create a new terminal bound to the current OpenCode session.    |
+| `paseo_terminal_capture`    | Capture terminal output with optional ANSI stripping.           |
+| `paseo_terminal_send_input` | Send raw input to a running terminal.                           |
+| `paseo_terminal_send_lines` | Send complete command lines to a running terminal.              |
+| `paseo_terminal_kill`       | Kill a running terminal session.                                |
 
-### Permission
+### Permission and profile
 
-| Tool                       | Description                                                                                                                       |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `paseo_permission_respond` | Respond to a pending permission request from a worker. Allow or deny with optional message, interrupt flag, and action selection. |
-
-### Profile
-
-| Tool                 | Description                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `paseo_profile_list` | List available OpenCode agent profiles. Profiles define the model, mode, and behavior for workers. |
+| Tool                       | Description                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `paseo_permission_respond` | Respond to a worker permission request with allow/deny behavior and optional action selection. |
+| `paseo_profile_list`       | List available OpenCode agent profiles for the current workspace.                              |
 
 ### Worker
 
-| Tool                   | Description                                                                                                                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `paseo_worker_list`    | List all workers with ID, status, cwd, provider/model/mode, and permission data                                                                                                                     |
-| `paseo_worker_create`  | Create a durable detached worker through the queued launch path. Returns a launch receipt immediately and preserves existing launch semantics.                                                      |
-| `paseo_worker_run`     | Create an ephemeral non-detached worker. Blocks until completion by default, supports `background: true`, and best-effort cancels on abort or owning session deletion while the plugin stays alive. |
-| `paseo_worker_send`    | Send a text message to an existing worker                                                                                                                                                           |
-| `paseo_worker_wait`    | Wait on one or more workers with `workerIds`, `waitFor: "any" \| "all"`, a global timeout, and early interruption on owned-worker nudge events                                                      |
-| `paseo_worker_cancel`  | Cancel a worker's current task. Use `forceKill=true` for permanent termination.                                                                                                                     |
-| `paseo_worker_archive` | Archive a worker (removed from active list)                                                                                                                                                         |
-| `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                                                                                                  |
-| `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                                                                                                     |
+| Tool                         | Description                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| `paseo_worker_list`          | Refresh and list known workers.                                               |
+| `paseo_worker_create`        | Queue a durable detached worker launch using an OpenCode profile.             |
+| `paseo_worker_launch_status` | Inspect a queued worker launch by `launchId`.                                 |
+| `paseo_worker_run`           | Run an ephemeral non-detached worker in foreground or background mode.        |
+| `paseo_worker_send`          | Send a message to an existing worker.                                         |
+| `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption. |
+| `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.            |
+| `paseo_worker_archive`       | Archive a worker from the active list.                                        |
+| `paseo_worker_update`        | Update worker metadata and runtime settings.                                  |
+| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                   |
 
-`paseo_worker_run` is intentionally separate from `paseo_worker_create`: it uses the non-detached transport path, keeps only in-memory ephemeral bookkeeping, and does not participate in launch queue, hydration, or restart recovery. In foreground mode it returns a completion/timeout/aborted payload for that single run. In background mode it returns immediately with the created `workerId` plus `detached: false` / `ephemeral: true` lifecycle markers.
-
-`paseo_worker_wait` accepts `workerIds: string[]` (one or more, deduplicated), optional `waitFor` (defaults to `"all"`), and optional `timeout` in milliseconds. It returns a structured payload with the completed per-worker `results`, any `pendingWorkerIds`, plus `timedOut` and `interruptedByNudge` flags so the controller can tell whether the wait completed normally, hit the timeout, or stopped because the current OpenCode session received a nudge-eligible event for one of its owned workers, including fresh synthetic `worker.stalled` events.
+`paseo_worker_create` and `paseo_worker_run` are intentionally different paths. `create` goes through the plugin-owned FIFO launch queue in `lib/worker-launch/queue.ts`, while `run` uses the non-detached transport path and tracks only in-memory ephemeral cleanup state.
 
 ### Worktree
 
-| Tool                     | Description                                                                               |
-| ------------------------ | ----------------------------------------------------------------------------------------- |
-| `paseo_worktree_list`    | List git worktrees for a project                                                          |
-| `paseo_worktree_create`  | Create a new git worktree with optional slug, base ref, action, and GitHub PR association |
-| `paseo_worktree_archive` | Archive a git worktree                                                                    |
+| Tool                     | Description                                                    |
+| ------------------------ | -------------------------------------------------------------- |
+| `paseo_worktree_list`    | List git worktrees for a project.                              |
+| `paseo_worktree_create`  | Create a new worktree from project context and git ref inputs. |
+| `paseo_worktree_archive` | Archive a worktree with explicit repo/worktree identification. |
 
 ### Loop
 
-| Tool                  | Description                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------- |
-| `paseo_loop_run`      | Start a daemon-native loop with explicit verification and bounded stop conditions               |
-| `paseo_loop_list`     | List daemon-native loops known to the Paseo daemon                                              |
-| `paseo_loop_inspect`  | Inspect a specific daemon-native loop, including its recorded iterations when available         |
-| `paseo_loop_logs`     | Read snapshot/cursor-based loop logs with incremental `entries` and `nextCursor`               |
-| `paseo_loop_stop`     | Stop a running daemon-native loop                                                               |
+| Tool                 | Description                                                                      |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `paseo_loop_run`     | Run a daemon-native loop with required verification and bounded stop conditions. |
+| `paseo_loop_list`    | List daemon-native loops.                                                        |
+| `paseo_loop_inspect` | Inspect a loop by ID.                                                            |
+| `paseo_loop_logs`    | Read cursor-based loop logs.                                                     |
+| `paseo_loop_stop`    | Stop a running loop.                                                             |
 
-Loop tools are thin wrappers over the daemon's native loop RPCs. The plugin does not add its own loop controller, verifier orchestration, polling layer, or archive behavior.
-
-`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`). Numeric loop timing fields use milliseconds to match the rest of the plugin surface.
-
-`paseo_loop_logs` is snapshot/cursor-based rather than a streaming follow mode. It returns the daemon payload envelope, including `entries`, `nextCursor`, `error`, and the optional loop summary when present.
-
-`archive` is intentionally not exposed on `paseo_loop_run` yet because the currently installed upstream JavaScript client does not forward that field reliably.
+`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`).
 
 ### Schedule
 
-| Tool                      | Description                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `paseo_schedule_list`     | List all configured schedules with cadence, target, and status                                                            |
-| `paseo_schedule_inspect`  | Inspect a specific schedule's full configuration and status                                                               |
-| `paseo_schedule_create`   | Create a recurring schedule. Supports interval (`every`) or `cron` cadence with targets: `self`, `agent`, or `new-agent`. |
-| `paseo_schedule_update`   | Update schedule properties (name, prompt, cadence, timezone, profile, etc.)                                               |
-| `paseo_schedule_pause`    | Pause a running schedule                                                                                                  |
-| `paseo_schedule_resume`   | Resume a paused schedule                                                                                                  |
-| `paseo_schedule_delete`   | Delete a schedule permanently                                                                                             |
-| `paseo_schedule_run_once` | Trigger a single immediate execution without affecting the regular cadence                                                |
-| `paseo_schedule_logs`     | Retrieve recent execution logs for a schedule                                                                             |
+| Tool                      | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `paseo_schedule_list`     | List daemon-managed schedules.                                           |
+| `paseo_schedule_inspect`  | Inspect a schedule by ID.                                                |
+| `paseo_schedule_create`   | Create a recurring schedule for `self`, `agent`, or `new-agent` targets. |
+| `paseo_schedule_update`   | Update an existing schedule.                                             |
+| `paseo_schedule_pause`    | Pause a schedule.                                                        |
+| `paseo_schedule_resume`   | Resume a paused schedule.                                                |
+| `paseo_schedule_delete`   | Delete a schedule.                                                       |
+| `paseo_schedule_run_once` | Trigger one immediate execution.                                         |
+| `paseo_schedule_logs`     | Retrieve recent schedule run history.                                    |
 
-## Development
+For `new-agent` schedule targets, the plugin resolves the requested OpenCode profile and attempts to validate that the selected provider exists in the daemon provider snapshot for the target `cwd`.
 
-```bash
-# Install dependencies
-pnpm install
+## Development commands
 
-# Build
-pnpm build
+| Command                 | Purpose                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm install`          | Install dependencies.                                                              |
+| `pnpm build`            | Build JavaScript bundles and declaration files.                                    |
+| `pnpm typecheck`        | Run TypeScript without emitting output.                                            |
+| `pnpm test`             | Run unit tests via Node's built-in runner.                                         |
+| `pnpm test:integration` | Run integration tests against a real OpenCode host; requires `opencode` on `PATH`. |
+| `pnpm format`           | Rewrite files with Prettier.                                                       |
+| `pnpm format:check`     | Check formatting without rewriting.                                                |
+| `pnpm lint`             | Prettier check alias.                                                              |
+| `pnpm dev`              | Run `tsup` in watch mode.                                                          |
 
-# Typecheck
-pnpm typecheck
+## Project structure
 
-# Test
-pnpm test
-
-# Integration test (requires opencode CLI)
-pnpm test:integration
-
-# Format and lint
-pnpm format
-pnpm lint
+```text
+index.ts                  Plugin assembly and registration
+lib/config.ts             Config loading, layering, validation, and warnings
+lib/chat/                 Chat room normalization and watcher logic
+lib/hooks/                Daemon event mapping into local state and inbox events
+lib/hydration/            Startup hydration from daemon snapshots
+lib/inbox/                Inbox read/status helpers, IDs, and summary truncation
+lib/state/                In-memory plugin state, session bindings, and type mapping
+lib/tools/                OpenCode tool definitions grouped by feature
+lib/transport/            Daemon client adapter and plugin-owned transport types
+lib/worker-launch/        FIFO durable worker launch queue
+lib/notifier.ts           Nudge policy and message formatting
+lib/profile.ts            OpenCode profile lookup and mapping helpers
+lib/worker-stall-monitor.ts Synthetic stall detection for owned workers
+tests/                    Unit and integration coverage
 ```
+
+Each multi-file `lib/*` folder now has its own `README.md` and `AGENTS.md` with local implementation notes.
+
+## Development notes
+
+- `tsconfig.json` includes `index.ts` and `lib/**/*`, but excludes `tests/`, so test changes should be validated by running the relevant test command.
+- `pnpm build` depends on `jsonc-parser` remaining installed because `tsup.config.ts` bundles it via `noExternal`.
+- `pnpm lint` is a Prettier check, not an ESLint pass.
 
 ## License
 
