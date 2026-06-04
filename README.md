@@ -26,12 +26,6 @@ Add the plugin to your OpenCode project config:
 }
 ```
 
-Install the package:
-
-```bash
-pnpm add @opencode-paseo/opencode-paseo
-```
-
 ## Runtime flow
 
 1. `index.ts` loads config, logger, in-memory state, and the transport client.
@@ -202,13 +196,9 @@ lib/worker-stall-monitor.ts Synthetic stall detection for owned workers
 tests/                    Unit and integration coverage
 ```
 
-Each multi-file `lib/*` folder now has its own `README.md` and `AGENTS.md` with local implementation notes.
-
 ## Development notes
 
-- `tsconfig.json` includes `index.ts` and `lib/**/*`, but excludes `tests/`, so test changes should be validated by running the relevant test command.
 - `pnpm build` depends on `jsonc-parser` remaining installed because `tsup.config.ts` bundles it via `noExternal`.
-- `pnpm lint` is a Prettier check, not an ESLint pass.
 
 ## License
 
