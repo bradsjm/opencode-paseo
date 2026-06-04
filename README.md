@@ -36,7 +36,7 @@ On startup the plugin connects to the Paseo daemon via WebSocket, hydrates the l
 
 The plugin reads `paseo.jsonc` (or `paseo.json`) from:
 
-1. **Global** — `~/.config/opencode/paseo.jsonc` (auto-created if missing)
+1. **Global** — `~/.config/opencode/paseo.jsonc` (auto-created as a commented JSONC stub if missing)
 2. **OpenCode config dir** — `$OPENCODE_CONFIG_DIR/paseo.jsonc`
 3. **Project** — `.opencode/paseo.jsonc`
 
@@ -46,16 +46,18 @@ Later files override earlier ones.
 | ---------------------------- | --------- | ------------- | ----------------------------- |
 | `enabled`                    | `boolean` | `true`        | Enable or disable the plugin  |
 | `debug`                      | `boolean` | `false`       | Enable debug logging          |
-| `daemon.host`                | `string`  | `"localhost"` | Daemon host (localhost only)  |
+| `daemon.host`                | `string`  | `"127.0.0.1"` | Daemon host (`127.0.0.1`, `localhost`, or `::1` only) |
 | `daemon.port`                | `number`  | `6767`        | Daemon port                   |
 | `daemon.password`            | `string`  | —             | Authentication password       |
-| `daemon.connectionTimeoutMs` | `number`  | `5000`        | Connection timeout            |
+| `daemon.connectionTimeoutMs` | `number`  | `3000`        | Connection timeout            |
 | `output.maxInboxItems`       | `number`  | `100`         | Max inbox items in memory     |
 | `output.maxSummaryLength`    | `number`  | `500`         | Max summary text length       |
 | `notifications.enabled`      | `boolean` | `true`        | Enable session nudges         |
 | `notifications.blockingOnly` | `boolean` | `false`       | Only nudge on blocking events |
-| `agents.defaultAgent`        | `string`  | `"main"`      | Default agent name            |
-| `agents.defaultModel`        | `string`  | `"default"`   | Default model for workers     |
+| `agents.defaultAgent`        | `string`  | —             | Default agent name            |
+| `agents.defaultModel`        | `string`  | —             | Default model for workers     |
+
+Malformed config files and invalid values surface a warning toast and that layer is ignored. If `daemon.host` is set outside the localhost-only allowlist, the plugin warns and enforces `127.0.0.1` at runtime.
 
 ## Tools
 

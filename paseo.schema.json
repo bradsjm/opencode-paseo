@@ -22,8 +22,9 @@
             "properties": {
                 "host": {
                     "type": "string",
+                    "enum": ["127.0.0.1", "localhost", "::1"],
                     "default": "127.0.0.1",
-                    "description": "Daemon host address (localhost only for MVP)"
+                    "description": "Daemon host address (localhost-only: 127.0.0.1, localhost, or ::1)"
                 },
                 "port": {
                     "type": "integer",
