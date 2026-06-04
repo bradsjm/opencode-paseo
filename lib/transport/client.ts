@@ -55,6 +55,21 @@ import type {
     ScheduleUpdateOptions,
     ScheduleInspectOptions,
     ScheduleListResult,
+    LoopInspectOptions,
+    LoopInspectResult,
+    LoopListItem,
+    LoopListResult,
+    LoopLogEntry,
+    LoopLogsOptions,
+    LoopLogsResult,
+    LoopRecord,
+    LoopRunOptions,
+    LoopRunResult,
+    LoopStopOptions,
+    LoopStopResult,
+    LoopVerifyCheckResult,
+    LoopVerifyPromptResult,
+    LoopIterationRecord,
     ScheduleLogsResult,
     ScheduleMutationResult,
     ScheduleRecord,
@@ -463,6 +478,126 @@ function mapChatWaitResult(result: Record<string, unknown>): ChatWaitResult {
             ? result.messages.map((message) => mapChatMessage(message as Record<string, unknown>))
             : [],
         timedOut: Boolean(result.timedOut),
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapLoopVerifyCheckResult(result: Record<string, unknown>): LoopVerifyCheckResult {
+    return {
+        ...result,
+        command: (result.command as string | undefined) ?? undefined,
+        ok: result.ok as boolean | undefined,
+        exitCode: (result.exitCode as number | null | undefined) ?? undefined,
+        output: (result.output as string | null | undefined) ?? undefined,
+        error: (result.error as string | null | undefined) ?? undefined,
+    }
+}
+
+function mapLoopVerifyPromptResult(result: Record<string, unknown>): LoopVerifyPromptResult {
+    return {
+        ...result,
+        ok: result.ok as boolean | undefined,
+        response: (result.response as string | null | undefined) ?? undefined,
+        error: (result.error as string | null | undefined) ?? undefined,
+    }
+}
+
+function mapLoopIteration(iteration: Record<string, unknown>): LoopIterationRecord {
+    return {
+        ...iteration,
+        iteration: (iteration.iteration as number | undefined) ?? undefined,
+        status: (iteration.status as string | undefined) ?? undefined,
+        startedAt: (iteration.startedAt as string | undefined) ?? undefined,
+        endedAt: (iteration.endedAt as string | null | undefined) ?? undefined,
+        error: (iteration.error as string | null | undefined) ?? undefined,
+        verifyPromptResult: iteration.verifyPromptResult
+            ? mapLoopVerifyPromptResult(iteration.verifyPromptResult as Record<string, unknown>)
+            : undefined,
+        verifyCheckResults: Array.isArray(iteration.verifyCheckResults)
+            ? iteration.verifyCheckResults.map((result) =>
+                  mapLoopVerifyCheckResult(result as Record<string, unknown>),
+              )
+            : undefined,
+    }
+}
+
+function mapLoopListItem(loop: Record<string, unknown>): LoopListItem {
+    return {
+        ...loop,
+        id: loop.id as string,
+        name: (loop.name as string | null | undefined) ?? undefined,
+        prompt: (loop.prompt as string | undefined) ?? undefined,
+        cwd: (loop.cwd as string | undefined) ?? undefined,
+        status: (loop.status as string | undefined) ?? undefined,
+        createdAt: (loop.createdAt as string | undefined) ?? undefined,
+        updatedAt: (loop.updatedAt as string | undefined) ?? undefined,
+        error: (loop.error as string | null | undefined) ?? undefined,
+    }
+}
+
+function mapLoopRecord(loop: Record<string, unknown>): LoopRecord {
+    return {
+        ...mapLoopListItem(loop),
+        stoppedAt: (loop.stoppedAt as string | null | undefined) ?? undefined,
+        iterations: Array.isArray(loop.iterations)
+            ? loop.iterations.map((iteration) => mapLoopIteration(iteration as Record<string, unknown>))
+            : [],
+    }
+}
+
+function mapLoopLogEntry(entry: Record<string, unknown>): LoopLogEntry {
+    return {
+        ...entry,
+        seq: entry.seq as number,
+        source: (entry.source as string | undefined) ?? undefined,
+        level: (entry.level as string | undefined) ?? undefined,
+        text: (entry.text as string) ?? "",
+    }
+}
+
+function mapLoopRunResult(result: Record<string, unknown>): LoopRunResult {
+    return {
+        requestId: result.requestId as string,
+        loop: result.loop ? mapLoopRecord(result.loop as Record<string, unknown>) : null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapLoopListResult(result: Record<string, unknown>): LoopListResult {
+    return {
+        requestId: result.requestId as string,
+        loops: Array.isArray(result.loops)
+            ? result.loops.map((loop) => mapLoopListItem(loop as Record<string, unknown>))
+            : [],
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapLoopInspectResult(result: Record<string, unknown>): LoopInspectResult {
+    return {
+        requestId: result.requestId as string,
+        loop: result.loop ? mapLoopRecord(result.loop as Record<string, unknown>) : null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapLoopLogsResult(result: Record<string, unknown>): LoopLogsResult {
+    return {
+        requestId: result.requestId as string,
+        loop: result.loop ? mapLoopRecord(result.loop as Record<string, unknown>) : null,
+        entries: Array.isArray(result.entries)
+            ? result.entries.map((entry) => mapLoopLogEntry(entry as Record<string, unknown>))
+            : [],
+        nextCursor: (result.nextCursor as number | null | undefined) ?? null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapLoopStopResult(result: Record<string, unknown>): LoopStopResult {
+    return {
+        requestId: result.requestId as string,
+        loop: result.loop ? mapLoopRecord(result.loop as Record<string, unknown>) : null,
+        stopped: (result.stopped as boolean | undefined) ?? undefined,
         error: (result.error as string | null) ?? null,
     }
 }
@@ -1029,6 +1164,48 @@ export class PaseoClient implements PaseoTransport {
             branchName: options.branchName,
         })
         return mapWorktreeArchiveResult(result as unknown as Record<string, unknown>)
+    }
+
+    // ─── Loop Operations ─────────────────────────────────────────────────
+
+    async loopRun(options: LoopRunOptions): Promise<LoopRunResult> {
+        const result = await this.daemon.loopRun({
+            prompt: options.prompt,
+            cwd: options.cwd,
+            provider: options.provider,
+            model: options.model,
+            modeId: options.modeId,
+            verifierProvider: options.verifierProvider,
+            verifierModel: options.verifierModel,
+            verifierModeId: options.verifierModeId,
+            verifyPrompt: options.verifyPrompt,
+            verifyChecks: options.verifyChecks,
+            name: options.name,
+            sleepMs: options.sleepMs,
+            maxIterations: options.maxIterations,
+            maxTimeMs: options.maxTimeMs,
+        })
+        return mapLoopRunResult(result as unknown as Record<string, unknown>)
+    }
+
+    async loopList(): Promise<LoopListResult> {
+        const result = await this.daemon.loopList()
+        return mapLoopListResult(result as unknown as Record<string, unknown>)
+    }
+
+    async loopInspect(options: LoopInspectOptions): Promise<LoopInspectResult> {
+        const result = await this.daemon.loopInspect({ id: options.id })
+        return mapLoopInspectResult(result as unknown as Record<string, unknown>)
+    }
+
+    async loopLogs(options: LoopLogsOptions): Promise<LoopLogsResult> {
+        const result = await this.daemon.loopLogs({ id: options.id, afterSeq: options.afterSeq })
+        return mapLoopLogsResult(result as unknown as Record<string, unknown>)
+    }
+
+    async loopStop(options: LoopStopOptions): Promise<LoopStopResult> {
+        const result = await this.daemon.loopStop({ id: options.id })
+        return mapLoopStopResult(result as unknown as Record<string, unknown>)
     }
 
     // ─── Schedule Operations ─────────────────────────────────────────────

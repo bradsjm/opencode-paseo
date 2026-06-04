@@ -128,6 +128,24 @@ The plugin registers the following tools in OpenCode.
 | `paseo_worktree_create`  | Create a new git worktree with optional slug, base ref, action, and GitHub PR association |
 | `paseo_worktree_archive` | Archive a git worktree                                                                    |
 
+### Loop
+
+| Tool                  | Description                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| `paseo_loop_run`      | Start a daemon-native loop with explicit verification and bounded stop conditions               |
+| `paseo_loop_list`     | List daemon-native loops known to the Paseo daemon                                              |
+| `paseo_loop_inspect`  | Inspect a specific daemon-native loop, including its recorded iterations when available         |
+| `paseo_loop_logs`     | Read snapshot/cursor-based loop logs with incremental `entries` and `nextCursor`               |
+| `paseo_loop_stop`     | Stop a running daemon-native loop                                                               |
+
+Loop tools are thin wrappers over the daemon's native loop RPCs. The plugin does not add its own loop controller, verifier orchestration, polling layer, or archive behavior.
+
+`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`). Numeric loop timing fields use milliseconds to match the rest of the plugin surface.
+
+`paseo_loop_logs` is snapshot/cursor-based rather than a streaming follow mode. It returns the daemon payload envelope, including `entries`, `nextCursor`, `error`, and the optional loop summary when present.
+
+`archive` is intentionally not exposed on `paseo_loop_run` yet because the currently installed upstream JavaScript client does not forward that field reliably.
+
 ### Schedule
 
 | Tool                      | Description                                                                                                               |

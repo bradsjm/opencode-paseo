@@ -272,6 +272,116 @@ export interface RespondPermissionOptions {
     selectedActionId?: string
 }
 
+// ─── Loop Types ───────────────────────────────────────────────────────────────
+// Plugin-level shapes for daemon-native loop operations.
+
+export interface LoopLogEntry extends Record<string, unknown> {
+    seq: number
+    source?: string
+    level?: string
+    text: string
+}
+
+export interface LoopVerifyCheckResult extends Record<string, unknown> {
+    command?: string
+    ok?: boolean
+    exitCode?: number | null
+    output?: string | null
+    error?: string | null
+}
+
+export interface LoopVerifyPromptResult extends Record<string, unknown> {
+    ok?: boolean
+    response?: string | null
+    error?: string | null
+}
+
+export interface LoopIterationRecord extends Record<string, unknown> {
+    iteration?: number
+    status?: string
+    startedAt?: string
+    endedAt?: string | null
+    error?: string | null
+    verifyPromptResult?: LoopVerifyPromptResult | null
+    verifyCheckResults?: LoopVerifyCheckResult[]
+}
+
+export interface LoopListItem extends Record<string, unknown> {
+    id: string
+    name?: string | null
+    prompt?: string
+    cwd?: string
+    status?: string
+    createdAt?: string
+    updatedAt?: string
+    error?: string | null
+}
+
+export interface LoopRecord extends LoopListItem {
+    stoppedAt?: string | null
+    iterations: LoopIterationRecord[]
+}
+
+export interface LoopRunOptions {
+    prompt: string
+    cwd: string
+    provider?: string
+    model?: string
+    modeId?: string
+    verifierProvider?: string
+    verifierModel?: string
+    verifierModeId?: string
+    verifyPrompt?: string
+    verifyChecks?: string[]
+    name?: string
+    sleepMs?: number
+    maxIterations?: number
+    maxTimeMs?: number
+}
+
+export interface LoopInspectOptions {
+    id: string
+}
+
+export interface LoopLogsOptions extends LoopInspectOptions {
+    afterSeq?: number
+}
+
+export interface LoopStopOptions extends LoopInspectOptions {}
+
+export interface LoopRunResult {
+    requestId: string
+    loop: LoopRecord | null
+    error: string | null
+}
+
+export interface LoopListResult {
+    requestId: string
+    loops: LoopListItem[]
+    error: string | null
+}
+
+export interface LoopInspectResult {
+    requestId: string
+    loop: LoopRecord | null
+    error: string | null
+}
+
+export interface LoopLogsResult {
+    requestId: string
+    loop: LoopRecord | null
+    entries: LoopLogEntry[]
+    nextCursor: number | null
+    error: string | null
+}
+
+export interface LoopStopResult {
+    requestId: string
+    loop: LoopRecord | null
+    stopped?: boolean
+    error: string | null
+}
+
 // ─── Schedule Types ───────────────────────────────────────────────────────────
 // Plugin-level shapes for schedule operations (thin wrappers over daemon RPCs).
 
@@ -585,6 +695,13 @@ export interface PaseoTransport {
     listWorktrees(options: WorktreeListOptions): Promise<WorktreeListResult>
     createWorktree(options: WorktreeCreateOptions): Promise<WorktreeCreateResult>
     archiveWorktree(options: WorktreeArchiveOptions): Promise<WorktreeArchiveResult>
+
+    // Loop operations
+    loopRun(options: LoopRunOptions): Promise<LoopRunResult>
+    loopList(): Promise<LoopListResult>
+    loopInspect(options: LoopInspectOptions): Promise<LoopInspectResult>
+    loopLogs(options: LoopLogsOptions): Promise<LoopLogsResult>
+    loopStop(options: LoopStopOptions): Promise<LoopStopResult>
 
     // Schedule operations
     scheduleList(): Promise<ScheduleListResult>

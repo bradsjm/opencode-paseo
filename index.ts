@@ -53,6 +53,13 @@ import {
     createScheduleRunOnceTool,
     createScheduleLogsTool,
 } from "./lib/tools/schedule.js"
+import {
+    createLoopRunTool,
+    createLoopListTool,
+    createLoopInspectTool,
+    createLoopLogsTool,
+    createLoopStopTool,
+} from "./lib/tools/loop.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 import { resetPluginState } from "./lib/state/state.js"
 import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
@@ -165,6 +172,11 @@ const server: Plugin = (async (ctx) => {
             paseo_worktree_list: createWorktreeListTool(state, client, logger),
             paseo_worktree_create: createWorktreeCreateTool(state, client, logger),
             paseo_worktree_archive: createWorktreeArchiveTool(state, client, logger),
+            paseo_loop_run: createLoopRunTool(client, logger),
+            paseo_loop_list: createLoopListTool(client, logger),
+            paseo_loop_inspect: createLoopInspectTool(client, logger),
+            paseo_loop_logs: createLoopLogsTool(client, logger),
+            paseo_loop_stop: createLoopStopTool(client, logger),
             paseo_schedule_list: createScheduleListTool(state, client, logger),
             paseo_schedule_inspect: createScheduleInspectTool(state, client, logger),
             paseo_schedule_create: createScheduleCreateTool(state, client, ctx.client, logger),
