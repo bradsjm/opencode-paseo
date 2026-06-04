@@ -22,6 +22,7 @@ import type {
     PermissionResponse,
     CreateWorkerOptions,
     CreatedWorker,
+    RunWorkerOptions,
     CreateChatRoomOptions,
     ChatMessage,
     ChatMessageMutationResult,
@@ -775,13 +776,10 @@ export class PaseoClient implements PaseoTransport {
 
     // ─── Worker Operations ───────────────────────────────────────────────
 
-    async createWorker(options: CreateWorkerOptions): Promise<CreatedWorker> {
-        // Assemble the daemon create-agent payload.
-        // background/detached are always forced to true: the plugin creates workers
-        // that must run independently of the current session lifecycle.
-        // The installed @getpaseo/client CreateAgentRequestOptions does not expose
-        // these fields in its typed surface, so they are injected via the
-        // Record<string, unknown> escape hatch that the daemon client already accepts.
+    private buildWorkerCreatePayload(
+        options: CreateWorkerOptions,
+        lifecycle: { background: boolean; detached: boolean },
+    ): Record<string, unknown> {
         const payload: Record<string, unknown> = {
             provider: options.provider as Record<string, unknown> | undefined,
             cwd: options.cwd,
@@ -789,8 +787,8 @@ export class PaseoClient implements PaseoTransport {
             labels: options.labels,
             worktree: options.worktree as Record<string, unknown> | undefined,
             worktreeName: options.worktreeName,
-            background: true,
-            detached: true,
+            background: lifecycle.background,
+            detached: lifecycle.detached,
         }
 
         if (options.model || options.modeId) {
@@ -799,6 +797,39 @@ export class PaseoClient implements PaseoTransport {
                 ...(options.modeId ? { modeId: options.modeId } : {}),
             }
         }
+
+        return payload
+    }
+
+    async createWorker(options: CreateWorkerOptions): Promise<CreatedWorker> {
+        // Assemble the daemon create-agent payload.
+        // background/detached are always forced to true: the plugin creates workers
+        // that must run independently of the current session lifecycle.
+        // The installed @getpaseo/client CreateAgentRequestOptions does not expose
+        // these fields in its typed surface, so they are injected via the
+        // Record<string, unknown> escape hatch that the daemon client already accepts.
+        const payload = this.buildWorkerCreatePayload(options, {
+            background: true,
+            detached: true,
+        })
+
+        const snapshot = await this.daemon.createAgent(payload)
+        const mapped = mapAgentSnapshot(snapshot as unknown as Record<string, unknown>)
+        return {
+            id: mapped.id,
+            provider: mapped.provider,
+            cwd: mapped.cwd,
+            model: mapped.model,
+            status: mapped.status,
+            title: mapped.title,
+        }
+    }
+
+    async runWorker(options: RunWorkerOptions): Promise<CreatedWorker> {
+        const payload = this.buildWorkerCreatePayload(options, {
+            background: options.background ?? false,
+            detached: false,
+        })
 
         const snapshot = await this.daemon.createAgent(payload)
         const mapped = mapAgentSnapshot(snapshot as unknown as Record<string, unknown>)

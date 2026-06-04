@@ -488,6 +488,86 @@ test("PaseoClient.createWorker sets background/detached even without model/modeI
     assert.equal(payload.config, undefined, "config should be absent when no model/modeId")
 })
 
+test("PaseoClient.runWorker defaults to foreground non-detached payload", async () => {
+    let capturedPayload: Record<string, unknown> | null = null
+
+    const mockDaemon = {
+        connect: async () => {},
+        close: async () => {},
+        isConnected: true,
+        subscribeConnectionStatus: () => () => {},
+        subscribe: () => () => {},
+        getLastServerInfoMessage: () => null,
+        createAgent: async (payload: Record<string, unknown>) => {
+            capturedPayload = payload
+            return {
+                id: "w3",
+                provider: "test",
+                cwd: "/tmp",
+                model: null,
+                status: "running",
+                title: null,
+                labels: {},
+            }
+        },
+    }
+
+    const client = new PaseoClient({
+        host: "127.0.0.1",
+        port: 1,
+        connectionTimeoutMs: 100,
+    })
+    ;(client as any).daemon = mockDaemon
+
+    await client.runWorker({ cwd: "/tmp", provider: "test" })
+
+    assert.ok(capturedPayload)
+    const payload = capturedPayload as Record<string, unknown>
+    assert.equal(payload.background, false)
+    assert.equal(payload.detached, false)
+    assert.equal(payload.cwd, "/tmp")
+    assert.equal(payload.provider, "test")
+})
+
+test("PaseoClient.runWorker honors background override", async () => {
+    let capturedPayload: Record<string, unknown> | null = null
+
+    const mockDaemon = {
+        connect: async () => {},
+        close: async () => {},
+        isConnected: true,
+        subscribeConnectionStatus: () => () => {},
+        subscribe: () => () => {},
+        getLastServerInfoMessage: () => null,
+        createAgent: async (payload: Record<string, unknown>) => {
+            capturedPayload = payload
+            return {
+                id: "w4",
+                provider: "test",
+                cwd: "/tmp",
+                model: null,
+                status: "running",
+                title: null,
+                labels: {},
+            }
+        },
+    }
+
+    const client = new PaseoClient({
+        host: "127.0.0.1",
+        port: 1,
+        connectionTimeoutMs: 100,
+    })
+    ;(client as any).daemon = mockDaemon
+
+    await client.runWorker({ cwd: "/tmp", background: true })
+
+    assert.ok(capturedPayload)
+    const payload = capturedPayload as Record<string, unknown>
+    assert.equal(payload.background, true)
+    assert.equal(payload.detached, false)
+})
+
 test("PaseoClient.sendTerminalInput is synchronous and surfaces send errors", () => {
     const client = new PaseoClient({
         host: "127.0.0.1",

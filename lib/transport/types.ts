@@ -60,6 +60,10 @@ export interface CreateWorkerOptions {
     worktreeName?: string
 }
 
+export interface RunWorkerOptions extends CreateWorkerOptions {
+    background?: boolean
+}
+
 export interface CreatedWorker {
     id: string
     provider: string
@@ -567,6 +571,7 @@ export interface PaseoTransport {
 
     // Phase 3: Worker operations
     createWorker(options: CreateWorkerOptions): Promise<CreatedWorker>
+    runWorker(options: RunWorkerOptions): Promise<CreatedWorker>
     sendWorkerMessage(workerId: string, message: string): Promise<void>
     waitForWorker(workerId: string, timeout: number): Promise<WorkerWaitResult>
     cancelWorker(workerId: string): Promise<void>

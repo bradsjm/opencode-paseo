@@ -3,14 +3,18 @@ import type { PluginState } from "./state/types.js"
 import type { Logger } from "./logger.js"
 import type { PaseoTransport } from "./transport/types.js"
 import type { Config } from "@opencode-ai/plugin"
-import { removeSession } from "./state/state.js"
+import {
+    listEphemeralWorkerIdsForSession,
+    removeEphemeralWorkerRun,
+    removeSession,
+} from "./state/state.js"
 export { createDaemonEventHandler } from "./hooks/daemon-events.js"
 
 // ─── Event Handler Factory ───────────────────────────────────────────────────
 
 export function createEventHandler(
     state: PluginState,
-    _client: PaseoTransport,
+    client: PaseoTransport,
     logger: Logger,
     _config: unknown,
 ) {
@@ -21,8 +25,23 @@ export function createEventHandler(
         if (event.type === "session.deleted") {
             const sessionId = event.properties.info.id
             if (sessionId) {
+                const ephemeralWorkerIds = listEphemeralWorkerIdsForSession(state, sessionId)
+                for (const workerId of ephemeralWorkerIds) {
+                    try {
+                        await client.cancelWorker(workerId)
+                    } catch (err: unknown) {
+                        logger.warn("Failed to cancel ephemeral worker during session cleanup", {
+                            sessionId,
+                            workerId,
+                            error: err instanceof Error ? err.message : String(err),
+                        })
+                    } finally {
+                        removeEphemeralWorkerRun(state, workerId)
+                    }
+                }
+
                 const removed = removeSession(state, sessionId)
-                if (removed) {
+                if (removed || ephemeralWorkerIds.length > 0) {
                     logger.info("Session removed", { sessionId })
                 }
             }

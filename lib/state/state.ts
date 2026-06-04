@@ -4,6 +4,7 @@ import type {
     ConnectionStatus,
     CapabilitySnapshot,
     TerminalSessionSummary,
+    EphemeralWorkerRunRecord,
     WorkerSummary,
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
@@ -50,6 +51,7 @@ export function createPluginState(): PluginState {
         chatRooms: new Map(),
         inbox: new Map(),
         workerLaunches: new Map(),
+        ephemeralWorkerRuns: new Map(),
         workerLaunchQueue: [],
         activeWorkerLaunchId: null,
         eventCounter: 0,
@@ -66,6 +68,7 @@ export function resetPluginState(state: PluginState): void {
     state.chatRooms.clear()
     state.inbox.clear()
     state.workerLaunches.clear()
+    state.ephemeralWorkerRuns.clear()
     state.workerLaunchQueue = []
     state.activeWorkerLaunchId = null
     state.eventCounter = 0
@@ -156,6 +159,39 @@ export function recordCreatedWorker(
         session.createdWorkerIds.add(worker.id)
         session.updatedAt = Date.now()
     }
+}
+
+export function registerEphemeralWorkerRun(
+    state: PluginState,
+    sessionId: string,
+    workerId: string,
+    options: { background: boolean; createdAt?: number },
+): void {
+    state.ephemeralWorkerRuns.set(workerId, {
+        workerId,
+        sessionId,
+        background: options.background,
+        createdAt: options.createdAt ?? Date.now(),
+    })
+}
+
+export function removeEphemeralWorkerRun(
+    state: PluginState,
+    workerId: string,
+): EphemeralWorkerRunRecord | undefined {
+    const record = state.ephemeralWorkerRuns.get(workerId)
+    state.ephemeralWorkerRuns.delete(workerId)
+    return record
+}
+
+export function listEphemeralWorkerIdsForSession(state: PluginState, sessionId: string): string[] {
+    const workerIds: string[] = []
+    for (const run of state.ephemeralWorkerRuns.values()) {
+        if (run.sessionId === sessionId) {
+            workerIds.push(run.workerId)
+        }
+    }
+    return workerIds
 }
 
 // ─── Session Lifecycle Helpers ───────────────────────────────────────────────

@@ -80,6 +80,13 @@ export interface SessionMapping {
     updatedAt: number
 }
 
+export interface EphemeralWorkerRunRecord {
+    workerId: string
+    sessionId: string
+    background: boolean
+    createdAt: number
+}
+
 export type WorkerLaunchStatus = "queued" | "starting" | "created" | "failed"
 
 export interface WorkerLaunchRecord {
@@ -147,6 +154,9 @@ export interface PluginState {
 
     /** Known worker launch requests keyed by launch ID */
     workerLaunches: Map<string, WorkerLaunchRecord>
+
+    /** Ephemeral non-detached worker runs keyed by worker ID */
+    ephemeralWorkerRuns: Map<string, EphemeralWorkerRunRecord>
 
     /** FIFO queue of pending worker launch IDs */
     workerLaunchQueue: string[]

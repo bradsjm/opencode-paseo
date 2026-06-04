@@ -4,6 +4,7 @@ import {
     createPluginState,
     insertInboxEvent,
     getOrCreateSession,
+    registerEphemeralWorkerRun,
     recordCreatedWorker,
 } from "../lib/state/state.js"
 import { createDaemonEventHandler, createEventHandler } from "../lib/hooks.js"
@@ -288,7 +289,9 @@ test("createDaemonEventHandler", async (t) => {
 
 test("createEventHandler", async (t) => {
     const logger = new Logger(false)
-    const mockTransport = {} as PaseoTransport
+    const mockTransport = {
+        cancelWorker: async () => {},
+    } as PaseoTransport
 
     await t.test("handles session.deleted by removing session", async () => {
         const state = createPluginState()
@@ -357,6 +360,41 @@ test("createEventHandler", async (t) => {
         // Session should be gone, and global inbox should still have the event
         assert.equal(state.sessions.size, 0)
         assert.equal(state.inbox.size, 1)
+    })
+
+    await t.test("session.deleted best-effort cancels tracked ephemeral workers", async () => {
+        const state = createPluginState()
+        getOrCreateSession(state, "sess-1", "/project")
+        registerEphemeralWorkerRun(state, "sess-1", "w-ephemeral-1", { background: true })
+        registerEphemeralWorkerRun(state, "sess-1", "w-ephemeral-2", { background: false })
+
+        const canceled: string[] = []
+        const handler = createEventHandler(
+            state,
+            {
+                cancelWorker: async (workerId: string) => {
+                    canceled.push(workerId)
+                    if (workerId === "w-ephemeral-2") {
+                        throw new Error("cancel failed")
+                    }
+                },
+            } as PaseoTransport,
+            logger,
+            mockConfig,
+        )
+
+        await handler({
+            event: {
+                type: "session.deleted",
+                properties: {
+                    info: { id: "sess-1" },
+                },
+            } as any,
+        })
+
+        assert.deepEqual(canceled, ["w-ephemeral-1", "w-ephemeral-2"])
+        assert.equal(state.ephemeralWorkerRuns.size, 0)
+        assert.equal(state.sessions.size, 0)
     })
 })
 

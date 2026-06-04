@@ -11,6 +11,7 @@ import {
     createWorkerInspectTool,
     createWorkerLaunchStatusTool,
     createWorkerListTool,
+    createWorkerRunTool,
     createWorkerUpdateTool,
     createWorkerWaitTool,
 } from "../lib/tools/worker.js"
@@ -61,6 +62,14 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
         }),
         createWorker: async () => ({
             id: "w",
+            provider: "test",
+            cwd: "/tmp",
+            model: null,
+            status: "running" as const,
+            title: null,
+        }),
+        runWorker: async () => ({
+            id: "w-run",
             provider: "test",
             cwd: "/tmp",
             model: null,
@@ -168,14 +177,14 @@ function seedWorker(state: ReturnType<typeof createPluginState>, id: string): Wo
     return worker
 }
 
-function mockContext(): ToolContext {
+function mockContext(abortSignal: AbortSignal = new AbortController().signal): ToolContext {
     return {
         sessionID: "sess-1",
         messageID: "msg-1",
         agent: "test",
         directory: "/tmp",
         worktree: "/tmp",
-        abort: new AbortController().signal,
+        abort: abortSignal,
         metadata: () => {},
         ask: async () => {},
     }
@@ -910,6 +919,189 @@ test("paseo_worker_update", async (t) => {
         } as unknown as OpencodeClient
     }
 
+    test("paseo_worker_run", async (t) => {
+        const logger = new Logger(false)
+
+        await t.test(
+            "foreground run waits for completion and clears ephemeral tracking",
+            async () => {
+                const state = createPluginState()
+                const opencode = mockOpencodeClient()
+                let runOptions: Record<string, unknown> | null = null
+                const client = createMockTransport({
+                    runWorker: async (opts) => {
+                        runOptions = opts as Record<string, unknown>
+                        return {
+                            id: "w-run-1",
+                            provider: "opencode",
+                            cwd: "/tmp",
+                            model: "openai/gpt-5.4",
+                            status: "running",
+                            title: "run-1",
+                        }
+                    },
+                    waitForWorker: async (workerId) => ({
+                        status: "idle",
+                        workerId,
+                        error: null,
+                        lastMessage: "done",
+                        finalSnapshot: {
+                            id: workerId,
+                            provider: "opencode",
+                            cwd: "/tmp",
+                            model: "openai/gpt-5.4",
+                            status: "idle",
+                            title: "run-1",
+                            labels: {},
+                        },
+                    }),
+                })
+
+                const toolDef = createWorkerRunTool(state, client, opencode, logger)
+                const result = await toolDef.execute({ prompt: "Solve it" }, mockContext())
+                const output = JSON.parse((result as { output: string }).output)
+
+                assert.equal(runOptions?.modeId, "build")
+                assert.equal(runOptions?.provider, "opencode")
+                assert.equal(runOptions?.model, "openai/gpt-5.4")
+                assert.equal(runOptions?.initialPrompt, "Solve it")
+                assert.equal(runOptions?.background, false)
+                assert.equal(output.workerId, "w-run-1")
+                assert.equal(output.status, "completed")
+                assert.equal(output.detached, false)
+                assert.equal(output.ephemeral, true)
+                assert.equal(output.result.workerId, "w-run-1")
+                assert.equal(state.ephemeralWorkerRuns.size, 0)
+                assert.equal(state.workers.get("w-run-1")?.status, "idle")
+            },
+        )
+
+        await t.test(
+            "background run returns immediately and keeps ephemeral tracking",
+            async () => {
+                const state = createPluginState()
+                const opencode = mockOpencodeClient()
+                let waitCalls = 0
+                const client = createMockTransport({
+                    waitForWorker: async (workerId) => {
+                        waitCalls += 1
+                        return {
+                            status: "timeout",
+                            workerId,
+                            error: null,
+                            lastMessage: null,
+                            finalSnapshot: null,
+                        }
+                    },
+                })
+
+                const toolDef = createWorkerRunTool(state, client, opencode, logger)
+                const result = await toolDef.execute(
+                    { prompt: "Do it", background: true },
+                    mockContext(),
+                )
+                const output = JSON.parse((result as { output: string }).output)
+
+                assert.equal(output.workerId, "w-run")
+                assert.equal(output.status, "started")
+                assert.equal(output.background, true)
+                assert.equal(output.detached, false)
+                assert.equal(output.ephemeral, true)
+                assert.equal(waitCalls, 0)
+                assert.equal(state.ephemeralWorkerRuns.get("w-run")?.sessionId, "sess-1")
+                assert.equal(state.ephemeralWorkerRuns.get("w-run")?.background, true)
+            },
+        )
+
+        await t.test("abort triggers cancelWorker and clears ephemeral tracking", async () => {
+            const state = createPluginState()
+            const opencode = mockOpencodeClient()
+            const abortController = new AbortController()
+            let cancelCalls = 0
+            const waitDeferred =
+                createDeferred<Awaited<ReturnType<PaseoTransport["waitForWorker"]>>>()
+            const client = createMockTransport({
+                runWorker: async () => ({
+                    id: "w-run-abort",
+                    provider: "opencode",
+                    cwd: "/tmp",
+                    model: null,
+                    status: "running",
+                    title: null,
+                }),
+                waitForWorker: async () => waitDeferred.promise,
+                cancelWorker: async () => {
+                    cancelCalls += 1
+                },
+            })
+
+            const toolDef = createWorkerRunTool(state, client, opencode, logger)
+            const execution = toolDef.execute(
+                { prompt: "Abort me" },
+                mockContext(abortController.signal),
+            )
+
+            await flushAsyncWork()
+            abortController.abort()
+            const result = await execution
+            const output = JSON.parse((result as { output: string }).output)
+
+            assert.equal(output.workerId, "w-run-abort")
+            assert.equal(output.status, "aborted")
+            assert.equal(output.aborted, true)
+            assert.equal(cancelCalls, 1)
+            assert.equal(state.ephemeralWorkerRuns.size, 0)
+
+            waitDeferred.resolve({
+                status: "timeout",
+                workerId: "w-run-abort",
+                error: null,
+                lastMessage: null,
+                finalSnapshot: null,
+            })
+        })
+
+        await t.test(
+            "timeout returns non-completed payload and clears ephemeral tracking",
+            async () => {
+                const state = createPluginState()
+                const opencode = mockOpencodeClient()
+                let waitCalls = 0
+                const client = createMockTransport({
+                    runWorker: async () => ({
+                        id: "w-run-timeout",
+                        provider: "opencode",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running",
+                        title: null,
+                    }),
+                    waitForWorker: async (workerId) => {
+                        waitCalls += 1
+                        return {
+                            status: "timeout",
+                            workerId,
+                            error: null,
+                            lastMessage: null,
+                            finalSnapshot: null,
+                        }
+                    },
+                })
+
+                const toolDef = createWorkerRunTool(state, client, opencode, logger)
+                const result = await toolDef.execute({ prompt: "Wait", timeout: 1 }, mockContext())
+                const output = JSON.parse((result as { output: string }).output)
+
+                assert.equal(output.workerId, "w-run-timeout")
+                assert.equal(output.status, "timeout")
+                assert.equal(output.timedOut, true)
+                assert.equal(output.timeoutMs, 1)
+                assert.ok(waitCalls >= 1)
+                assert.equal(state.ephemeralWorkerRuns.size, 0)
+            },
+        )
+    })
+
     test("paseo_worker_create", async (t) => {
         const logger = new Logger(false)
 
@@ -1170,7 +1362,10 @@ test("paseo_worker_update", async (t) => {
 
             const output = JSON.parse((result as { output: string }).output)
             assert.equal(output.chatRoom, "room-alpha")
-            assert.match(receivedOptions.initialPrompt, /^Solve the task\.\n\nPaseo chat coordination instructions:/)
+            assert.match(
+                receivedOptions.initialPrompt,
+                /^Solve the task\.\n\nPaseo chat coordination instructions:/,
+            )
             assert.match(receivedOptions.initialPrompt, /room-alpha/)
             assert.match(receivedOptions.initialPrompt, /paseo chat post/)
             assert.match(receivedOptions.initialPrompt, /PASEO_AGENT_ID/)

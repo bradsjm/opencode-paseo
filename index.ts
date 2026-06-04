@@ -28,6 +28,7 @@ import { createProfileListTool } from "./lib/tools/profile.js"
 import {
     createWorkerListTool,
     createWorkerCreateTool,
+    createWorkerRunTool,
     createWorkerLaunchStatusTool,
     createWorkerSendTool,
     createWorkerWaitTool,
@@ -145,29 +146,21 @@ const server: Plugin = (async (ctx) => {
             paseo_terminal_kill: createTerminalKillTool(state, client, logger),
             paseo_permission_respond: createPermissionRespondTool(state, client, logger),
             paseo_profile_list: createProfileListTool(ctx.client, logger),
-            paseo_worker_list: createWorkerListTool(
-                state,
-                client,
-                logger,
-                (worker) => chatWatcher.observeWorker(worker),
+            paseo_worker_list: createWorkerListTool(state, client, logger, (worker) =>
+                chatWatcher.observeWorker(worker),
             ),
             paseo_worker_create: createWorkerCreateTool(ctx.client, workerLaunchQueue, logger),
+            paseo_worker_run: createWorkerRunTool(state, client, ctx.client, logger),
             paseo_worker_launch_status: createWorkerLaunchStatusTool(workerLaunchQueue, logger),
             paseo_worker_send: createWorkerSendTool(state, client, logger),
             paseo_worker_wait: createWorkerWaitTool(state, client, config, logger),
             paseo_worker_cancel: createWorkerCancelTool(state, client, logger),
             paseo_worker_archive: createWorkerArchiveTool(state, client, logger),
-            paseo_worker_update: createWorkerUpdateTool(
-                state,
-                client,
-                logger,
-                (worker) => chatWatcher.observeWorker(worker),
+            paseo_worker_update: createWorkerUpdateTool(state, client, logger, (worker) =>
+                chatWatcher.observeWorker(worker),
             ),
-            paseo_worker_inspect: createWorkerInspectTool(
-                state,
-                client,
-                logger,
-                (worker) => chatWatcher.observeWorker(worker),
+            paseo_worker_inspect: createWorkerInspectTool(state, client, logger, (worker) =>
+                chatWatcher.observeWorker(worker),
             ),
             paseo_worktree_list: createWorktreeListTool(state, client, logger),
             paseo_worktree_create: createWorktreeCreateTool(state, client, logger),

@@ -1,10 +1,7 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState, WorkerStatus, WorkerSummary } from "../state/types.js"
 import type { PluginConfig } from "../config.js"
-import {
-    appendChatRoomCoordinationPrompt,
-    normalizeChatRoom,
-} from "../chat/worker-room.js"
+import { appendChatRoomCoordinationPrompt, normalizeChatRoom } from "../chat/worker-room.js"
 import { shouldNudge } from "../notifier.js"
 import type { WorkerLaunchQueueController } from "../worker-launch/queue.js"
 import type {
@@ -27,11 +24,25 @@ import {
 import {
     upsertWorker,
     mapAgentToWorkerSummary,
+    registerEphemeralWorkerRun,
+    removeEphemeralWorkerRun,
     removeWorkerFromState,
     getBlockingAction,
 } from "../state/state.js"
 
 type WorkerRefreshObserver = (worker: WorkerSummary) => void
+
+async function resolveWorkerProfileFields(
+    opencodeClient: OpencodeClient,
+    cwd: string,
+    profileInput: string | undefined,
+) {
+    const profileName = normalizeProfileName(profileInput)
+    const profiles = await listProfiles(opencodeClient, cwd)
+    const profile = resolveProfile(profiles, profileName)
+    const workerFields = profileToWorkerFields(profile)
+    return { profileName, workerFields }
+}
 
 function isWorkerMissingUpstreamError(err: unknown): err is Error {
     return (
@@ -150,18 +161,17 @@ export function createWorkerCreateTool(
         },
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
-            const profileName = normalizeProfileName(args.profile)
             const chatRoom = normalizeChatRoom(args.chatRoom)
+            const { profileName, workerFields } = await resolveWorkerProfileFields(
+                opencodeClient,
+                cwd,
+                args.profile,
+            )
 
             logger.info("Tool: paseo_worker_create invoked", {
                 cwd,
                 profile: profileName,
             })
-
-            // Resolve profile into daemon payload fields
-            const profiles = await listProfiles(opencodeClient, cwd)
-            const profile = resolveProfile(profiles, profileName)
-            const workerFields = profileToWorkerFields(profile)
 
             const receipt = workerLaunchQueue.enqueueWorkerLaunch({
                 sessionId: context.sessionID,
@@ -245,6 +255,229 @@ export function createWorkerLaunchStatusTool(
                     null,
                     2,
                 ),
+            }
+        },
+    })
+}
+
+export function createWorkerRunTool(
+    state: PluginState,
+    client: PaseoTransport,
+    opencodeClient: OpencodeClient,
+    logger: Logger,
+): ToolDefinition {
+    return tool({
+        description:
+            "Create a new Paseo worker through the foreground run path. Runs are non-detached, " +
+            "block by default until completion, support background mode, and are best-effort canceled " +
+            "on tool abort or owning session cleanup.",
+        args: {
+            prompt: tool.schema.string().describe("Prompt to execute on the worker"),
+            cwd: tool.schema
+                .string()
+                .optional()
+                .describe("Working directory for the worker (defaults to session directory)"),
+            profile: tool.schema
+                .string()
+                .optional()
+                .describe(
+                    `OpenCode profile name to use (default: "${DEFAULT_PROFILE}"). Use paseo_profile_list to see available profiles.`,
+                ),
+            background: tool.schema
+                .boolean()
+                .optional()
+                .describe("If true, return immediately instead of waiting for completion"),
+            worktreeName: tool.schema
+                .string()
+                .optional()
+                .describe("Name for a git worktree to create for this worker"),
+            chatRoom: tool.schema
+                .string()
+                .optional()
+                .describe("Optional Paseo chat room to coordinate this worker through"),
+            labels: tool.schema
+                .record(tool.schema.string(), tool.schema.string())
+                .optional()
+                .describe("Key-value labels to attach to the worker"),
+            timeout: tool.schema
+                .number()
+                .int()
+                .optional()
+                .describe(
+                    `Maximum time to wait in milliseconds when background is false (default: ${DEFAULT_WAIT_TIMEOUT_MS})`,
+                ),
+        },
+        async execute(args, context: ToolContext) {
+            const cwd = args.cwd ?? context.directory
+            const background = args.background === true
+            const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
+            const chatRoom = normalizeChatRoom(args.chatRoom)
+            const { profileName, workerFields } = await resolveWorkerProfileFields(
+                opencodeClient,
+                cwd,
+                args.profile,
+            )
+
+            logger.info("Tool: paseo_worker_run invoked", {
+                cwd,
+                profile: profileName,
+                background,
+                sessionId: context.sessionID,
+                timeout,
+            })
+
+            const createdWorker = await client.runWorker({
+                cwd,
+                provider: workerFields.provider,
+                model: workerFields.model,
+                modeId: workerFields.modeId,
+                initialPrompt: chatRoom
+                    ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom)
+                    : args.prompt,
+                labels: args.labels as Record<string, string> | undefined,
+                worktreeName: args.worktreeName,
+                background,
+            })
+
+            registerEphemeralWorkerRun(state, context.sessionID, createdWorker.id, { background })
+
+            if (background) {
+                return {
+                    title: "Worker Run Started",
+                    output: JSON.stringify(
+                        {
+                            workerId: createdWorker.id,
+                            profile: profileName,
+                            cwd: createdWorker.cwd,
+                            background: true,
+                            detached: false,
+                            ephemeral: true,
+                            status: "started",
+                            message:
+                                "Ephemeral worker started in background mode. It will be best-effort canceled if the owning tool session is deleted while the plugin is still running.",
+                        },
+                        null,
+                        2,
+                    ),
+                }
+            }
+
+            let cancelRequested = false
+            let cancelIssued = false
+            let resolveAbort: (() => void) | undefined
+            const abortPromise = new Promise<"aborted">((resolve) => {
+                resolveAbort = () => resolve("aborted")
+            })
+            const requestCancel = async () => {
+                if (cancelIssued) {
+                    return
+                }
+                cancelIssued = true
+                try {
+                    await client.cancelWorker(createdWorker.id)
+                } catch (err: unknown) {
+                    logger.warn("Failed to cancel ephemeral worker after abort", {
+                        workerId: createdWorker.id,
+                        error: err instanceof Error ? err.message : String(err),
+                    })
+                }
+            }
+            const onAbort = () => {
+                cancelRequested = true
+                void requestCancel()
+                resolveAbort?.()
+            }
+
+            if (context.abort.aborted) {
+                onAbort()
+            } else {
+                context.abort.addEventListener("abort", onAbort, { once: true })
+            }
+
+            try {
+                const deadline = Date.now() + timeout
+
+                while (true) {
+                    if (cancelRequested) {
+                        return {
+                            title: "Worker Run Aborted",
+                            output: JSON.stringify(
+                                {
+                                    workerId: createdWorker.id,
+                                    profile: profileName,
+                                    cwd: createdWorker.cwd,
+                                    background: false,
+                                    detached: false,
+                                    ephemeral: true,
+                                    status: "aborted",
+                                    aborted: true,
+                                },
+                                null,
+                                2,
+                            ),
+                        }
+                    }
+
+                    const remaining = deadline - Date.now()
+                    if (remaining <= 0) {
+                        return {
+                            title: "Worker Run Timed Out",
+                            output: JSON.stringify(
+                                {
+                                    workerId: createdWorker.id,
+                                    profile: profileName,
+                                    cwd: createdWorker.cwd,
+                                    background: false,
+                                    detached: false,
+                                    ephemeral: true,
+                                    status: "timeout",
+                                    timedOut: true,
+                                    timeoutMs: timeout,
+                                },
+                                null,
+                                2,
+                            ),
+                        }
+                    }
+
+                    const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, remaining)
+                    const outcome = await Promise.race([
+                        client
+                            .waitForWorker(createdWorker.id, sliceTimeout)
+                            .then((result) => ({ type: "wait" as const, result })),
+                        abortPromise.then(() => ({ type: "abort" as const })),
+                    ])
+
+                    if (outcome.type === "abort") {
+                        continue
+                    }
+
+                    syncWorkerFromFinalSnapshot(state, outcome.result)
+                    if (outcome.result.status === "timeout") {
+                        continue
+                    }
+
+                    return {
+                        title: "Worker Run Completed",
+                        output: JSON.stringify(
+                            {
+                                workerId: createdWorker.id,
+                                profile: profileName,
+                                cwd: createdWorker.cwd,
+                                background: false,
+                                detached: false,
+                                ephemeral: true,
+                                status: "completed",
+                                result: outcome.result,
+                            },
+                            null,
+                            2,
+                        ),
+                    }
+                }
+            } finally {
+                context.abort.removeEventListener("abort", onAbort)
+                removeEphemeralWorkerRun(state, createdWorker.id)
             }
         },
     })

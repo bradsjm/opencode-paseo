@@ -12,6 +12,9 @@ import {
     upsertTerminal,
     upsertWorker,
     recordCreatedWorker,
+    registerEphemeralWorkerRun,
+    removeEphemeralWorkerRun,
+    listEphemeralWorkerIdsForSession,
     mapAgentToWorkerSummary,
     removeSession,
     removeWorkerFromState,
@@ -36,6 +39,7 @@ test("createPluginState", async (t) => {
         assert.equal(state.workers.size, 0)
         assert.equal(state.inbox.size, 0)
         assert.equal(state.workerLaunches.size, 0)
+        assert.equal(state.ephemeralWorkerRuns.size, 0)
         assert.deepEqual(state.workerLaunchQueue, [])
         assert.equal(state.activeWorkerLaunchId, null)
         assert.equal(state.eventCounter, 0)
@@ -75,10 +79,17 @@ test("resetPluginState", async (t) => {
         })
         state.workerLaunchQueue.push("launch-1")
         state.activeWorkerLaunchId = "launch-active"
+        state.ephemeralWorkerRuns.set("w-ephemeral", {
+            workerId: "w-ephemeral",
+            sessionId: "sess-1",
+            background: true,
+            createdAt: Date.now(),
+        })
         resetPluginState(state)
         assert.equal(state.connectionStatus, "disconnected")
         assert.equal(state.inbox.size, 0)
         assert.equal(state.workerLaunches.size, 0)
+        assert.equal(state.ephemeralWorkerRuns.size, 0)
         assert.deepEqual(state.workerLaunchQueue, [])
         assert.equal(state.activeWorkerLaunchId, null)
     })
@@ -569,6 +580,22 @@ test("removeSession", async (t) => {
         // Global entries should still exist
         assert.equal(state.workers.size, 1)
         assert.equal(state.terminals.size, 1)
+    })
+})
+
+test("ephemeral worker run helpers", async (t) => {
+    await t.test("register/list/remove ephemeral runs", () => {
+        const state = createPluginState()
+        registerEphemeralWorkerRun(state, "sess-1", "w1", { background: true, createdAt: 1 })
+        registerEphemeralWorkerRun(state, "sess-1", "w2", { background: false, createdAt: 2 })
+        registerEphemeralWorkerRun(state, "sess-2", "w3", { background: true, createdAt: 3 })
+
+        assert.deepEqual(listEphemeralWorkerIdsForSession(state, "sess-1"), ["w1", "w2"])
+        assert.deepEqual(listEphemeralWorkerIdsForSession(state, "sess-2"), ["w3"])
+
+        const removed = removeEphemeralWorkerRun(state, "w2")
+        assert.equal(removed?.sessionId, "sess-1")
+        assert.deepEqual(listEphemeralWorkerIdsForSession(state, "sess-1"), ["w1"])
     })
 })
 

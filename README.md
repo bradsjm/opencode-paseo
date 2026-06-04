@@ -30,7 +30,7 @@ On startup the plugin connects to the Paseo daemon via WebSocket, hydrates the l
 1. **Connection** — the plugin opens a WebSocket to the Paseo daemon and authenticates with the configured password.
 2. **Hydration** — on connect, it fetches the current daemon state (workers, terminals, sessions) and populates the local inbox.
 3. **Live events** — daemon events (`worker.*`, `terminal.*`, `permission.*`, `session.*`) are mapped to inbox events in real time. Blocking events (worker failures, permission requests, terminal errors) trigger session nudges so the agent notices them.
-4. **Session cleanup** — when an OpenCode session is deleted, the plugin unbinds any Paseo sessions associated with it.
+4. **Session cleanup** — when an OpenCode session is deleted, the plugin unbinds durable session ownership and best-effort cancels any tracked ephemeral `paseo_worker_run` workers.
 
 ## Configuration
 
@@ -104,16 +104,19 @@ The plugin registers the following tools in OpenCode.
 
 ### Worker
 
-| Tool                   | Description                                                                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `paseo_worker_list`    | List all workers with ID, status, cwd, provider/model/mode, and permission data                                                                |
-| `paseo_worker_create`  | Create a new worker using an OpenCode profile. Workers run asynchronously and send session nudges on completion or failure.                    |
-| `paseo_worker_send`    | Send a text message to an existing worker                                                                                                      |
-| `paseo_worker_wait`    | Wait on one or more workers with `workerIds`, `waitFor: "any" \| "all"`, a global timeout, and early interruption on owned-worker nudge events |
-| `paseo_worker_cancel`  | Cancel a worker's current task. Use `forceKill=true` for permanent termination.                                                                |
-| `paseo_worker_archive` | Archive a worker (removed from active list)                                                                                                    |
-| `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                                             |
-| `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                                                |
+| Tool                   | Description                                                                                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paseo_worker_list`    | List all workers with ID, status, cwd, provider/model/mode, and permission data                                                                                                                     |
+| `paseo_worker_create`  | Create a durable detached worker through the queued launch path. Returns a launch receipt immediately and preserves existing launch semantics.                                                      |
+| `paseo_worker_run`     | Create an ephemeral non-detached worker. Blocks until completion by default, supports `background: true`, and best-effort cancels on abort or owning session deletion while the plugin stays alive. |
+| `paseo_worker_send`    | Send a text message to an existing worker                                                                                                                                                           |
+| `paseo_worker_wait`    | Wait on one or more workers with `workerIds`, `waitFor: "any" \| "all"`, a global timeout, and early interruption on owned-worker nudge events                                                      |
+| `paseo_worker_cancel`  | Cancel a worker's current task. Use `forceKill=true` for permanent termination.                                                                                                                     |
+| `paseo_worker_archive` | Archive a worker (removed from active list)                                                                                                                                                         |
+| `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                                                                                                  |
+| `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                                                                                                     |
+
+`paseo_worker_run` is intentionally separate from `paseo_worker_create`: it uses the non-detached transport path, keeps only in-memory ephemeral bookkeeping, and does not participate in launch queue, hydration, or restart recovery. In foreground mode it returns a completion/timeout/aborted payload for that single run. In background mode it returns immediately with the created `workerId` plus `detached: false` / `ephemeral: true` lifecycle markers.
 
 `paseo_worker_wait` accepts `workerIds: string[]` (one or more, deduplicated), optional `waitFor` (defaults to `"all"`), and optional `timeout` in milliseconds. It returns a structured payload with the completed per-worker `results`, any `pendingWorkerIds`, plus `timedOut` and `interruptedByNudge` flags so the controller can tell whether the wait completed normally, hit the timeout, or stopped because the current OpenCode session received a nudge-eligible event for one of its owned workers, including fresh synthetic `worker.stalled` events.
 
