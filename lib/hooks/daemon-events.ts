@@ -205,7 +205,11 @@ export function createDaemonEventHandler(
             case "worker.failed":
             case "worker.blocked": {
                 if (daemonEvent.type !== "worker.stalled") {
-                    const worker = syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
+                    const worker = syncWorkerFromPayload(
+                        state,
+                        daemonEvent.type,
+                        daemonEvent.payload,
+                    )
                     onWorkerObserved?.(worker)
                 }
                 const resourceId = daemonEvent.payload.workerId

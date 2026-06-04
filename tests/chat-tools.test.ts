@@ -134,7 +134,10 @@ test("chat tools", async (t) => {
             },
         })
 
-        const result = await createChatPostTool(client, logger).execute({ room: "ops", body: "hello" })
+        const result = await createChatPostTool(client, logger).execute({
+            room: "ops",
+            body: "hello",
+        })
         const output = JSON.parse((result as { output: string }).output)
 
         assert.equal(receivedAuthorAgentId, "manual")
@@ -223,7 +226,10 @@ test("chat tools", async (t) => {
             },
         })
 
-        const result = await createChatWaitTool(client, logger).execute({ room: "ops", timeoutMs: 1234 })
+        const result = await createChatWaitTool(client, logger).execute({
+            room: "ops",
+            timeoutMs: 1234,
+        })
         const output = JSON.parse((result as { output: string }).output)
 
         assert.deepEqual(calls, [

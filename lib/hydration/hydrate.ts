@@ -1,6 +1,11 @@
 import type { OutputConfig } from "../config.js"
 import { getHydrationPermissionEventId } from "../inbox/ids.js"
-import type { PluginState, InboxEvent, TerminalSessionSummary, WorkerSummary } from "../state/types.js"
+import type {
+    PluginState,
+    InboxEvent,
+    TerminalSessionSummary,
+    WorkerSummary,
+} from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { truncateSummary } from "../inbox/summary.js"

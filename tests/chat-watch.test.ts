@@ -103,7 +103,9 @@ function createMockOpencodeClient(messages: string[]): OpencodeClient {
     return {
         session: {
             prompt: async ({ body }) => {
-                const text = body.parts.map((part) => (part.type === "text" ? part.text : "")).join("")
+                const text = body.parts
+                    .map((part) => (part.type === "text" ? part.text : ""))
+                    .join("")
                 messages.push(text)
                 return { data: null }
             },
@@ -130,7 +132,12 @@ test("chat watcher", async (t) => {
     await t.test("seeded cursors do not replay historical messages", async () => {
         const state = createPluginState()
         const promptMessages: string[] = []
-        const waiting = createDeferred<{ requestId: string; messages: ChatMessage[]; timedOut: boolean; error: null }>()
+        const waiting = createDeferred<{
+            requestId: string
+            messages: ChatMessage[]
+            timedOut: boolean
+            error: null
+        }>()
         const client = createMockTransport({
             readChatMessages: async () => ({
                 requestId: "req-read",
@@ -228,7 +235,9 @@ test("chat watcher", async (t) => {
             readChatMessages: async () => ({ requestId: "req-read", messages: [], error: null }),
             waitForChatMessages: async () => ({
                 requestId: "req-wait",
-                messages: [buildMessage({ body: "@friendly-bot", mentionAgentIds: ["friendly-bot"] })],
+                messages: [
+                    buildMessage({ body: "@friendly-bot", mentionAgentIds: ["friendly-bot"] }),
+                ],
                 timedOut: false,
                 error: null,
             }),
