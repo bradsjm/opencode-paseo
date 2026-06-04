@@ -66,7 +66,10 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
                 .string()
                 .optional()
                 .describe("Working directory for the loop (defaults to session directory)"),
-            provider: tool.schema.string().optional().describe("Provider override for the loop worker"),
+            provider: tool.schema
+                .string()
+                .optional()
+                .describe("Provider override for the loop worker"),
             model: tool.schema.string().optional().describe("Model override for the loop worker"),
             modeId: tool.schema.string().optional().describe("Mode override for the loop worker"),
             verifierProvider: tool.schema
@@ -88,7 +91,9 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
             verifyChecks: tool.schema
                 .array(tool.schema.string())
                 .optional()
-                .describe("Verifier commands. Must contain at least one non-empty command when provided."),
+                .describe(
+                    "Verifier commands. Must contain at least one non-empty command when provided.",
+                ),
             name: tool.schema.string().optional().describe("Optional human-readable loop name"),
             sleepMs: tool.schema
                 .number()

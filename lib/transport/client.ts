@@ -540,7 +540,9 @@ function mapLoopRecord(loop: Record<string, unknown>): LoopRecord {
         ...mapLoopListItem(loop),
         stoppedAt: (loop.stoppedAt as string | null | undefined) ?? undefined,
         iterations: Array.isArray(loop.iterations)
-            ? loop.iterations.map((iteration) => mapLoopIteration(iteration as Record<string, unknown>))
+            ? loop.iterations.map((iteration) =>
+                  mapLoopIteration(iteration as Record<string, unknown>),
+              )
             : [],
     }
 }

@@ -79,15 +79,15 @@ function summarizeBashPermission(
     return values.every((value) => value === values[0]) ? values[0] : "mixed"
 }
 
-export function formatProfileModelLabel(profile: Pick<ProfileSummary, "providerID" | "modelID">): string {
+export function formatProfileModelLabel(
+    profile: Pick<ProfileSummary, "providerID" | "modelID">,
+): string {
     const providerID = profile.providerID?.trim()
     const modelID = profile.modelID?.trim()
     return providerID && modelID ? `${providerID}/${modelID}` : DEFAULT_MODEL_LABEL
 }
 
-export function summarizeProfilePermissions(
-    profile: Pick<ProfileSummary, "permission">,
-): string {
+export function summarizeProfilePermissions(profile: Pick<ProfileSummary, "permission">): string {
     const edit = normalizePermissionValue(profile.permission?.edit)
     const bash = summarizeBashPermission(profile.permission?.bash)
 

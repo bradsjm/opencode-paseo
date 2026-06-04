@@ -67,7 +67,10 @@ test("paseo_profile_list", async (t) => {
 
         assert.deepEqual(Object.keys(output).sort(), ["count", "profiles", "recommendation"])
         assert.equal(output.count, 2)
-        assert.equal(output.recommendation, 'Use profile "build" unless a different profile is needed.')
+        assert.equal(
+            output.recommendation,
+            'Use profile "build" unless a different profile is needed.',
+        )
         assert.deepEqual(output.profiles, [
             {
                 name: "build",
