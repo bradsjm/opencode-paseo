@@ -1,10 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
+    formatProfileModelLabel,
     mapAgentToProfile,
     normalizeProfileName,
     resolveProfile,
     profileToWorkerFields,
+    summarizeProfilePermissions,
     DEFAULT_PROFILE,
     type ProfileSummary,
 } from "../lib/profile.js"
@@ -53,6 +55,7 @@ test("mapAgentToProfile", async (t) => {
         assert.equal(result.mode, "primary")
         assert.equal(result.providerID, "openai")
         assert.equal(result.modelID, "gpt-5.4")
+        assert.deepEqual(result.permission, null)
         assert.equal(result.prompt, "You are a build agent")
     })
 
@@ -65,6 +68,7 @@ test("mapAgentToProfile", async (t) => {
         assert.equal(result.providerID, null)
         assert.equal(result.modelID, null)
         assert.equal(result.description, null)
+        assert.equal(result.permission, null)
         assert.equal(result.prompt, null)
     })
 
@@ -75,7 +79,64 @@ test("mapAgentToProfile", async (t) => {
         assert.equal(result.description, null)
         assert.equal(result.providerID, null)
         assert.equal(result.modelID, null)
+        assert.equal(result.permission, null)
         assert.equal(result.prompt, null)
+    })
+})
+
+// ─── Selection Formatting Helpers ────────────────────────────────────────────
+
+test("formatProfileModelLabel", async (t) => {
+    await t.test("renders explicit provider/model", () => {
+        assert.equal(
+            formatProfileModelLabel({ providerID: "openai", modelID: "gpt-5.4" }),
+            "openai/gpt-5.4",
+        )
+    })
+
+    await t.test("renders inherited model label when model is not pinned", () => {
+        assert.equal(
+            formatProfileModelLabel({ providerID: null, modelID: null }),
+            "inherits OpenCode default at launch",
+        )
+    })
+})
+
+test("summarizeProfilePermissions", async (t) => {
+    await t.test("summarizes full access", () => {
+        assert.equal(
+            summarizeProfilePermissions({
+                permission: { edit: "allow", bash: { "*": "allow" } },
+            }),
+            "full access",
+        )
+    })
+
+    await t.test("summarizes no edits or bash", () => {
+        assert.equal(
+            summarizeProfilePermissions({
+                permission: { edit: "deny", bash: { "*": "deny" } },
+            }),
+            "no edits or bash",
+        )
+    })
+
+    await t.test("collapses uniform bash object permissions", () => {
+        assert.equal(
+            summarizeProfilePermissions({
+                permission: { edit: "ask", bash: { read: "allow", write: "allow" } },
+            }),
+            "edit ask, bash allow",
+        )
+    })
+
+    await t.test("marks mixed bash object permissions as mixed", () => {
+        assert.equal(
+            summarizeProfilePermissions({
+                permission: { edit: "deny", bash: { read: "allow", write: "deny" } },
+            }),
+            "edit deny, bash mixed",
+        )
     })
 })
 
@@ -89,6 +150,7 @@ test("resolveProfile", async (t) => {
             mode: "primary",
             providerID: "openai",
             modelID: "gpt-5.4",
+            permission: null,
             prompt: null,
         },
         {
@@ -97,6 +159,7 @@ test("resolveProfile", async (t) => {
             mode: "subagent",
             providerID: "anthropic",
             modelID: "claude-3",
+            permission: null,
             prompt: null,
         },
     ]
@@ -134,6 +197,7 @@ test("profileToWorkerFields", async (t) => {
             mode: "primary",
             providerID: "openai",
             modelID: "gpt-5.4",
+            permission: null,
             prompt: null,
         })
         assert.equal(result.modeId, "build")
@@ -148,6 +212,7 @@ test("profileToWorkerFields", async (t) => {
             mode: "all",
             providerID: null,
             modelID: "some-model",
+            permission: null,
             prompt: null,
         })
         assert.equal(result.modeId, "custom")
@@ -162,6 +227,7 @@ test("profileToWorkerFields", async (t) => {
             mode: "all",
             providerID: "anthropic",
             modelID: null,
+            permission: null,
             prompt: null,
         })
         assert.equal(result.modeId, "custom")
@@ -176,6 +242,7 @@ test("profileToWorkerFields", async (t) => {
             mode: "all",
             providerID: null,
             modelID: null,
+            permission: null,
             prompt: null,
         })
         assert.equal(result.modeId, "bare")

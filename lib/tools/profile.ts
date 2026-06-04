@@ -1,6 +1,12 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { Logger } from "../logger.js"
-import { listProfiles, DEFAULT_PROFILE, type OpencodeClient } from "../profile.js"
+import {
+    formatProfileModelLabel,
+    listProfiles,
+    summarizeProfilePermissions,
+    DEFAULT_PROFILE,
+    type OpencodeClient,
+} from "../profile.js"
 
 // ─── Profile List Tool ───────────────────────────────────────────────────────
 
@@ -26,12 +32,11 @@ export function createProfileListTool(
                 name: p.name,
                 description: p.description,
                 mode: p.mode,
-                providerID: p.providerID,
-                modelID: p.modelID,
-                isDefault: p.name === DEFAULT_PROFILE,
+                model: formatProfileModelLabel(p),
+                permissionSummary: summarizeProfilePermissions(p),
             }))
 
-            const defaultProfile = output.find((p) => p.isDefault)
+            const hasDefaultProfile = output.some((p) => p.name === DEFAULT_PROFILE)
 
             return {
                 title: "OpenCode Profiles",
@@ -39,8 +44,7 @@ export function createProfileListTool(
                     {
                         profiles: output,
                         count: output.length,
-                        defaultProfile: defaultProfile?.name ?? DEFAULT_PROFILE,
-                        recommendation: defaultProfile
+                        recommendation: hasDefaultProfile
                             ? `Use profile "${DEFAULT_PROFILE}" unless a different profile is needed.`
                             : `No "${DEFAULT_PROFILE}" profile found. Available: ${output.map((p) => p.name).join(", ") || "(none)"}`,
                     },

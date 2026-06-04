@@ -2,11 +2,16 @@
 // Maps OpenCode agent definitions ("profiles") into a minimal internal shape
 // used by the profile-list tool and the worker-create tool.
 
-import type { createOpencodeClient } from "@opencode-ai/sdk"
+import type { Agent, createOpencodeClient } from "@opencode-ai/sdk"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type OpencodeClient = ReturnType<typeof createOpencodeClient>
+
+type AgentLike = Pick<Agent, "name"> & Partial<Agent>
+type PermissionValue = "ask" | "allow" | "deny"
+
+const DEFAULT_MODEL_LABEL = "inherits OpenCode default at launch"
 
 /** Minimal profile shape used inside the plugin. */
 export interface ProfileSummary {
@@ -15,6 +20,7 @@ export interface ProfileSummary {
     mode: string
     providerID: string | null
     modelID: string | null
+    permission: Agent["permission"] | null
     prompt: string | null
 }
 
@@ -27,15 +33,16 @@ export const DEFAULT_PROFILE = "build"
  * Map a raw OpenCode Agent object into the plugin's ProfileSummary shape.
  * Accepts the raw object to avoid tight coupling to a specific SDK version.
  */
-export function mapAgentToProfile(agent: Record<string, unknown>): ProfileSummary {
-    const model = agent.model as Record<string, unknown> | undefined
+export function mapAgentToProfile(agent: AgentLike): ProfileSummary {
+    const model = agent.model
     return {
-        name: (agent.name as string) ?? "",
-        description: (agent.description as string | null) ?? null,
-        mode: (agent.mode as string) ?? "all",
-        providerID: (model?.providerID as string | null) ?? null,
-        modelID: (model?.modelID as string | null) ?? null,
-        prompt: (agent.prompt as string | null) ?? null,
+        name: agent.name ?? "",
+        description: agent.description ?? null,
+        mode: agent.mode ?? "all",
+        providerID: model?.providerID ?? null,
+        modelID: model?.modelID ?? null,
+        permission: agent.permission ?? null,
+        prompt: agent.prompt ?? null,
     }
 }
 
@@ -50,8 +57,44 @@ export async function listProfiles(
     directory: string,
 ): Promise<ProfileSummary[]> {
     const result = await client.app.agents({ query: { directory } })
-    const agents = (result.data ?? []) as Array<Record<string, unknown>>
+    const agents = (result.data ?? []) as Agent[]
     return agents.map(mapAgentToProfile)
+}
+
+function normalizePermissionValue(value: unknown): PermissionValue {
+    return value === "allow" || value === "deny" || value === "ask" ? value : "ask"
+}
+
+function summarizeBashPermission(
+    bash: Agent["permission"]["bash"] | Record<string, unknown> | null | undefined,
+): PermissionValue | "mixed" {
+    if (!bash || typeof bash !== "object" || Array.isArray(bash)) return "mixed"
+
+    const values = Object.values(bash)
+        .filter((value): value is unknown => value !== undefined)
+        .map(normalizePermissionValue)
+
+    if (values.length === 0) return "mixed"
+
+    return values.every((value) => value === values[0]) ? values[0] : "mixed"
+}
+
+export function formatProfileModelLabel(profile: Pick<ProfileSummary, "providerID" | "modelID">): string {
+    const providerID = profile.providerID?.trim()
+    const modelID = profile.modelID?.trim()
+    return providerID && modelID ? `${providerID}/${modelID}` : DEFAULT_MODEL_LABEL
+}
+
+export function summarizeProfilePermissions(
+    profile: Pick<ProfileSummary, "permission">,
+): string {
+    const edit = normalizePermissionValue(profile.permission?.edit)
+    const bash = summarizeBashPermission(profile.permission?.bash)
+
+    if (edit === "allow" && bash === "allow") return "full access"
+    if (edit === "deny" && bash === "deny") return "no edits or bash"
+
+    return `edit ${edit}, bash ${bash}`
 }
 
 /**
