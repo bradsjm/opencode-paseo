@@ -1,10 +1,6 @@
 # AGENTS.md
 
-## Scope
-
-- This is a single-package ESM TypeScript OpenCode plugin repo.
-- Keep work within the current Phase 1 scope from `README.md`: daemon status, startup hydration, ephemeral session mapping, inbox state, and live events.
-- Do not add reconnect loops, durable restart recovery, terminal promotion/rerouting, or later-phase features unless the user explicitly asks.
+This is a single-package ESM TypeScript OpenCode plugin repo.
 
 ## Where the real wiring lives
 
