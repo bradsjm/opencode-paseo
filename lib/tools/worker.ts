@@ -1,6 +1,14 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
-import type { PaseoTransport } from "../transport/types.js"
+import type { PluginConfig } from "../config.js"
+import { shouldNudge } from "../notifier.js"
+import type {
+    DaemonEvent,
+    MultiWorkerWaitResult,
+    PaseoTransport,
+    WorkerWaitNudgeEvent,
+    WorkerWaitResult,
+} from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import type { OpencodeClient } from "../profile.js"
 import {
@@ -225,17 +233,100 @@ export function createWorkerSendTool(
 // ─── Worker Wait Tool ────────────────────────────────────────────────────────
 
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000
+const WAIT_SLICE_TIMEOUT_MS = 250
+
+function syncWorkerFromFinalSnapshot(state: PluginState, result: WorkerWaitResult): void {
+    if (!result.finalSnapshot) {
+        return
+    }
+
+    const worker = mapAgentToWorkerSummary(result.finalSnapshot)
+    const existing = state.workers.get(result.workerId)
+    if (existing) {
+        worker.unreadEventCount = existing.unreadEventCount
+    }
+    upsertWorker(state, worker)
+}
+
+function getNudgeEventFromDaemonEvent(
+    event: DaemonEvent,
+    ownedWorkerIds: Set<string>,
+    config: PluginConfig,
+): WorkerWaitNudgeEvent | null {
+    switch (event.type) {
+        case "worker.finished":
+        case "worker.failed":
+        case "worker.blocked":
+        case "permission.requested": {
+            const workerId = event.payload.workerId
+            if (!ownedWorkerIds.has(workerId) || !shouldNudge(event.type, config.notifications)) {
+                return null
+            }
+
+            const summary =
+                (typeof event.payload.summary === "string" && event.payload.summary) ||
+                (typeof event.payload.message === "string" && event.payload.message) ||
+                `${event.type} for ${workerId}`
+
+            return { kind: event.type, workerId, summary }
+        }
+        default:
+            return null
+    }
+}
+
+function getExistingUnreadNudge(
+    state: PluginState,
+    sessionId: string,
+    config: PluginConfig,
+): WorkerWaitNudgeEvent | null {
+    const session = state.sessions.get(sessionId)
+    if (!session) {
+        return null
+    }
+
+    for (const inboxEvent of session.unreadEvents.values()) {
+        if (!session.createdWorkerIds.has(inboxEvent.resourceId)) {
+            continue
+        }
+        if (
+            (inboxEvent.kind === "worker.finished" ||
+                inboxEvent.kind === "worker.failed" ||
+                inboxEvent.kind === "worker.blocked" ||
+                inboxEvent.kind === "permission.requested") &&
+            shouldNudge(inboxEvent.kind, config.notifications)
+        ) {
+            return {
+                kind: inboxEvent.kind,
+                workerId: inboxEvent.resourceId,
+                summary: inboxEvent.summary,
+            }
+        }
+    }
+
+    return null
+}
 
 export function createWorkerWaitTool(
     state: PluginState,
     client: PaseoTransport,
+    config: PluginConfig,
     logger: Logger,
 ): ToolDefinition {
     return tool({
         description:
-            "Wait for a Paseo worker to finish its current task. Blocks up to the specified timeout.",
+            "Wait for one or more Paseo workers to finish their current tasks. Supports waiting for any or all targets, respects a global timeout, and stops early if this session receives a nudge-eligible owned-worker event.",
         args: {
-            workerId: tool.schema.string().describe("ID of the worker to wait on"),
+            workerIds: tool.schema
+                .array(tool.schema.string())
+                .min(1)
+                .describe("IDs of one or more workers to wait on"),
+            waitFor: tool.schema
+                .enum(["any", "all"])
+                .optional()
+                .describe(
+                    'Wait mode: "any" returns after the first target completes; "all" waits for every target. Defaults to "all".',
+                ),
             timeout: tool.schema
                 .number()
                 .int()
@@ -244,44 +335,143 @@ export function createWorkerWaitTool(
                     `Maximum time to wait in milliseconds (default: ${DEFAULT_WAIT_TIMEOUT_MS})`,
                 ),
         },
-        async execute(args) {
+        async execute(args, context: ToolContext) {
             const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
+            const waitFor = args.waitFor ?? "all"
+            const workerIds = Array.from(
+                new Set(args.workerIds.map((id) => id.trim()).filter(Boolean)),
+            )
             logger.info("Tool: paseo_worker_wait invoked", {
-                workerId: args.workerId,
+                workerIds,
+                waitFor,
+                sessionId: context.sessionID,
                 timeout,
             })
 
-            // Verify worker exists in local state
-            const worker = state.workers.get(args.workerId)
-            if (!worker) {
-                throw new Error(`Worker "${args.workerId}" not found in local state`)
+            if (workerIds.length === 0) {
+                throw new Error("workerIds must contain at least one non-empty worker ID")
             }
 
-            const result = await client.waitForWorker(args.workerId, timeout)
-
-            // Update local state with final snapshot if available
-            if (result.finalSnapshot) {
-                const worker = mapAgentToWorkerSummary(result.finalSnapshot)
-                const existing = state.workers.get(args.workerId)
-                if (existing) {
-                    worker.unreadEventCount = existing.unreadEventCount
+            for (const workerId of workerIds) {
+                if (!state.workers.get(workerId)) {
+                    throw new Error(`Worker "${workerId}" not found in local state`)
                 }
-                upsertWorker(state, worker)
             }
 
-            return {
-                title: `Worker Wait: ${args.workerId}`,
-                output: JSON.stringify(
-                    {
-                        workerId: result.workerId,
-                        status: result.status,
-                        error: result.error,
-                        lastMessage: result.lastMessage,
-                        timedOut: result.status === "timeout",
-                    },
-                    null,
-                    2,
-                ),
+            const session = state.sessions.get(context.sessionID)
+            const ownedWorkerIds = session?.createdWorkerIds ?? new Set<string>()
+
+            let pendingWorkerIds = [...workerIds]
+            const completedResults = new Map<string, WorkerWaitResult>()
+            let interruptedByNudge = false
+            let nudgeEvent: WorkerWaitNudgeEvent | undefined
+            let unsubscribe = () => {}
+
+            const buildPayload = (timedOut: boolean): MultiWorkerWaitResult => ({
+                waitFor,
+                workerIds,
+                results: workerIds
+                    .filter((workerId) => completedResults.has(workerId))
+                    .map((workerId) => completedResults.get(workerId)!),
+                pendingWorkerIds,
+                interruptedByNudge,
+                nudgeEvent,
+                timedOut,
+            })
+
+            try {
+                unsubscribe = client.onEvent((event) => {
+                    if (nudgeEvent) {
+                        return
+                    }
+                    const matched = getNudgeEventFromDaemonEvent(event, ownedWorkerIds, config)
+                    if (matched) {
+                        interruptedByNudge = true
+                        nudgeEvent = matched
+                    }
+                })
+
+                nudgeEvent = getExistingUnreadNudge(state, context.sessionID, config) ?? undefined
+                if (nudgeEvent) {
+                    interruptedByNudge = true
+                    return {
+                        title: "Worker Wait",
+                        output: JSON.stringify(buildPayload(false), null, 2),
+                    }
+                }
+
+                const deadline = Date.now() + timeout
+
+                while (pendingWorkerIds.length > 0) {
+                    if (nudgeEvent) {
+                        interruptedByNudge = true
+                        return {
+                            title: "Worker Wait",
+                            output: JSON.stringify(buildPayload(false), null, 2),
+                        }
+                    }
+
+                    const remaining = deadline - Date.now()
+                    if (remaining <= 0) {
+                        return {
+                            title: "Worker Wait",
+                            output: JSON.stringify(buildPayload(true), null, 2),
+                        }
+                    }
+
+                    const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, remaining)
+                    const sliceWorkerIds = [...pendingWorkerIds]
+                    const settled = await Promise.allSettled(
+                        sliceWorkerIds.map((workerId) =>
+                            client.waitForWorker(workerId, sliceTimeout),
+                        ),
+                    )
+
+                    for (const [index, settledResult] of settled.entries()) {
+                        if (settledResult.status === "rejected") {
+                            throw settledResult.reason
+                        }
+
+                        const result = settledResult.value
+                        syncWorkerFromFinalSnapshot(state, result)
+                        if (result.status === "timeout") {
+                            continue
+                        }
+
+                        completedResults.set(result.workerId, result)
+                    }
+
+                    pendingWorkerIds = pendingWorkerIds.filter(
+                        (workerId) => !completedResults.has(workerId),
+                    )
+
+                    if (waitFor === "any" && completedResults.size > 0) {
+                        return {
+                            title: "Worker Wait",
+                            output: JSON.stringify(buildPayload(false), null, 2),
+                        }
+                    }
+
+                    if (waitFor === "all" && pendingWorkerIds.length === 0) {
+                        return {
+                            title: "Worker Wait",
+                            output: JSON.stringify(buildPayload(false), null, 2),
+                        }
+                    }
+
+                    const unreadNudge = getExistingUnreadNudge(state, context.sessionID, config)
+                    if (unreadNudge && !nudgeEvent) {
+                        interruptedByNudge = true
+                        nudgeEvent = unreadNudge
+                    }
+                }
+
+                return {
+                    title: "Worker Wait",
+                    output: JSON.stringify(buildPayload(false), null, 2),
+                }
+            } finally {
+                unsubscribe()
             }
         },
     })

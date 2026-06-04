@@ -42,20 +42,20 @@ The plugin reads `paseo.jsonc` (or `paseo.json`) from:
 
 Later files override earlier ones.
 
-| Key                          | Type      | Default       | Description                   |
-| ---------------------------- | --------- | ------------- | ----------------------------- |
-| `enabled`                    | `boolean` | `true`        | Enable or disable the plugin  |
-| `debug`                      | `boolean` | `false`       | Enable debug logging          |
+| Key                          | Type      | Default       | Description                                           |
+| ---------------------------- | --------- | ------------- | ----------------------------------------------------- |
+| `enabled`                    | `boolean` | `true`        | Enable or disable the plugin                          |
+| `debug`                      | `boolean` | `false`       | Enable debug logging                                  |
 | `daemon.host`                | `string`  | `"127.0.0.1"` | Daemon host (`127.0.0.1`, `localhost`, or `::1` only) |
-| `daemon.port`                | `number`  | `6767`        | Daemon port                   |
-| `daemon.password`            | `string`  | —             | Authentication password       |
-| `daemon.connectionTimeoutMs` | `number`  | `3000`        | Connection timeout            |
-| `output.maxInboxItems`       | `number`  | `100`         | Max inbox items in memory     |
-| `output.maxSummaryLength`    | `number`  | `500`         | Max summary text length       |
-| `notifications.enabled`      | `boolean` | `true`        | Enable session nudges         |
-| `notifications.blockingOnly` | `boolean` | `false`       | Only nudge on blocking events |
-| `agents.defaultAgent`        | `string`  | —             | Default agent name            |
-| `agents.defaultModel`        | `string`  | —             | Default model for workers     |
+| `daemon.port`                | `number`  | `6767`        | Daemon port                                           |
+| `daemon.password`            | `string`  | —             | Authentication password                               |
+| `daemon.connectionTimeoutMs` | `number`  | `3000`        | Connection timeout                                    |
+| `output.maxInboxItems`       | `number`  | `100`         | Max inbox items in memory                             |
+| `output.maxSummaryLength`    | `number`  | `500`         | Max summary text length                               |
+| `notifications.enabled`      | `boolean` | `true`        | Enable session nudges                                 |
+| `notifications.blockingOnly` | `boolean` | `false`       | Only nudge on blocking events                         |
+| `agents.defaultAgent`        | `string`  | —             | Default agent name                                    |
+| `agents.defaultModel`        | `string`  | —             | Default model for workers                             |
 
 Malformed config files and invalid values surface a warning toast and that layer is ignored. If `daemon.host` is set outside the localhost-only allowlist, the plugin warns and enforces `127.0.0.1` at runtime.
 
@@ -101,16 +101,18 @@ The plugin registers the following tools in OpenCode.
 
 ### Worker
 
-| Tool                   | Description                                                                                                                 |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `paseo_worker_list`    | List all workers with ID, status, cwd, provider/model/mode, and permission data                                             |
-| `paseo_worker_create`  | Create a new worker using an OpenCode profile. Workers run asynchronously and send session nudges on completion or failure. |
-| `paseo_worker_send`    | Send a text message to an existing worker                                                                                   |
-| `paseo_worker_wait`    | Block until a worker finishes its current task, up to a configurable timeout                                                |
-| `paseo_worker_cancel`  | Cancel a worker's current task. Use `forceKill=true` for permanent termination.                                             |
-| `paseo_worker_archive` | Archive a worker (removed from active list)                                                                                 |
-| `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                          |
-| `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                             |
+| Tool                   | Description                                                                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paseo_worker_list`    | List all workers with ID, status, cwd, provider/model/mode, and permission data                                                                |
+| `paseo_worker_create`  | Create a new worker using an OpenCode profile. Workers run asynchronously and send session nudges on completion or failure.                    |
+| `paseo_worker_send`    | Send a text message to an existing worker                                                                                                      |
+| `paseo_worker_wait`    | Wait on one or more workers with `workerIds`, `waitFor: "any" \| "all"`, a global timeout, and early interruption on owned-worker nudge events |
+| `paseo_worker_cancel`  | Cancel a worker's current task. Use `forceKill=true` for permanent termination.                                                                |
+| `paseo_worker_archive` | Archive a worker (removed from active list)                                                                                                    |
+| `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                                             |
+| `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                                                |
+
+`paseo_worker_wait` accepts `workerIds: string[]` (one or more, deduplicated), optional `waitFor` (defaults to `"all"`), and optional `timeout` in milliseconds. It returns a structured payload with the completed per-worker `results`, any `pendingWorkerIds`, plus `timedOut` and `interruptedByNudge` flags so the controller can tell whether the wait completed normally, hit the timeout, or stopped because the current OpenCode session received a nudge-eligible event for one of its owned workers.
 
 ### Worktree
 

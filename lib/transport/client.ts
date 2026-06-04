@@ -246,7 +246,9 @@ function mapScheduleListResult(result: Record<string, unknown>): ScheduleListRes
     return {
         requestId: result.requestId as string,
         schedules: Array.isArray(result.schedules)
-            ? result.schedules.map((schedule) => mapScheduleRecord(schedule as Record<string, unknown>))
+            ? result.schedules.map((schedule) =>
+                  mapScheduleRecord(schedule as Record<string, unknown>),
+              )
             : [],
         error: (result.error as string | null) ?? null,
     }

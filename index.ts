@@ -101,7 +101,7 @@ const server: Plugin = (async (ctx) => {
             paseo_worker_list: createWorkerListTool(state, client, logger),
             paseo_worker_create: createWorkerCreateTool(state, client, ctx.client, logger),
             paseo_worker_send: createWorkerSendTool(state, client, logger),
-            paseo_worker_wait: createWorkerWaitTool(state, client, logger),
+            paseo_worker_wait: createWorkerWaitTool(state, client, config, logger),
             paseo_worker_cancel: createWorkerCancelTool(state, client, logger),
             paseo_worker_archive: createWorkerArchiveTool(state, client, logger),
             paseo_worker_update: createWorkerUpdateTool(state, client, logger),

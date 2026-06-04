@@ -208,10 +208,13 @@ test("paseo_terminal_send_lines", async (t) => {
         })
 
         const toolDef = createTerminalSendLinesTool(state, client, logger)
-        const result = await toolDef.execute({
-            terminalId: "t1",
-            lines: ["echo hello", "echo world"],
-        }, mockContext())
+        const result = await toolDef.execute(
+            {
+                terminalId: "t1",
+                lines: ["echo hello", "echo world"],
+            },
+            mockContext(),
+        )
 
         assert.equal(receivedTerminalId, "t1")
         assert.equal(receivedInput, "echo hello\necho world\n")

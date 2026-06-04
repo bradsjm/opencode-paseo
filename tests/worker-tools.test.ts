@@ -7,11 +7,14 @@ import { Logger } from "../lib/logger.js"
 import {
     createWorkerCancelTool,
     createWorkerCreateTool,
-    createWorkerUpdateTool,
     createWorkerInspectTool,
+    createWorkerUpdateTool,
+    createWorkerWaitTool,
 } from "../lib/tools/worker.js"
 import type { OpencodeClient } from "../lib/profile.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
+import type { DaemonEvent, DaemonEventCallback } from "../lib/transport/types.js"
+import type { PluginConfig } from "../lib/config.js"
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
@@ -90,6 +93,25 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     }
 }
 
+const TEST_CONFIG: PluginConfig = {
+    enabled: true,
+    debug: false,
+    daemon: {
+        host: "127.0.0.1",
+        port: 6767,
+        connectionTimeoutMs: 3000,
+    },
+    output: {
+        maxInboxItems: 100,
+        maxSummaryLength: 500,
+    },
+    notifications: {
+        enabled: true,
+        blockingOnly: false,
+    },
+    agents: {},
+}
+
 function seedWorker(state: ReturnType<typeof createPluginState>, id: string): WorkerSummary {
     const worker: WorkerSummary = {
         id,
@@ -138,6 +160,277 @@ function mockContext(): ToolContext {
         ask: async () => {},
     }
 }
+
+// ─── Wait Tool Tests ─────────────────────────────────────────────────────────
+
+test("paseo_worker_wait", async (t) => {
+    const logger = new Logger(false)
+
+    await t.test("single-item workerIds with all returns completed result", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        const client = createMockTransport({
+            waitForWorker: async (workerId) => ({
+                status: "idle",
+                workerId,
+                error: null,
+                lastMessage: "done",
+                finalSnapshot: null,
+            }),
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute({ workerIds: ["w1"] }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.waitFor, "all")
+        assert.deepEqual(output.workerIds, ["w1"])
+        assert.equal(output.timedOut, false)
+        assert.deepEqual(output.pendingWorkerIds, [])
+        assert.equal(output.results.length, 1)
+        assert.equal(output.results[0].workerId, "w1")
+    })
+
+    await t.test("any returns when first target finishes", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        seedWorker(state, "w2")
+        let w2Calls = 0
+        const client = createMockTransport({
+            waitForWorker: async (workerId) => {
+                if (workerId === "w1") {
+                    return {
+                        status: "idle",
+                        workerId,
+                        error: null,
+                        lastMessage: "done",
+                        finalSnapshot: null,
+                    }
+                }
+
+                w2Calls += 1
+                return {
+                    status: "timeout",
+                    workerId,
+                    error: null,
+                    lastMessage: null,
+                    finalSnapshot: null,
+                }
+            },
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute(
+            { workerIds: ["w1", "w2"], waitFor: "any", timeout: 1000 },
+            mockContext(),
+        )
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.timedOut, false)
+        assert.deepEqual(output.pendingWorkerIds, ["w2"])
+        assert.deepEqual(
+            output.results.map((entry: { workerId: string }) => entry.workerId),
+            ["w1"],
+        )
+        assert.equal(w2Calls, 1)
+    })
+
+    await t.test("all waits for all targets", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        seedWorker(state, "w2")
+        const seen = new Map<string, number>()
+        const client = createMockTransport({
+            waitForWorker: async (workerId) => {
+                const next = (seen.get(workerId) ?? 0) + 1
+                seen.set(workerId, next)
+                if (workerId === "w1") {
+                    return {
+                        status: "idle",
+                        workerId,
+                        error: null,
+                        lastMessage: "done-1",
+                        finalSnapshot: null,
+                    }
+                }
+
+                return next >= 2
+                    ? {
+                          status: "idle",
+                          workerId,
+                          error: null,
+                          lastMessage: "done-2",
+                          finalSnapshot: null,
+                      }
+                    : {
+                          status: "timeout",
+                          workerId,
+                          error: null,
+                          lastMessage: null,
+                          finalSnapshot: null,
+                      }
+            },
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute(
+            { workerIds: ["w1", "w2"], waitFor: "all", timeout: 1000 },
+            mockContext(),
+        )
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.timedOut, false)
+        assert.deepEqual(output.pendingWorkerIds, [])
+        assert.deepEqual(
+            output.results.map((entry: { workerId: string }) => entry.workerId),
+            ["w1", "w2"],
+        )
+        assert.equal(seen.get("w2"), 2)
+    })
+
+    await t.test("global timeout leaves pending ids", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        seedWorker(state, "w2")
+        const client = createMockTransport({
+            waitForWorker: async (workerId) => ({
+                status: "timeout",
+                workerId,
+                error: null,
+                lastMessage: null,
+                finalSnapshot: null,
+            }),
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute(
+            { workerIds: ["w1", "w2"], waitFor: "all", timeout: 1 },
+            mockContext(),
+        )
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.timedOut, true)
+        assert.deepEqual(output.pendingWorkerIds, ["w1", "w2"])
+        assert.deepEqual(output.results, [])
+    })
+
+    await t.test("fails immediately on unknown worker", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        const client = createMockTransport()
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        await assert.rejects(
+            () => toolDef.execute({ workerIds: ["w1", "missing"] }, mockContext()),
+            /not found in local state/,
+        )
+    })
+
+    await t.test("early exit on owned worker nudge for waited worker", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        let listener: DaemonEventCallback | undefined
+        const client = createMockTransport({
+            onEvent: (callback) => {
+                listener = callback
+                return () => {
+                    listener = undefined
+                }
+            },
+            waitForWorker: async (workerId) => {
+                listener?.({
+                    type: "worker.blocked",
+                    payload: { workerId, summary: "needs permission" },
+                } satisfies DaemonEvent)
+                return {
+                    status: "timeout",
+                    workerId,
+                    error: null,
+                    lastMessage: null,
+                    finalSnapshot: null,
+                }
+            },
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.interruptedByNudge, true)
+        assert.equal(output.nudgeEvent.kind, "worker.blocked")
+        assert.equal(output.nudgeEvent.workerId, "w1")
+        assert.equal(output.timedOut, false)
+    })
+
+    await t.test("early exit on owned worker nudge for different owned worker", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        seedWorker(state, "w2")
+        let listener: DaemonEventCallback | undefined
+        const client = createMockTransport({
+            onEvent: (callback) => {
+                listener = callback
+                return () => {
+                    listener = undefined
+                }
+            },
+            waitForWorker: async (workerId) => {
+                if (workerId === "w1") {
+                    listener?.({
+                        type: "permission.requested",
+                        payload: {
+                            workerId: "w2",
+                            permissionId: "perm-1",
+                            request: {},
+                            summary: "approval needed",
+                        },
+                    } satisfies DaemonEvent)
+                }
+                return {
+                    status: "timeout",
+                    workerId,
+                    error: null,
+                    lastMessage: null,
+                    finalSnapshot: null,
+                }
+            },
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.interruptedByNudge, true)
+        assert.equal(output.nudgeEvent.kind, "permission.requested")
+        assert.equal(output.nudgeEvent.workerId, "w2")
+    })
+
+    await t.test("temporary listener is removed on timeout exit", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        let activeListeners = 0
+        const client = createMockTransport({
+            onEvent: () => {
+                activeListeners += 1
+                return () => {
+                    activeListeners -= 1
+                }
+            },
+            waitForWorker: async (workerId) => ({
+                status: "timeout",
+                workerId,
+                error: null,
+                lastMessage: null,
+                finalSnapshot: null,
+            }),
+        })
+
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        await toolDef.execute({ workerIds: ["w1"], timeout: 1 }, mockContext())
+
+        assert.equal(activeListeners, 0)
+    })
+})
 
 // ─── Cancel Tool Tests ───────────────────────────────────────────────────────
 
@@ -421,39 +714,42 @@ test("paseo_worker_update", async (t) => {
             assert.equal(receivedOptions.model, "openai/gpt-5.4")
         })
 
-        await t.test("uses opencode provider and omits model for partial profile model metadata", async () => {
-            const state = createPluginState()
-            let receivedOptions: any = null
-            const client = createMockTransport({
-                createWorker: async (opts) => {
-                    receivedOptions = opts
-                    return {
-                        id: "w-partial",
-                        provider: "opencode",
-                        cwd: "/tmp",
-                        model: null,
-                        status: "running" as const,
-                        title: null,
-                    }
-                },
-            })
-            const opencode = mockOpencodeClient([
-                {
-                    name: "partial",
-                    description: "Partial agent",
-                    mode: "primary",
-                    model: { providerID: "openai", modelID: null },
-                },
-            ])
+        await t.test(
+            "uses opencode provider and omits model for partial profile model metadata",
+            async () => {
+                const state = createPluginState()
+                let receivedOptions: any = null
+                const client = createMockTransport({
+                    createWorker: async (opts) => {
+                        receivedOptions = opts
+                        return {
+                            id: "w-partial",
+                            provider: "opencode",
+                            cwd: "/tmp",
+                            model: null,
+                            status: "running" as const,
+                            title: null,
+                        }
+                    },
+                })
+                const opencode = mockOpencodeClient([
+                    {
+                        name: "partial",
+                        description: "Partial agent",
+                        mode: "primary",
+                        model: { providerID: "openai", modelID: null },
+                    },
+                ])
 
-            const toolDef = createWorkerCreateTool(state, client, opencode, logger)
-            await toolDef.execute({ profile: "partial" }, mockContext())
+                const toolDef = createWorkerCreateTool(state, client, opencode, logger)
+                await toolDef.execute({ profile: "partial" }, mockContext())
 
-            assert.equal(receivedOptions.profile, "partial")
-            assert.equal(receivedOptions.modeId, "partial")
-            assert.equal(receivedOptions.provider, "opencode")
-            assert.equal(receivedOptions.model, undefined)
-        })
+                assert.equal(receivedOptions.profile, "partial")
+                assert.equal(receivedOptions.modeId, "partial")
+                assert.equal(receivedOptions.provider, "opencode")
+                assert.equal(receivedOptions.model, undefined)
+            },
+        )
 
         await t.test("throws clear error for unknown profile", async () => {
             const state = createPluginState()

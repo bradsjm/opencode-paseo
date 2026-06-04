@@ -59,15 +59,8 @@ test("formatNudgeMessage", async (t) => {
     })
 
     await t.test("handles blocking event kind", () => {
-        const msg = formatNudgeMessage(
-            "permission.requested",
-            "w2",
-            "Write permission needed",
-        )
-        assert.equal(
-            msg,
-            "[paseo:permission.requested] Write permission needed (resource: w2)",
-        )
+        const msg = formatNudgeMessage("permission.requested", "w2", "Write permission needed")
+        assert.equal(msg, "[paseo:permission.requested] Write permission needed (resource: w2)")
     })
 
     await t.test("handles daemon lifecycle kind", () => {

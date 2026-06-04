@@ -28,7 +28,11 @@ import type { OpencodeClient } from "../profile.js"
 
 function syncWorkerFromPayload(
     state: PluginState,
-    type: WorkerStartedEvent["type"] | WorkerFinishedEvent["type"] | WorkerFailedEvent["type"] | WorkerBlockedEvent["type"],
+    type:
+        | WorkerStartedEvent["type"]
+        | WorkerFinishedEvent["type"]
+        | WorkerFailedEvent["type"]
+        | WorkerBlockedEvent["type"],
     payload: WorkerEventPayload,
 ): void {
     const workerId = payload.workerId
@@ -38,7 +42,9 @@ function syncWorkerFromPayload(
     const merged: AgentSummary = {
         id: workerId,
         provider:
-            (typeof agent?.provider === "string" && agent.provider) || current?.provider || "unknown",
+            (typeof agent?.provider === "string" && agent.provider) ||
+            current?.provider ||
+            "unknown",
         cwd: (typeof agent?.cwd === "string" && agent.cwd) || current?.cwd || "",
         model: (typeof agent?.model === "string" && agent.model) || current?.model || null,
         status:
@@ -57,7 +63,8 @@ function syncWorkerFromPayload(
         runtimeInfo:
             (agent?.runtimeInfo as Record<string, unknown>) ?? current?.runtimeInfo ?? undefined,
         worktreePath:
-            (typeof agent?.worktreePath === "string" && agent.worktreePath) || current?.worktreePath,
+            (typeof agent?.worktreePath === "string" && agent.worktreePath) ||
+            current?.worktreePath,
         branchName:
             (typeof agent?.branchName === "string" && agent.branchName) || current?.branchName,
         createdAt: (agent?.createdAt as string) ?? current?.createdAt,
@@ -76,7 +83,11 @@ function syncWorkerFromPayload(
     upsertWorker(state, worker)
 }
 
-function getWorkerEventSummary(type: DaemonEvent["type"], resourceId: string, payload: Record<string, unknown>): string {
+function getWorkerEventSummary(
+    type: DaemonEvent["type"],
+    resourceId: string,
+    payload: Record<string, unknown>,
+): string {
     const rawSummary =
         (typeof payload.summary === "string" && payload.summary) ||
         (typeof payload.message === "string" && payload.message) ||
@@ -143,7 +154,9 @@ function handlePermissionResolved(state: PluginState, event: PermissionResolvedE
     }
 
     worker.pendingPermissionIds = worker.pendingPermissionIds.filter((id) => id !== permId)
-    worker.pendingPermissions = worker.pendingPermissions.filter((permission) => permission.id !== permId)
+    worker.pendingPermissions = worker.pendingPermissions.filter(
+        (permission) => permission.id !== permId,
+    )
 }
 
 export function createDaemonEventHandler(
@@ -167,7 +180,10 @@ export function createDaemonEventHandler(
             case "daemon.disconnected": {
                 setConnectionStatus(state, "error", "Daemon disconnected")
                 logger.warn("Daemon disconnected")
-                const summary = truncateSummary("Daemon disconnected", config.output.maxSummaryLength)
+                const summary = truncateSummary(
+                    "Daemon disconnected",
+                    config.output.maxSummaryLength,
+                )
                 inboxEvent = createInboxEvent(state, daemonEvent.type, "daemon", summary, undefined)
                 break
             }
@@ -212,18 +228,12 @@ export function createDaemonEventHandler(
                     getWorkerEventSummary(daemonEvent.type, resourceId, daemonEvent.payload),
                     config.output.maxSummaryLength,
                 )
-                inboxEvent = createInboxEvent(
-                    state,
-                    daemonEvent.type,
-                    resourceId,
-                    summary,
-                    {
-                        ...daemonEvent.payload,
-                        ...buildBlockingMetadata("permission.requested", resourceId, {
-                            permissionId: daemonEvent.payload.permissionId,
-                        }),
-                    },
-                )
+                inboxEvent = createInboxEvent(state, daemonEvent.type, resourceId, summary, {
+                    ...daemonEvent.payload,
+                    ...buildBlockingMetadata("permission.requested", resourceId, {
+                        permissionId: daemonEvent.payload.permissionId,
+                    }),
+                })
                 break
             }
 

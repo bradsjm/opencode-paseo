@@ -432,7 +432,10 @@ function createMockOpencodeClient(): {
     const calls: Array<{ sessionId: string; text: string }> = []
     const client = {
         session: {
-            prompt: async (args: { path: { id: string }; body?: { parts: Array<{ type: string; text: string; synthetic?: boolean }> } }) => {
+            prompt: async (args: {
+                path: { id: string }
+                body?: { parts: Array<{ type: string; text: string; synthetic?: boolean }> }
+            }) => {
                 const text = args.body?.parts?.[0]?.text ?? ""
                 calls.push({ sessionId: args.path.id, text })
                 return { data: {} }

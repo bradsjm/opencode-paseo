@@ -77,6 +77,22 @@ export interface WorkerWaitResult {
     finalSnapshot: AgentSummary | null
 }
 
+export interface WorkerWaitNudgeEvent {
+    kind: "worker.finished" | "worker.failed" | "worker.blocked" | "permission.requested"
+    workerId: string
+    summary: string
+}
+
+export interface MultiWorkerWaitResult {
+    waitFor: "any" | "all"
+    workerIds: string[]
+    results: WorkerWaitResult[]
+    pendingWorkerIds: string[]
+    interruptedByNudge: boolean
+    nudgeEvent?: WorkerWaitNudgeEvent
+    timedOut: boolean
+}
+
 export interface ArchivedWorker {
     workerId: string
     archivedAt: string
