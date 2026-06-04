@@ -1,5 +1,5 @@
 ---
-name: paseo
+name: paseo-orchestration
 description: "Use the opencode-paseo plugin tools to coordinate Paseo workers, profiles, chat rooms, inbox/permissions, terminals, loops, schedules, and isolated worktrees. Use when orchestrating agent work through `paseo_*` tools: advisor or independent-reviewer consultation, large phased tasks, async durable workers, verified loops, recurring automations, terminal-backed processes, parallel chunk splits, or model bake-offs."
 ---
 

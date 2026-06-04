@@ -1,15 +1,30 @@
-# opencode-paseo
+# Paseo plugin for OpenCode.
 
-OpenCode plugin that connects to a local [Paseo](https://github.com/paseo-run/paseo) daemon and exposes daemon capabilities as OpenCode tools. The plugin also keeps per-session state for workers, terminals, chat rooms, queued launches, and inbox events so OpenCode can react to blocking or notable daemon activity.
+[Paseo](https://paseo.sh/) is a self-hosted, multi-provider, open source coding agent orchestrator.
+
+This is an alternative to using the skills or MCP server that Paseo provides for OpenCode integration.
+
+Like the MCP server, it exposes Paseo daemon capabilities as OpenCode tools. The key difference is that, as a native OpenCode plugin, it can use async plugin hooks and per-session state so OpenCode can be proactively nudged when something important happens instead of polling with timeouts. It is also opinionated about role boundaries: OpenCode's native agents remain the primary subagent mechanism inside the session, while Paseo is positioned for longer-lived agentic workers, daemon-managed loops, and PTY-backed terminals that complement OpenCode's built-in tooling.
 
 ## Features
 
-- Connects to the Paseo daemon over WebSocket and hydrates local state on startup.
-- Registers OpenCode tools for chat, inbox, loops, permissions, profiles, schedules, terminals, workers, and worktrees.
-- Maps daemon events into an inbox with unread/blocking summaries.
-- Nudges owning OpenCode sessions for blocking events and chat mentions.
-- Tracks both durable queued worker launches and ephemeral `paseo_worker_run` sessions.
-- Emits a synthetic `worker.stalled` inbox event when an owned running worker goes quiet past the configured threshold.
+- **Async, event-driven integration**: stays connected to the daemon over WebSocket and uses plugin hooks to push important activity back into OpenCode instead of relying on repeated polling or timeout-heavy waiting.
+- **Hydrated local state instead of cold tool calls**: restores workers, terminals, chat rooms, capabilities, and blocking inbox items on startup so a resumed OpenCode session can pick up where it left off.
+- **Inbox-driven event handling**: maps daemon events into unread/blocking inbox items with summaries, so permission requests and other notable activity become reviewable OpenCode state rather than transient daemon output.
+- **Active nudges for the owning session**: nudges the relevant OpenCode session for blocking events and worker chat mentions, which is the main practical advantage over a plain MCP tool surface.
+- **Complementary worker model**: positions Paseo workers and loops for longer-running agentic work without trying to replace OpenCode's native subagents inside the current session.
+- **Better long-running terminal control**: exposes Paseo PTY-backed terminals for interactive and durable process management that OpenCode's built-in bash tool is not designed to handle as well.
+- **Launch ownership and lifecycle tracking**: tracks both durable FIFO queued worker launches and ephemeral `paseo_worker_run` sessions, including best-effort cleanup when the owning OpenCode session disappears.
+- **Synthetic stall detection**: emits `worker.stalled` when an owned worker goes quiet past the configured threshold, giving OpenCode a signal that does not come directly from the daemon.
+
+## Why use this instead of Paseo's built-in MCP server?
+
+Use the MCP server when you only need raw access to Paseo tools from OpenCode. Use this plugin when you want OpenCode to react to ongoing Paseo activity and when you want Paseo to complement, rather than compete with, OpenCode's native agent model.
+
+- The MCP server is primarily a request/response bridge. This plugin adds async event handling, hydrated state, inbox summaries, and OpenCode nudges so the model can be interrupted by relevant events instead of polling with timeouts.
+- The MCP server exposes Paseo capabilities generically. This plugin is opinionated about workflow shape: OpenCode native agents stay the default subagent path, while Paseo is used for detached workers, daemon loops, schedules, and cross-session coordination.
+- The MCP server can let you invoke terminal-related actions. This plugin gives those terminals session ownership and PTY-backed lifecycle handling, which is a better fit for long-running or interactive processes than OpenCode's built-in bash tool.
+- The MCP server exposes what the daemon reports. This plugin also derives OpenCode-oriented signals such as `chat.mentioned` and `worker.stalled`.
 
 ## Prerequisites
 
@@ -25,6 +40,76 @@ Add the plugin to your OpenCode project config:
     "plugin": ["@bradsjm/opencode-paseo"],
 }
 ```
+
+## Installing skills
+
+While not required, you can install skills to help the language model understand and use the plugin's Paseo capabilities.
+
+```bash
+npx skills add bradsjm/opencode-paseo/skills
+```
+
+## Example use cases
+
+### 1. Let the model react to worker events instead of polling
+
+Paseo capability:
+
+- Workers can block on permissions, produce notable state changes, and coordinate through chat.
+
+Plugin improvement:
+
+- The plugin turns those events into inbox items and nudges the owning OpenCode session for blockers and `@<worker-id>` chat mentions.
+
+Why it matters:
+
+- With the MCP server, the model often has to wait or poll to discover that something happened.
+- With this plugin, the model can stay focused on useful work and get interrupted when Paseo actually needs attention.
+
+### 2. Use Paseo for agentic workers without competing with OpenCode subagents
+
+Paseo capability:
+
+- Paseo can run detached workers, loops, schedules, and cross-session orchestration.
+
+Plugin improvement:
+
+- The plugin frames those capabilities as complements to OpenCode's native agents rather than replacements for them, with ownership tracking, reconnect hydration, and queue-backed worker launches.
+
+Why it matters:
+
+- OpenCode native agents remain the natural choice for in-session subagent behavior.
+- Paseo becomes the better tool for longer-running, detached, or daemon-managed work that should outlive a single prompt/response turn.
+
+### 3. Run long-lived terminal work through PTYs instead of built-in bash
+
+Paseo capability:
+
+- Paseo can create and manage terminals attached to daemon state.
+
+Plugin improvement:
+
+- The plugin exposes those PTY-backed terminals directly to OpenCode, with capture, input, line sending, and kill operations tied to session state.
+
+Why it matters:
+
+- OpenCode's built-in bash tool is fine for short commands.
+- The plugin is a better fit when you need an interactive shell, durable process, REPL, watcher, or other long-running terminal workflow.
+
+### 4. Detect when owned workers likely need intervention
+
+Paseo capability:
+
+- You can inspect worker state and recent activity.
+
+Plugin improvement:
+
+- The plugin emits a synthetic `worker.stalled` event when an owned running worker goes quiet past the configured threshold.
+
+Why it matters:
+
+- With the MCP server, a quiet worker can look the same as a worker you just have not checked yet.
+- With this plugin, OpenCode gets an explicit signal that a worker likely needs intervention.
 
 ## Runtime flow
 
@@ -195,10 +280,6 @@ lib/profile.ts            OpenCode profile lookup and mapping helpers
 lib/worker-stall-monitor.ts Synthetic stall detection for owned workers
 tests/                    Unit and integration coverage
 ```
-
-## Development notes
-
-- `pnpm build` depends on `jsonc-parser` remaining installed because `tsup.config.ts` bundles it via `noExternal`.
 
 ## License
 
