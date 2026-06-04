@@ -7,16 +7,16 @@ This is a single-package ESM TypeScript OpenCode plugin repo.
 - `index.ts` is the plugin entrypoint and assembly layer. Keep it as the place that wires `config -> logger -> state -> PaseoClient -> hydrate -> onEvent`.
 - `lib/transport/` is the protocol boundary. Keep wire-level request/response/event types there instead of spreading them across the repo.
 - `lib/hooks.ts` currently maps daemon event names/payload fields into inbox events. If protocol details change, update that mapping deliberately rather than duplicating it elsewhere.
-- The current registered plugin surface is intentionally small: `paseo_status`, `paseo_inbox_read`, `paseo_inbox_status`, plus `event` and `config` hooks.
 
 ## Commands
 
 - Install deps: `pnpm install`
 - Typecheck: `pnpm typecheck`
+- Format: `pnpm format`
 - Build: `pnpm build`
 - Unit tests: `pnpm test`
 - Integration test: `pnpm test:integration`
-- Formatting/lint check: `pnpm format:check` or `pnpm lint`
+- Lint check: `pnpm lint`
 
 ## Verification gotchas
 
