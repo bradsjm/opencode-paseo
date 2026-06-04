@@ -366,6 +366,9 @@ test("mapAgentToWorkerSummary", async (t) => {
         assert.equal(worker.model, "gpt-4")
         assert.equal(worker.currentModeId, "code")
         assert.equal(worker.status, "running")
+        assert.equal(worker.rawStatus, "running")
+        assert.equal(worker.requiresAttention, false)
+        assert.equal(worker.attentionReason, null)
         assert.deepEqual(worker.labels, ["lane"])
         assert.deepEqual(worker.pendingPermissionIds, ["perm-1"])
         assert.equal(worker.pendingPermissions.length, 1)
@@ -387,6 +390,9 @@ test("mapAgentToWorkerSummary", async (t) => {
 
         const worker = mapAgentToWorkerSummary(agent)
         assert.equal(worker.status, "blocked")
+        assert.equal(worker.rawStatus, "running")
+        assert.equal(worker.requiresAttention, true)
+        assert.equal(worker.attentionReason, "permission")
     })
 
     await t.test("handles missing optional fields", () => {

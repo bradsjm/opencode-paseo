@@ -98,7 +98,7 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
         }),
         fetchWorkerActivity: async (options) => ({
             workerId: options.workerId,
-            timeline: null,
+            activity: null,
         }),
         // Phase 3: Worktree operations
         listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),

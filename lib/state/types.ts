@@ -46,6 +46,7 @@ export interface WorkerSummary {
     title: string
     agent: string
     status: WorkerStatus
+    rawStatus?: string
     cwd: string
     provider: string
     model: string | null
@@ -55,6 +56,8 @@ export interface WorkerSummary {
     branchName?: string
     pendingPermissions: Array<Record<string, unknown>>
     pendingPermissionIds: string[]
+    requiresAttention: boolean
+    attentionReason: string | null
     runtimeInfo: Record<string, unknown> | null
     persistence: Record<string, unknown> | null
     unreadEventCount: number

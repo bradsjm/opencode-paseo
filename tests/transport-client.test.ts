@@ -4,8 +4,9 @@ import {
     buildDaemonConfig,
     mapServerInfo,
     mapAgentSnapshot,
-    translateUpstreamEvent,
     PaseoClient,
+    projectTimeline,
+    translateUpstreamEvent,
 } from "../lib/transport/client.js"
 import type { DaemonConfig } from "../lib/config.js"
 
@@ -141,6 +142,41 @@ test("mapAgentSnapshot maps upstream agent to AgentSummary", async (t) => {
             labels: { worktreePath: "/wt/label" },
         })
         assert.equal(result.worktreePath, "/wt/direct")
+    })
+})
+
+test("projectTimeline projects compact activity summaries", async (t) => {
+    await t.test("extracts compact entries and strips nested payload detail", () => {
+        const result = projectTimeline(
+            {
+                entries: [
+                    {
+                        type: "tool",
+                        timestamp: "2024-01-01T00:00:00Z",
+                        toolName: "read",
+                        payload: {
+                            text: "Read src/index.ts and summarized the error path",
+                            hugeBlob: { fileContents: "very large text" },
+                        },
+                    },
+                ],
+                hasMore: true,
+            },
+            10,
+        )
+
+        assert.deepEqual(result, {
+            entries: [
+                {
+                    kind: "tool",
+                    timestamp: "2024-01-01T00:00:00Z",
+                    toolName: "read",
+                    status: undefined,
+                    summary: "Read src/index.ts and summarized the error path",
+                },
+            ],
+            hasMore: true,
+        })
     })
 })
 

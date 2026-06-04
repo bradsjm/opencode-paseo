@@ -1,5 +1,5 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
-import type { PluginState } from "../state/types.js"
+import type { PluginState, WorkerStatus, WorkerSummary } from "../state/types.js"
 import type { PluginConfig } from "../config.js"
 import { shouldNudge } from "../notifier.js"
 import type {
@@ -9,6 +9,7 @@ import type {
     WorkerWaitNudgeEvent,
     WorkerWaitResult,
 } from "../transport/types.js"
+import type { WorkerActivitySummary } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import type { OpencodeClient } from "../profile.js"
 import {
@@ -234,6 +235,134 @@ export function createWorkerSendTool(
 
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000
 const WAIT_SLICE_TIMEOUT_MS = 250
+
+type InspectActivityState = "active" | "quiet" | "blocked" | "finished" | "unknown"
+
+type ReadyForDependentWork = boolean | "unknown"
+
+interface WorkerInspectResponse {
+    worker: {
+        id: string
+        title: string
+        status: WorkerStatus
+        rawStatus: string | null
+        provider: string
+        model: string | null
+        currentModeId: string | null
+        cwd: string
+        worktreePath?: string
+        branchName?: string
+        createdAt?: string
+        updatedAt?: string
+        source: "daemon" | "local-cache"
+    }
+    attention: {
+        pendingPermissionIds: string[]
+        pendingPermissionCount: number
+        blockingAction: string | null
+        requiresAttention: boolean
+        attentionReason: string | null
+    }
+    progress: {
+        activityState: InspectActivityState
+        summary: string
+        lastMeaningfulUpdate: string | null
+        readyForDependentWork: ReadyForDependentWork
+    }
+    activity?: WorkerActivitySummary | null
+}
+
+function isTerminalWorkerStatus(status: string | undefined): boolean {
+    return status === "finished" || status === "failed" || status === "canceled"
+}
+
+function deriveActivityState(
+    worker: Pick<WorkerSummary, "status" | "pendingPermissionIds" | "requiresAttention">,
+    activity: WorkerActivitySummary | null,
+    activityFetched: boolean,
+): InspectActivityState {
+    if (
+        worker.requiresAttention ||
+        worker.pendingPermissionIds.length > 0 ||
+        worker.status === "blocked"
+    ) {
+        return "blocked"
+    }
+    if (isTerminalWorkerStatus(worker.status)) {
+        return "finished"
+    }
+    if (worker.status === "running") {
+        if (!activityFetched) {
+            return "unknown"
+        }
+        return activity && activity.entries.length > 0 ? "active" : "quiet"
+    }
+    return activity && activity.entries.length > 0 ? "active" : "unknown"
+}
+
+function deriveReadyForDependentWork(status: string): ReadyForDependentWork {
+    if (status === "finished") return true
+    if (
+        status === "running" ||
+        status === "blocked" ||
+        status === "failed" ||
+        status === "canceled"
+    ) {
+        return false
+    }
+    return "unknown"
+}
+
+function deriveProgressSummary(
+    worker: Pick<
+        WorkerSummary,
+        "status" | "pendingPermissionIds" | "requiresAttention" | "attentionReason"
+    >,
+    activityState: InspectActivityState,
+    activity: WorkerActivitySummary | null,
+    activityFetched: boolean,
+): { summary: string; lastMeaningfulUpdate: string | null } {
+    const latest = activity?.entries[0]
+    if (latest) {
+        return {
+            summary: latest.summary,
+            lastMeaningfulUpdate: latest.timestamp ?? null,
+        }
+    }
+    if (activityState === "blocked") {
+        return {
+            summary:
+                worker.attentionReason ??
+                (worker.pendingPermissionIds.length > 0
+                    ? "Waiting for permission response"
+                    : "Worker needs attention"),
+            lastMeaningfulUpdate: null,
+        }
+    }
+    if (activityState === "finished") {
+        return {
+            summary:
+                worker.status === "failed" ? "Worker failed" : "Worker reached a terminal state",
+            lastMeaningfulUpdate: null,
+        }
+    }
+    if (activityState === "quiet") {
+        return {
+            summary: "Worker is running but has no recent projected activity",
+            lastMeaningfulUpdate: null,
+        }
+    }
+    if (!activityFetched && worker.status === "running") {
+        return {
+            summary: "Activity not fetched; worker status is running",
+            lastMeaningfulUpdate: null,
+        }
+    }
+    return {
+        summary: worker.status === "idle" ? "Worker is idle" : "No recent projected activity",
+        lastMeaningfulUpdate: null,
+    }
+}
 
 function syncWorkerFromFinalSnapshot(state: PluginState, result: WorkerWaitResult): void {
     if (!result.finalSnapshot) {
@@ -686,18 +815,18 @@ export function createWorkerInspectTool(
 ): ToolDefinition {
     return tool({
         description:
-            "Inspect a Paseo worker. Returns current worker details from fresh daemon-backed data. " +
-            "Optionally includes activity timeline when includeActivity is true.",
+            "Inspect a Paseo worker. Returns a compact daemon-backed summary for routing, attention, and progress decisions. " +
+            "Optionally includes a projected recent activity summary when includeActivity is true.",
         args: {
             workerId: tool.schema.string().describe("ID of the worker to inspect"),
             includeActivity: tool.schema
                 .boolean()
                 .optional()
-                .describe("If true, include the worker's recent activity timeline"),
+                .describe("If true, include the worker's recent projected activity summary"),
             activityLimit: tool.schema
                 .number()
                 .optional()
-                .describe("Maximum number of activity entries to return (default: daemon default)"),
+                .describe("Maximum number of projected activity entries to return"),
         },
         async execute(args) {
             logger.info("Tool: paseo_worker_inspect invoked", {
@@ -705,7 +834,7 @@ export function createWorkerInspectTool(
                 includeActivity: args.includeActivity,
             })
 
-            let snapshot: Record<string, unknown> | null = null
+            let snapshot: WorkerInspectResponse["worker"] | null = null
             let worker = state.workers.get(args.workerId)
 
             // Try fresh daemon fetch first
@@ -723,20 +852,16 @@ export function createWorkerInspectTool(
                     id: mapped.id,
                     title: mapped.title,
                     status: mapped.status,
+                    rawStatus: mapped.rawStatus ?? fetched.agent.status ?? null,
                     cwd: mapped.cwd,
                     provider: mapped.provider,
                     model: mapped.model,
                     currentModeId: mapped.currentModeId,
                     worktreePath: mapped.worktreePath,
                     branchName: mapped.branchName,
-                    pendingPermissions: mapped.pendingPermissions,
-                    pendingPermissionIds: mapped.pendingPermissionIds,
-                    runtimeInfo: mapped.runtimeInfo,
-                    persistence: mapped.persistence,
                     createdAt: mapped.createdAt,
                     updatedAt: mapped.updatedAt,
-                    project: fetched.project,
-                    blockingAction: getBlockingAction(mapped),
+                    source: "daemon",
                 }
             } else if (worker) {
                 // Fallback to local state
@@ -744,34 +869,50 @@ export function createWorkerInspectTool(
                     id: worker.id,
                     title: worker.title,
                     status: worker.status,
+                    rawStatus: worker.rawStatus ?? null,
                     cwd: worker.cwd,
                     provider: worker.provider,
                     model: worker.model,
                     currentModeId: worker.currentModeId,
                     worktreePath: worker.worktreePath,
                     branchName: worker.branchName,
-                    pendingPermissions: worker.pendingPermissions,
-                    pendingPermissionIds: worker.pendingPermissionIds,
-                    runtimeInfo: worker.runtimeInfo,
-                    persistence: worker.persistence,
+                    createdAt: worker.createdAt,
+                    updatedAt: worker.updatedAt,
                     source: "local-cache",
-                    blockingAction: getBlockingAction(worker),
                 }
             } else {
                 throw new Error(`Worker "${args.workerId}" not found`)
             }
 
             // Optional activity fetch
-            let activity: Record<string, unknown> | null = null
-            if (args.includeActivity) {
+            let activity: WorkerActivitySummary | null = null
+            const activityFetched = Boolean(args.includeActivity)
+            if (activityFetched) {
                 const activityResult = await client.fetchWorkerActivity({
                     workerId: args.workerId,
                     limit: args.activityLimit,
                 })
-                activity = activityResult.timeline
+                activity = activityResult.activity
             }
 
-            const output: Record<string, unknown> = { ...snapshot }
+            const activityState = deriveActivityState(worker, activity, activityFetched)
+            const progress = deriveProgressSummary(worker, activityState, activity, activityFetched)
+            const output: WorkerInspectResponse = {
+                worker: snapshot,
+                attention: {
+                    pendingPermissionIds: worker.pendingPermissionIds,
+                    pendingPermissionCount: worker.pendingPermissions.length,
+                    blockingAction: getBlockingAction(worker),
+                    requiresAttention: worker.requiresAttention,
+                    attentionReason: worker.attentionReason,
+                },
+                progress: {
+                    activityState,
+                    summary: progress.summary,
+                    lastMeaningfulUpdate: progress.lastMeaningfulUpdate,
+                    readyForDependentWork: deriveReadyForDependentWork(worker.status),
+                },
+            }
             if (args.includeActivity) {
                 output.activity = activity
             }

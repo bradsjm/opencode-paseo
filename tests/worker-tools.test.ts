@@ -75,7 +75,7 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
         }),
         fetchWorkerActivity: async (opts) => ({
             workerId: opts.workerId,
-            timeline: null,
+            activity: null,
         }),
         listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
         createWorktree: async () => ({ requestId: "req", workspace: null, error: null }),
@@ -127,6 +127,9 @@ function seedWorker(state: ReturnType<typeof createPluginState>, id: string): Wo
         branchName: undefined,
         pendingPermissions: [],
         pendingPermissionIds: [],
+        rawStatus: "running",
+        requiresAttention: false,
+        attentionReason: null,
         runtimeInfo: null,
         persistence: null,
         unreadEventCount: 0,
@@ -897,7 +900,7 @@ test("paseo_worker_inspect", async (t) => {
         const client = createMockTransport({
             fetchWorkerActivity: async () => {
                 activityCalled = true
-                return { workerId: "w1", timeline: null }
+                return { workerId: "w1", activity: null }
             },
         })
 
@@ -906,18 +909,32 @@ test("paseo_worker_inspect", async (t) => {
 
         assert.ok(!activityCalled)
         const output = JSON.parse((result as { output: string }).output)
-        assert.equal(output.id, "w1")
+        assert.equal(output.worker.id, "w1")
+        assert.equal(output.worker.source, "local-cache")
+        assert.equal(output.worker.rawStatus, "running")
+        assert.equal(output.progress.activityState, "unknown")
+        assert.equal(output.progress.summary, "Activity not fetched; worker status is running")
+        assert.equal(output.runtimeInfo, undefined)
+        assert.equal(output.project, undefined)
         assert.equal(output.activity, undefined)
     })
 
-    await t.test("includes activity when requested", async () => {
+    await t.test("includes projected activity when requested", async () => {
         const state = createPluginState()
         seedWorker(state, "w1")
-        const mockTimeline = { entries: [{ type: "message", text: "hello" }] }
         const client = createMockTransport({
             fetchWorkerActivity: async (opts) => ({
                 workerId: opts.workerId,
-                timeline: mockTimeline,
+                activity: {
+                    entries: [
+                        {
+                            kind: "message",
+                            timestamp: "2024-01-01T00:00:00Z",
+                            summary: "hello",
+                        },
+                    ],
+                    hasMore: false,
+                },
             }),
         })
 
@@ -928,8 +945,14 @@ test("paseo_worker_inspect", async (t) => {
         )
 
         const output = JSON.parse((result as { output: string }).output)
-        assert.equal(output.id, "w1")
-        assert.deepEqual(output.activity, mockTimeline)
+        assert.equal(output.worker.id, "w1")
+        assert.deepEqual(output.activity.entries[0], {
+            kind: "message",
+            timestamp: "2024-01-01T00:00:00Z",
+            summary: "hello",
+        })
+        assert.equal(output.progress.activityState, "active")
+        assert.equal(output.progress.summary, "hello")
     })
 
     await t.test("returns null activity when activity fetch fails with not found", async () => {
@@ -938,7 +961,7 @@ test("paseo_worker_inspect", async (t) => {
         const client = createMockTransport({
             fetchWorkerActivity: async () => ({
                 workerId: "w1",
-                timeline: null,
+                activity: null,
             }),
         })
 
@@ -950,6 +973,7 @@ test("paseo_worker_inspect", async (t) => {
 
         const output = JSON.parse((result as { output: string }).output)
         assert.equal(output.activity, null)
+        assert.equal(output.progress.activityState, "quiet")
     })
 
     await t.test("passes activityLimit to transport", async () => {
@@ -959,7 +983,7 @@ test("paseo_worker_inspect", async (t) => {
         const client = createMockTransport({
             fetchWorkerActivity: async (opts) => {
                 receivedLimit = opts.limit
-                return { workerId: opts.workerId, timeline: { entries: [] } }
+                return { workerId: opts.workerId, activity: { entries: [], hasMore: false } }
             },
         })
 
@@ -972,32 +996,82 @@ test("paseo_worker_inspect", async (t) => {
         assert.equal(receivedLimit, 10)
     })
 
-    await t.test("uses fresh daemon data when available", async () => {
+    await t.test(
+        "uses fresh daemon data and exposes raw status plus attention fields",
+        async () => {
+            const state = createPluginState()
+            seedWorker(state, "w1")
+            const client = createMockTransport({
+                fetchWorker: async () => ({
+                    agent: {
+                        id: "w1",
+                        provider: "codex",
+                        cwd: "/repo",
+                        model: "gpt-4",
+                        status: "initializing",
+                        title: "Fresh Title",
+                        labels: {},
+                        requiresAttention: true,
+                        attentionReason: "permission",
+                        pendingPermissions: [{ id: "perm-9" }],
+                    },
+                    project: { id: "proj-1" },
+                }),
+            })
+
+            const toolDef = createWorkerInspectTool(state, client, logger)
+            const result = await toolDef.execute({ workerId: "w1" }, mockContext())
+
+            const output = JSON.parse((result as { output: string }).output)
+            assert.equal(output.worker.title, "Fresh Title")
+            assert.equal(output.worker.status, "blocked")
+            assert.equal(output.worker.rawStatus, "initializing")
+            assert.equal(output.worker.source, "daemon")
+            assert.equal(output.attention.requiresAttention, true)
+            assert.equal(output.attention.attentionReason, "permission")
+            assert.equal(output.attention.pendingPermissionCount, 1)
+            assert.equal(output.attention.blockingAction, "paseo_permission_respond")
+            assert.equal(output.project, undefined)
+        },
+    )
+
+    await t.test("distinguishes quiet from active running workers", async () => {
         const state = createPluginState()
         seedWorker(state, "w1")
         const client = createMockTransport({
-            fetchWorker: async () => ({
-                agent: {
-                    id: "w1",
-                    provider: "codex",
-                    cwd: "/repo",
-                    model: "gpt-4",
-                    status: "idle",
-                    title: "Fresh Title",
-                    labels: {},
-                    requiresAttention: false,
-                },
-                project: { id: "proj-1" },
+            fetchWorkerActivity: async () => ({
+                workerId: "w1",
+                activity: { entries: [], hasMore: false },
             }),
+        })
+
+        const toolDef = createWorkerInspectTool(state, client, logger)
+        const result = await toolDef.execute(
+            { workerId: "w1", includeActivity: true },
+            mockContext(),
+        )
+
+        const output = JSON.parse((result as { output: string }).output)
+        assert.equal(output.progress.activityState, "quiet")
+        assert.match(output.progress.summary, /running but has no recent projected activity/)
+    })
+
+    await t.test("falls back to local state when daemon fetch returns null", async () => {
+        const state = createPluginState()
+        const worker = seedWorker(state, "w1")
+        worker.requiresAttention = true
+        worker.attentionReason = "needs input"
+        const client = createMockTransport({
+            fetchWorker: async () => null,
         })
 
         const toolDef = createWorkerInspectTool(state, client, logger)
         const result = await toolDef.execute({ workerId: "w1" }, mockContext())
 
         const output = JSON.parse((result as { output: string }).output)
-        assert.equal(output.title, "Fresh Title")
-        assert.equal(output.status, "idle")
-        assert.deepEqual(output.project, { id: "proj-1" })
+        assert.equal(output.worker.source, "local-cache")
+        assert.equal(output.attention.requiresAttention, true)
+        assert.equal(output.attention.attentionReason, "needs input")
     })
 
     await t.test("throws when worker not found anywhere", async () => {

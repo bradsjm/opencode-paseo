@@ -28,7 +28,9 @@ import type {
     UpdateWorkerOptions,
     WorkerUpdateResult,
     WorkerActivityOptions,
+    WorkerActivityEntrySummary,
     WorkerActivityResult,
+    WorkerActivitySummary,
     WorktreeListOptions,
     WorktreeCreateOptions,
     WorktreeArchiveOptions,
@@ -107,6 +109,160 @@ export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
         worktreePath:
             (agent.worktreePath as string | undefined) ?? labels.worktreePath ?? undefined,
         branchName: (agent.branchName as string | undefined) ?? labels.branchName ?? undefined,
+    }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null
+}
+
+function getNestedValue(record: Record<string, unknown>, path: string[]): unknown {
+    let current: unknown = record
+    for (const key of path) {
+        const currentRecord = asRecord(current)
+        if (!currentRecord || !(key in currentRecord)) {
+            return undefined
+        }
+        current = currentRecord[key]
+    }
+    return current
+}
+
+function firstString(value: unknown, maxLength = 160): string | null {
+    if (typeof value === "string") {
+        const normalized = value.replace(/\s+/g, " ").trim()
+        if (!normalized) return null
+        return normalized.length > maxLength
+            ? `${normalized.slice(0, maxLength - 1).trimEnd()}…`
+            : normalized
+    }
+
+    if (Array.isArray(value)) {
+        for (const entry of value) {
+            const found = firstString(entry, maxLength)
+            if (found) return found
+        }
+        return null
+    }
+
+    const record = asRecord(value)
+    if (!record) {
+        return null
+    }
+
+    const preferredPaths = [
+        ["summary"],
+        ["title"],
+        ["message"],
+        ["text"],
+        ["content"],
+        ["reasoning"],
+        ["payload", "summary"],
+        ["payload", "message"],
+        ["payload", "text"],
+        ["payload", "content"],
+        ["event", "summary"],
+        ["event", "message"],
+        ["event", "text"],
+    ]
+
+    for (const path of preferredPaths) {
+        const found = firstString(getNestedValue(record, path), maxLength)
+        if (found) return found
+    }
+
+    for (const key of Object.keys(record)) {
+        const found = firstString(record[key], maxLength)
+        if (found) return found
+    }
+
+    return null
+}
+
+function firstScalar(record: Record<string, unknown>, keys: string[]): string | undefined {
+    for (const key of keys) {
+        const value = record[key]
+        if (typeof value === "string" && value.trim()) return value
+    }
+    return undefined
+}
+
+function extractTimelineEntries(timeline: unknown): unknown[] {
+    if (Array.isArray(timeline)) {
+        return timeline
+    }
+
+    const record = asRecord(timeline)
+    if (!record) {
+        return []
+    }
+
+    for (const key of ["entries", "events", "items", "timeline", "activity"]) {
+        if (Array.isArray(record[key])) {
+            return record[key] as unknown[]
+        }
+    }
+
+    return []
+}
+
+function projectTimelineEntry(entry: unknown): WorkerActivityEntrySummary | null {
+    if (typeof entry === "string") {
+        const summary = firstString(entry)
+        return summary ? { kind: "message", summary } : null
+    }
+
+    const record = asRecord(entry)
+    if (!record) {
+        return null
+    }
+
+    const kind =
+        firstScalar(record, ["kind", "type", "eventType", "category"]) ??
+        (record.toolName || record.tool ? "tool" : "event")
+    const timestamp = firstScalar(record, ["timestamp", "createdAt", "updatedAt", "at"])
+    const toolName =
+        firstScalar(record, ["toolName", "tool", "name"]) ??
+        firstScalar(asRecord(record.event) ?? {}, ["toolName", "tool", "name"])
+    const status =
+        firstScalar(record, ["status", "state", "result"]) ??
+        firstScalar(asRecord(record.event) ?? {}, ["status", "state", "result"])
+    const summary =
+        firstString(record.summary) ??
+        firstString(record.payload) ??
+        firstString(record.event) ??
+        firstString(record) ??
+        `${kind}${toolName ? ` ${toolName}` : ""}${status ? ` (${status})` : ""}`
+
+    return {
+        kind,
+        timestamp,
+        toolName,
+        status,
+        summary,
+    }
+}
+
+export function projectTimeline(timeline: unknown, requestedLimit?: number): WorkerActivitySummary {
+    const entries = extractTimelineEntries(timeline)
+        .map((entry) => projectTimelineEntry(entry))
+        .filter((entry): entry is WorkerActivityEntrySummary => entry !== null)
+
+    const record = asRecord(timeline)
+    const explicitHasMore =
+        typeof record?.hasMore === "boolean"
+            ? record.hasMore
+            : typeof record?.hasOlderEntries === "boolean"
+              ? record.hasOlderEntries
+              : typeof record?.remainingCount === "number"
+                ? record.remainingCount > 0
+                : undefined
+
+    return {
+        entries: entries.slice(0, requestedLimit ?? entries.length),
+        hasMore: explicitHasMore ?? false,
     }
 }
 
@@ -664,11 +820,11 @@ export class PaseoClient implements PaseoTransport {
             })
             return {
                 workerId: options.workerId,
-                timeline: timeline as unknown as Record<string, unknown>,
+                activity: projectTimeline(timeline, options.limit),
             }
         } catch (err: unknown) {
             if (err instanceof Error && err.message.includes("not found")) {
-                return { workerId: options.workerId, timeline: null }
+                return { workerId: options.workerId, activity: null }
             }
             throw err
         }

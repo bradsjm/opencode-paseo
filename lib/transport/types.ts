@@ -321,9 +321,22 @@ export interface WorkerActivityOptions {
     limit?: number
 }
 
+export interface WorkerActivityEntrySummary {
+    kind: string
+    timestamp?: string
+    toolName?: string
+    status?: string
+    summary: string
+}
+
+export interface WorkerActivitySummary {
+    entries: WorkerActivityEntrySummary[]
+    hasMore: boolean
+}
+
 export interface WorkerActivityResult {
     workerId: string
-    timeline: Record<string, unknown> | null
+    activity: WorkerActivitySummary | null
 }
 
 // ─── Normalized Daemon Event ──────────────────────────────────────────────────
