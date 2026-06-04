@@ -141,11 +141,7 @@ test("real daemon integration", async (t) => {
         assert.ok(!client.isConnected(), "should be disconnected")
         assert.equal(client.getServerInfo(), null, "serverInfo should be null after close")
 
-        await assert.rejects(
-            () => client.fetchAgents(),
-            undefined,
-            "fetchAgents should reject after close",
-        )
+        await assert.rejects(() => client.fetchAgents())
     })
 
     await t.test("multiple sequential requests work", async () => {

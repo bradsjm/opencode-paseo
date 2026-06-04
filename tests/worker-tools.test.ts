@@ -101,8 +101,8 @@ function seedWorker(state: ReturnType<typeof createPluginState>, id: string): Wo
         model: null,
         currentModeId: null,
         labels: [],
-        worktreePath: null,
-        branchName: null,
+        worktreePath: undefined,
+        branchName: undefined,
         pendingPermissions: [],
         pendingPermissionIds: [],
         runtimeInfo: null,
@@ -229,7 +229,8 @@ test("paseo_worker_cancel", async (t) => {
         assert.match(toolDef.description, /Before using forceKill=true/i)
         assert.match(toolDef.description, /capture any important output or status first/i)
         assert.match(toolDef.description, /destructive and irreversible/i)
-        assert.match(toolDef.args.forceKill.description ?? "", /capture any needed output or status first/i)
+        const forceKillArg = toolDef.args.forceKill as { description?: string }
+        assert.match(forceKillArg.description ?? "", /capture any needed output or status first/i)
     })
 })
 

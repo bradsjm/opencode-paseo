@@ -68,7 +68,7 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
                 daemon: {
                     host: "127.0.0.1",
                     port: 1,
-                    connectionTimeoutMs: 25,
+                    connectionTimeoutMs: 500,
                 },
             },
             null,
@@ -111,7 +111,7 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
         })
 
         // Graceful degrade: no Paseo tools registered when daemon is unreachable
-        const paseoTools = toolIDs.data.filter((id: string) => id.startsWith("paseo_"))
+        const paseoTools = (toolIDs.data ?? []).filter((id: string) => id.startsWith("paseo_"))
         assert.equal(
             paseoTools.length,
             0,

@@ -24,7 +24,7 @@ test("plugin startup graceful degrade", async (t) => {
                 daemon: {
                     host: "127.0.0.1",
                     port: 1,
-                    connectionTimeoutMs: 25,
+                    connectionTimeoutMs: 500,
                 },
             }),
             "utf-8",

@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { createPluginState } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
+import type { ToolContext } from "@opencode-ai/plugin/tool"
 import {
     createTerminalKillTool,
     createTerminalSendInputTool,
@@ -86,6 +87,19 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     }
 }
 
+function mockContext(): ToolContext {
+    return {
+        sessionID: "sess-1",
+        messageID: "msg-1",
+        agent: "test",
+        directory: "/tmp",
+        worktree: "/tmp",
+        abort: new AbortController().signal,
+        metadata: () => {},
+        ask: async () => {},
+    }
+}
+
 // ─── Send Input Tool Tests ──────────────────────────────────────────────────
 
 test("paseo_terminal_send_input", async (t) => {
@@ -103,7 +117,7 @@ test("paseo_terminal_send_input", async (t) => {
         })
 
         const toolDef = createTerminalSendInputTool(state, client, logger)
-        const result = await toolDef.execute({ terminalId: "t1", input: "ls -la\n" })
+        const result = await toolDef.execute({ terminalId: "t1", input: "ls -la\n" }, mockContext())
 
         assert.equal(receivedTerminalId, "t1")
         assert.equal(receivedInput, "ls -la\n")
@@ -123,7 +137,7 @@ test("paseo_terminal_send_input", async (t) => {
 
         const toolDef = createTerminalSendInputTool(state, client, logger)
         // Send literal backslash-n characters (not an actual newline)
-        await toolDef.execute({ terminalId: "t1", input: "echo hello\\nworld" })
+        await toolDef.execute({ terminalId: "t1", input: "echo hello\\nworld" }, mockContext())
 
         assert.equal(receivedInput, "echo hello\\nworld")
     })
@@ -138,7 +152,7 @@ test("paseo_terminal_send_input", async (t) => {
         })
 
         const toolDef = createTerminalSendInputTool(state, client, logger)
-        const result = await toolDef.execute({ terminalId: "t1", input: "" })
+        const result = await toolDef.execute({ terminalId: "t1", input: "" }, mockContext())
 
         assert.equal(receivedInput, "")
         const output = JSON.parse((result as { output: string }).output)
@@ -156,7 +170,7 @@ test("paseo_terminal_send_input", async (t) => {
 
         const toolDef = createTerminalSendInputTool(state, client, logger)
         const specialInput = "\t\x03\x1b[A"
-        await toolDef.execute({ terminalId: "t1", input: specialInput })
+        await toolDef.execute({ terminalId: "t1", input: specialInput }, mockContext())
 
         assert.equal(receivedInput, specialInput)
     })
@@ -171,7 +185,7 @@ test("paseo_terminal_send_input", async (t) => {
 
         const toolDef = createTerminalSendInputTool(state, client, logger)
         await assert.rejects(
-            () => toolDef.execute({ terminalId: "t1", input: "pwd\n" }),
+            () => toolDef.execute({ terminalId: "t1", input: "pwd\n" }, mockContext()),
             /send failed/,
         )
     })
@@ -197,7 +211,7 @@ test("paseo_terminal_send_lines", async (t) => {
         const result = await toolDef.execute({
             terminalId: "t1",
             lines: ["echo hello", "echo world"],
-        })
+        }, mockContext())
 
         assert.equal(receivedTerminalId, "t1")
         assert.equal(receivedInput, "echo hello\necho world\n")
@@ -217,7 +231,7 @@ test("paseo_terminal_send_lines", async (t) => {
         })
 
         const toolDef = createTerminalSendLinesTool(state, client, logger)
-        const result = await toolDef.execute({ terminalId: "t1", lines: ["ls -la"] })
+        const result = await toolDef.execute({ terminalId: "t1", lines: ["ls -la"] }, mockContext())
 
         assert.equal(receivedInput, "ls -la\n")
         const output = JSON.parse((result as { output: string }).output)
@@ -235,7 +249,7 @@ test("paseo_terminal_send_lines", async (t) => {
         })
 
         const toolDef = createTerminalSendLinesTool(state, client, logger)
-        await toolDef.execute({ terminalId: "t1", lines: ["echo a", "", "echo b"] })
+        await toolDef.execute({ terminalId: "t1", lines: ["echo a", "", "echo b"] }, mockContext())
 
         assert.equal(receivedInput, "echo a\n\necho b\n")
     })
@@ -250,7 +264,7 @@ test("paseo_terminal_send_lines", async (t) => {
         })
 
         const toolDef = createTerminalSendLinesTool(state, client, logger)
-        const result = await toolDef.execute({ terminalId: "t1", lines: [] })
+        const result = await toolDef.execute({ terminalId: "t1", lines: [] }, mockContext())
 
         assert.equal(receivedInput, "\n")
         const output = JSON.parse((result as { output: string }).output)
@@ -264,7 +278,7 @@ test("paseo_terminal_send_lines", async (t) => {
 
         const toolDef = createTerminalSendLinesTool(state, client, logger)
         const lines = ["first command", "second command", "third"]
-        const result = await toolDef.execute({ terminalId: "t1", lines })
+        const result = await toolDef.execute({ terminalId: "t1", lines }, mockContext())
 
         const expectedLength = lines.join("\n").length + 1 // +1 for trailing newline
         const output = JSON.parse((result as { output: string }).output)

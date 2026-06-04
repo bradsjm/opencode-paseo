@@ -246,6 +246,7 @@ test("createDaemonEventHandler", async (t) => {
             payload: {
                 workerId: "w1",
                 permissionId: "perm-1",
+                resolution: { decision: "allow" },
                 summary: "Permission resolved",
             },
         })

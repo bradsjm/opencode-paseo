@@ -10,7 +10,7 @@ const outputConfig = { maxInboxItems: 100, maxSummaryLength: 32 }
 // ─── Mock Paseo Transport ────────────────────────────────────────────────────
 
 function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTransport {
-    return {
+    const base: PaseoTransport = {
         isConnected: () => true,
         connect: async () => {},
         close: async () => {},
@@ -104,8 +104,18 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
         listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
         createWorktree: async () => ({ requestId: "req", workspace: null, error: null }),
         archiveWorktree: async () => ({ requestId: "req", success: true, error: null }),
-        ...overrides,
+        scheduleList: async () => ({ requestId: "req", schedules: [], error: null }),
+        scheduleInspect: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleCreate: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleUpdate: async () => ({ requestId: "req", schedule: null, error: null }),
+        schedulePause: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleResume: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleDelete: async () => ({ requestId: "req", scheduleId: "sched", error: null }),
+        scheduleRunOnce: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleLogs: async () => ({ requestId: "req", runs: [], error: null }),
     }
+
+    return { ...base, ...overrides }
 }
 
 // ─── Hydration Tests ─────────────────────────────────────────────────────────

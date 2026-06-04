@@ -148,7 +148,7 @@ test("paseo_schedule_create", async (t) => {
         const client = createMockTransport({
             scheduleCreate: async (opts) => {
                 receivedOptions = opts
-                return { id: "sched-1" }
+                return { requestId: "req", schedule: null, error: null }
             },
         })
         const opencode = mockOpencodeClient()
@@ -180,7 +180,7 @@ test("paseo_schedule_create", async (t) => {
         const client = createMockTransport({
             scheduleCreate: async (opts) => {
                 receivedOptions = opts
-                return { id: "sched-2" }
+                return { requestId: "req", schedule: null, error: null }
             },
         })
         const opencode = mockOpencodeClient()
@@ -284,7 +284,7 @@ test("paseo_schedule_update", async (t) => {
         const client = createMockTransport({
             scheduleUpdate: async (opts) => {
                 receivedOptions = opts
-                return { id: opts.id }
+                return { requestId: "req", schedule: null, error: null }
             },
         })
         const opencode = mockOpencodeClient()
@@ -306,7 +306,7 @@ test("paseo_schedule_update", async (t) => {
         const client = createMockTransport({
             scheduleUpdate: async (opts) => {
                 receivedOptions = opts
-                return { id: opts.id }
+                return { requestId: "req", schedule: null, error: null }
             },
         })
         const opencode = mockOpencodeClient()
@@ -329,7 +329,7 @@ test("paseo_schedule_update", async (t) => {
             },
             scheduleUpdate: async (opts) => {
                 receivedOptions = opts
-                return { id: opts.id }
+                return { requestId: "req", schedule: null, error: null }
             },
         })
         const opencode = {

@@ -309,7 +309,7 @@ test("PaseoClient implements all schedule transport methods", () => {
     ]
     for (const method of scheduleMethods) {
         assert.equal(
-            typeof (PaseoClient.prototype as Record<string, unknown>)[method],
+            typeof (PaseoClient.prototype as unknown as Record<string, unknown>)[method],
             "function",
             `PaseoClient.prototype.${method} should be a function`,
         )
@@ -322,7 +322,7 @@ test("PaseoClient implements extended worker transport methods", () => {
     const workerMethods = ["killWorker", "updateWorker", "fetchWorkerActivity"]
     for (const method of workerMethods) {
         assert.equal(
-            typeof (PaseoClient.prototype as Record<string, unknown>)[method],
+            typeof (PaseoClient.prototype as unknown as Record<string, unknown>)[method],
             "function",
             `PaseoClient.prototype.${method} should be a function`,
         )
@@ -375,11 +375,12 @@ test("PaseoClient.createWorker always sets background and detached to true", asy
     })
 
     assert.ok(capturedPayload, "createAgent should have been called")
-    assert.equal(capturedPayload!.background, true, "background must be true")
-    assert.equal(capturedPayload!.detached, true, "detached must be true")
-    assert.equal(capturedPayload!.cwd, "/tmp")
-    assert.equal(capturedPayload!.provider, "test")
-    const config = capturedPayload!.config as Record<string, unknown>
+    const payload = capturedPayload as Record<string, unknown>
+    assert.equal(payload.background, true, "background must be true")
+    assert.equal(payload.detached, true, "detached must be true")
+    assert.equal(payload.cwd, "/tmp")
+    assert.equal(payload.provider, "test")
+    const config = payload.config as Record<string, unknown>
     assert.ok(config, "config should be present when model/modeId provided")
     assert.equal(config.model, "gpt-4")
     assert.equal(config.modeId, "build")
@@ -419,9 +420,10 @@ test("PaseoClient.createWorker sets background/detached even without model/modeI
     await client.createWorker({ cwd: "/tmp" })
 
     assert.ok(capturedPayload)
-    assert.equal(capturedPayload!.background, true)
-    assert.equal(capturedPayload!.detached, true)
-    assert.equal(capturedPayload!.config, undefined, "config should be absent when no model/modeId")
+    const payload = capturedPayload as Record<string, unknown>
+    assert.equal(payload.background, true)
+    assert.equal(payload.detached, true)
+    assert.equal(payload.config, undefined, "config should be absent when no model/modeId")
 })
 
 test("PaseoClient.sendTerminalInput is synchronous and surfaces send errors", () => {
