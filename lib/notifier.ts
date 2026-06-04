@@ -20,6 +20,7 @@ const NEVER_NUDGE: ReadonlySet<InboxEventKind> = new Set([
 
 /** Event kinds that are nudged only when blockingOnly is false. */
 const NON_BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
+    "worker.stalled",
     "worker.finished",
     "worker.failed",
 ])

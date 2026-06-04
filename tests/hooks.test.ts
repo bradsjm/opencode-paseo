@@ -18,7 +18,7 @@ const mockConfig: PluginConfig = {
     debug: false,
     daemon: { host: "127.0.0.1", port: 6767, connectionTimeoutMs: 3000 },
     output: { maxInboxItems: 100, maxSummaryLength: 500 },
-    notifications: { enabled: true, blockingOnly: false },
+    notifications: { enabled: true, blockingOnly: false, stalledThresholdMs: 120000 },
     agents: {},
 }
 
@@ -40,6 +40,20 @@ test("createDaemonEventHandler", async (t) => {
         const event = Array.from(state.inbox.values())[0]
         assert.equal(event.kind, "worker.started")
         assert.equal(event.resourceId, "w1")
+        assert.equal(event.blocking, false)
+    })
+
+    await t.test("inserts non-blocking worker.stalled event", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "worker.stalled",
+            payload: { workerId: "w1", summary: "Worker w1 appears stalled" },
+        })
+
+        const event = Array.from(state.inbox.values())[0]
+        assert.equal(event.kind, "worker.stalled")
         assert.equal(event.blocking, false)
     })
 
@@ -153,6 +167,18 @@ test("createDaemonEventHandler", async (t) => {
 
         assert.equal(state.connectionStatus, "error")
         assert.equal(state.lastError, "Daemon exploded")
+        assert.equal(state.inbox.size, 0)
+    })
+
+    await t.test("ignores worker.activity for inbox insertion", () => {
+        const state = createPluginState()
+        const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+        handler({
+            type: "worker.activity",
+            payload: { workerId: "w1", timestamp: new Date().toISOString(), subtype: "timeline" },
+        })
+
         assert.equal(state.inbox.size, 0)
     })
 
@@ -331,6 +357,34 @@ test("createEventHandler", async (t) => {
         // Session should be gone, and global inbox should still have the event
         assert.equal(state.sessions.size, 0)
         assert.equal(state.inbox.size, 1)
+    })
+})
+
+test("createDaemonEventHandler nudges worker.stalled", async (t) => {
+    await t.test("nudges owning session for worker.stalled", async () => {
+        const state = createPluginState()
+        const logger = new Logger(false)
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("w1")
+
+        const messages: string[] = []
+        const opencodeClient = {
+            session: {
+                prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
+                    messages.push(body.parts[0]!.text)
+                },
+            },
+        } as unknown as OpencodeClient
+
+        const handler = createDaemonEventHandler(state, logger, mockConfig, opencodeClient)
+        handler({
+            type: "worker.stalled",
+            payload: { workerId: "w1", summary: "Worker w1 appears stalled" },
+        })
+
+        await new Promise((resolve) => setImmediate(resolve))
+        assert.equal(messages.length, 1)
+        assert.match(messages[0]!, /^\[paseo:worker\.stalled\]/)
     })
 })
 
@@ -515,7 +569,7 @@ test("nudge delivery", async (t) => {
 
         const disabledConfig: PluginConfig = {
             ...mockConfig,
-            notifications: { enabled: false, blockingOnly: false },
+            notifications: { enabled: false, blockingOnly: false, stalledThresholdMs: 120000 },
         }
         const { client, calls } = createMockOpencodeClient()
         const handler = createDaemonEventHandler(state, logger, disabledConfig, client)
@@ -536,7 +590,7 @@ test("nudge delivery", async (t) => {
 
         const blockingConfig: PluginConfig = {
             ...mockConfig,
-            notifications: { enabled: true, blockingOnly: true },
+            notifications: { enabled: true, blockingOnly: true, stalledThresholdMs: 120000 },
         }
         const { client, calls } = createMockOpencodeClient()
         const handler = createDaemonEventHandler(state, logger, blockingConfig, client)

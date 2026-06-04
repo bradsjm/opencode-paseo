@@ -15,6 +15,7 @@ const maxInboxItemsSchema = z.number().int().min(1).max(500)
 const maxSummaryLengthSchema = z.number().int().min(50).max(5000)
 const notificationsEnabledSchema = z.boolean()
 const notificationsBlockingOnlySchema = z.boolean()
+const notificationsStalledThresholdSchema = z.number().int().min(10000).max(3600000)
 const defaultAgentSchema = z.string()
 const defaultModelSchema = z.string()
 
@@ -33,6 +34,7 @@ const outputShape = {
 const notificationsShape = {
     enabled: notificationsEnabledSchema.default(true),
     blockingOnly: notificationsBlockingOnlySchema.default(false),
+    stalledThresholdMs: notificationsStalledThresholdSchema.default(120000),
 } as const
 
 const agentsShape = {
@@ -65,6 +67,7 @@ const notificationsLayerSchema = z
     .object({
         enabled: notificationsEnabledSchema.optional(),
         blockingOnly: notificationsBlockingOnlySchema.optional(),
+        stalledThresholdMs: notificationsStalledThresholdSchema.optional(),
     })
     .strict()
 

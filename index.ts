@@ -46,6 +46,7 @@ import {
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 import { resetPluginState } from "./lib/state/state.js"
 import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
+import { createWorkerStallMonitor } from "./lib/worker-stall-monitor.js"
 
 const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
@@ -73,11 +74,18 @@ const server: Plugin = (async (ctx) => {
 
     // Attach live event listener
     const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client)
-    client.onEvent(daemonEventHandler)
+    const stallMonitor = createWorkerStallMonitor(state, logger, config, daemonEventHandler)
+    stallMonitor.seedFromWorkers()
+    client.onEvent((event) => {
+        daemonEventHandler(event)
+        stallMonitor.observeEvent(event)
+    })
+    stallMonitor.start()
     logger.info("Live event subscription active")
 
     return {
         dispose: async () => {
+            stallMonitor.stop()
             try {
                 await client.close()
                 logger.info("Paseo client closed")

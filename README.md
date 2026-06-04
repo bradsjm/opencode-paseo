@@ -42,22 +42,25 @@ The plugin reads `paseo.jsonc` (or `paseo.json`) from:
 
 Later files override earlier ones.
 
-| Key                          | Type      | Default       | Description                                           |
-| ---------------------------- | --------- | ------------- | ----------------------------------------------------- |
-| `enabled`                    | `boolean` | `true`        | Enable or disable the plugin                          |
-| `debug`                      | `boolean` | `false`       | Enable debug logging                                  |
-| `daemon.host`                | `string`  | `"127.0.0.1"` | Daemon host (`127.0.0.1`, `localhost`, or `::1` only) |
-| `daemon.port`                | `number`  | `6767`        | Daemon port                                           |
-| `daemon.password`            | `string`  | —             | Authentication password                               |
-| `daemon.connectionTimeoutMs` | `number`  | `3000`        | Connection timeout                                    |
-| `output.maxInboxItems`       | `number`  | `100`         | Max inbox items in memory                             |
-| `output.maxSummaryLength`    | `number`  | `500`         | Max summary text length                               |
-| `notifications.enabled`      | `boolean` | `true`        | Enable session nudges                                 |
-| `notifications.blockingOnly` | `boolean` | `false`       | Only nudge on blocking events                         |
-| `agents.defaultAgent`        | `string`  | —             | Default agent name                                    |
-| `agents.defaultModel`        | `string`  | —             | Default model for workers                             |
+| Key                                | Type      | Default       | Description                                                                            |
+| ---------------------------------- | --------- | ------------- | -------------------------------------------------------------------------------------- |
+| `enabled`                          | `boolean` | `true`        | Enable or disable the plugin                                                           |
+| `debug`                            | `boolean` | `false`       | Enable debug logging                                                                   |
+| `daemon.host`                      | `string`  | `"127.0.0.1"` | Daemon host (`127.0.0.1`, `localhost`, or `::1` only)                                  |
+| `daemon.port`                      | `number`  | `6767`        | Daemon port                                                                            |
+| `daemon.password`                  | `string`  | —             | Authentication password                                                                |
+| `daemon.connectionTimeoutMs`       | `number`  | `3000`        | Connection timeout                                                                     |
+| `output.maxInboxItems`             | `number`  | `100`         | Max inbox items in memory                                                              |
+| `output.maxSummaryLength`          | `number`  | `500`         | Max summary text length                                                                |
+| `notifications.enabled`            | `boolean` | `true`        | Enable session nudges                                                                  |
+| `notifications.blockingOnly`       | `boolean` | `false`       | Only nudge on blocking events                                                          |
+| `notifications.stalledThresholdMs` | `number`  | `120000`      | Inactivity threshold before a running worker gets a best-effort `worker.stalled` event |
+| `agents.defaultAgent`              | `string`  | —             | Default agent name                                                                     |
+| `agents.defaultModel`              | `string`  | —             | Default model for workers                                                              |
 
 Malformed config files and invalid values surface a warning toast and that layer is ignored. If `daemon.host` is set outside the localhost-only allowlist, the plugin warns and enforces `127.0.0.1` at runtime.
+
+The plugin also performs a best-effort stalled-worker heuristic: if an owned worker remains effectively active (`running`/`initializing`, not `idle`, not permission-blocked) without new upstream activity for at least `notifications.stalledThresholdMs`, the plugin emits a synthetic non-blocking `worker.stalled` inbox event and, when non-blocking notifications are enabled, nudges the owning OpenCode session. The stall clears automatically when activity resumes or the worker leaves the running path.
 
 ## Tools
 
@@ -112,7 +115,7 @@ The plugin registers the following tools in OpenCode.
 | `paseo_worker_update`  | Update worker name, labels, and runtime settings (mode, model, thinking, features)                                                             |
 | `paseo_worker_inspect` | Inspect a worker's current state. Optionally includes recent activity timeline.                                                                |
 
-`paseo_worker_wait` accepts `workerIds: string[]` (one or more, deduplicated), optional `waitFor` (defaults to `"all"`), and optional `timeout` in milliseconds. It returns a structured payload with the completed per-worker `results`, any `pendingWorkerIds`, plus `timedOut` and `interruptedByNudge` flags so the controller can tell whether the wait completed normally, hit the timeout, or stopped because the current OpenCode session received a nudge-eligible event for one of its owned workers.
+`paseo_worker_wait` accepts `workerIds: string[]` (one or more, deduplicated), optional `waitFor` (defaults to `"all"`), and optional `timeout` in milliseconds. It returns a structured payload with the completed per-worker `results`, any `pendingWorkerIds`, plus `timedOut` and `interruptedByNudge` flags so the controller can tell whether the wait completed normally, hit the timeout, or stopped because the current OpenCode session received a nudge-eligible event for one of its owned workers, including fresh synthetic `worker.stalled` events.
 
 ### Worktree
 

@@ -7,9 +7,21 @@ import type { InboxEventKind } from "../lib/state/types.js"
 // ─── shouldNudge ─────────────────────────────────────────────────────────────
 
 test("shouldNudge", async (t) => {
-    const enabledAll: NotificationsConfig = { enabled: true, blockingOnly: false }
-    const enabledBlockingOnly: NotificationsConfig = { enabled: true, blockingOnly: true }
-    const disabled: NotificationsConfig = { enabled: false, blockingOnly: false }
+    const enabledAll: NotificationsConfig = {
+        enabled: true,
+        blockingOnly: false,
+        stalledThresholdMs: 120000,
+    }
+    const enabledBlockingOnly: NotificationsConfig = {
+        enabled: true,
+        blockingOnly: true,
+        stalledThresholdMs: 120000,
+    }
+    const disabled: NotificationsConfig = {
+        enabled: false,
+        blockingOnly: false,
+        stalledThresholdMs: 120000,
+    }
 
     await t.test("returns false when notifications disabled", () => {
         assert.equal(shouldNudge("worker.blocked", disabled), false)
@@ -38,11 +50,13 @@ test("shouldNudge", async (t) => {
     })
 
     await t.test("non-blocking events do not nudge when blockingOnly is true", () => {
+        assert.equal(shouldNudge("worker.stalled", enabledBlockingOnly), false)
         assert.equal(shouldNudge("worker.finished", enabledBlockingOnly), false)
         assert.equal(shouldNudge("worker.failed", enabledBlockingOnly), false)
     })
 
     await t.test("all eligible events nudge when blockingOnly is false", () => {
+        assert.equal(shouldNudge("worker.stalled", enabledAll), true)
         assert.equal(shouldNudge("worker.blocked", enabledAll), true)
         assert.equal(shouldNudge("permission.requested", enabledAll), true)
         assert.equal(shouldNudge("worker.finished", enabledAll), true)

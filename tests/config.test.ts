@@ -141,6 +141,7 @@ test("getConfig", async (t) => {
             notifications: {
                 enabled: true,
                 blockingOnly: false,
+                stalledThresholdMs: 120000,
             },
             agents: {},
         })
@@ -186,8 +187,50 @@ test("getConfig", async (t) => {
         assert.equal(config.output.maxSummaryLength, 500)
         assert.equal(config.notifications.enabled, true)
         assert.equal(config.notifications.blockingOnly, true)
+        assert.equal(config.notifications.stalledThresholdMs, 120000)
         assert.equal(config.agents.defaultAgent, "worker-a")
         assert.equal(config.agents.defaultModel, undefined)
+    })
+
+    await t.test("accepts notifications.stalledThresholdMs overrides", async () => {
+        const configDir = join(tempDir, "config")
+        mkdirSync(configDir, { recursive: true })
+        writeFileSync(
+            join(configDir, "paseo.jsonc"),
+            JSON.stringify({ notifications: { stalledThresholdMs: 600000 } }),
+            "utf-8",
+        )
+
+        process.env.OPENCODE_CONFIG_DIR = configDir
+        const mod = await loadConfigModule("stalled-threshold-override")
+        const { ctx } = createToastCollector()
+        ctx.directory = tempDir
+
+        const config = mod.getConfig(ctx as any)
+        assert.equal(config.notifications.stalledThresholdMs, 600000)
+    })
+
+    await t.test("warns and skips invalid stalled threshold", async () => {
+        const configDir = join(tempDir, "config")
+        mkdirSync(configDir, { recursive: true })
+        writeFileSync(
+            join(configDir, "paseo.jsonc"),
+            JSON.stringify({ notifications: { stalledThresholdMs: 5000 } }),
+            "utf-8",
+        )
+
+        process.env.OPENCODE_CONFIG_DIR = configDir
+        const mod = await loadConfigModule("stalled-threshold-invalid")
+        const { ctx, messages } = createToastCollector()
+        ctx.directory = tempDir
+
+        await withImmediateTimers(() => {
+            const config = mod.getConfig(ctx as any)
+            assert.equal(config.notifications.stalledThresholdMs, 120000)
+        })
+
+        assert.equal(messages.length, 1)
+        assert.match(messages[0], /notifications\.stalledThresholdMs/i)
     })
 
     await t.test("warns on malformed config files instead of silently dropping them", async () => {

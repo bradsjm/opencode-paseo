@@ -314,6 +314,24 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
             return { type: "worker.started", payload: { ...payload, workerId: agentId } }
         }
 
+        case "agent_stream": {
+            const streamEvent = asRecord(event.event)
+            const subtype =
+                (typeof streamEvent?.type === "string" && streamEvent.type) ||
+                (typeof streamEvent?.kind === "string" && streamEvent.kind) ||
+                undefined
+
+            return {
+                type: "worker.activity",
+                payload: {
+                    workerId: event.agentId,
+                    timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
+                    subtype,
+                    summary: firstString(streamEvent) ?? undefined,
+                },
+            }
+        }
+
         case "agent_deleted":
             return {
                 type: "worker.finished",
@@ -339,9 +357,6 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
                     resolution: event.resolution as unknown as Record<string, unknown>,
                 },
             }
-
-        case "agent_stream":
-            return null
 
         case "error":
             return {

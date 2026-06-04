@@ -81,6 +81,13 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Only notify for blocking events (e.g., pending permissions)"
+                },
+                "stalledThresholdMs": {
+                    "type": "integer",
+                    "minimum": 10000,
+                    "maximum": 3600000,
+                    "default": 120000,
+                    "description": "Best-effort inactivity threshold before a running worker is marked stalled"
                 }
             }
         },

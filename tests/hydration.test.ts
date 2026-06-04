@@ -233,6 +233,33 @@ test("hydrate", async (t) => {
         assert.equal(state.inbox.size, firstCount) // dedup prevents duplicates
     })
 
+    await t.test("does not synthesize stall inbox events during hydration", async () => {
+        const state = createPluginState()
+        const client = createMockTransport({
+            fetchAgents: async () => [
+                {
+                    id: "w-running",
+                    title: "Running Worker",
+                    provider: "general",
+                    status: "running",
+                    cwd: "/tmp",
+                    model: null,
+                    labels: {},
+                    requiresAttention: false,
+                    updatedAt: new Date(Date.now() - 600000).toISOString(),
+                },
+            ],
+        })
+
+        await hydrate(state, client, logger, outputConfig)
+
+        assert.equal(
+            Array.from(state.inbox.values()).some((event) => event.kind === "worker.stalled"),
+            false,
+        )
+        assert.ok(state.workers.get("w-running")?.updatedAt)
+    })
+
     await t.test("populates Phase 3 worker fields", async () => {
         const state = createPluginState()
         const client = createMockTransport({

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createPluginState, insertInboxEvent } from "../lib/state/state.js"
+import { createPluginState, insertInboxEvent, markEventRead } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 import { Logger } from "../lib/logger.js"
@@ -112,6 +112,7 @@ const TEST_CONFIG: PluginConfig = {
     notifications: {
         enabled: true,
         blockingOnly: false,
+        stalledThresholdMs: 120000,
     },
     agents: {},
 }
@@ -381,6 +382,60 @@ test("paseo_worker_wait", async (t) => {
         assert.equal(output.nudgeEvent.kind, "worker.blocked")
         assert.equal(output.nudgeEvent.workerId, "w1")
         assert.equal(output.timedOut, false)
+    })
+
+    await t.test("early exit on unread worker.stalled event", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        insertInboxEvent(state, {
+            id: "evt-stalled",
+            kind: "worker.stalled",
+            resourceId: "w1",
+            blocking: false,
+            summary: "Worker appears stalled",
+            read: false,
+            timestamp: Date.now(),
+        })
+
+        const client = createMockTransport()
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.interruptedByNudge, true)
+        assert.equal(output.nudgeEvent.kind, "worker.stalled")
+        assert.equal(output.nudgeEvent.workerId, "w1")
+    })
+
+    await t.test("read worker.stalled event no longer interrupts wait", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        insertInboxEvent(state, {
+            id: "evt-stalled-read",
+            kind: "worker.stalled",
+            resourceId: "w1",
+            blocking: false,
+            summary: "Recovered stall",
+            read: false,
+            timestamp: Date.now(),
+        })
+        markEventRead(state, "evt-stalled-read")
+
+        const client = createMockTransport({
+            waitForWorker: async (workerId) => ({
+                status: "idle",
+                workerId,
+                error: null,
+                lastMessage: "done",
+                finalSnapshot: null,
+            }),
+        })
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.interruptedByNudge, false)
+        assert.equal(output.results[0].workerId, "w1")
     })
 
     await t.test("early exit on owned worker nudge for different owned worker", async () => {

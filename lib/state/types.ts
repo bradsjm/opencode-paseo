@@ -13,6 +13,7 @@ export type WorkerStatus =
 
 export type InboxEventKind =
     | "worker.started"
+    | "worker.stalled"
     | "worker.finished"
     | "worker.failed"
     | "worker.blocked"

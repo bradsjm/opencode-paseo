@@ -77,6 +77,14 @@ export function markAllRead(state: PluginState): void {
     }
 }
 
+export function markUnreadStallEventsRead(state: PluginState, workerId: string): void {
+    for (const [eventId, event] of state.inbox) {
+        if (event.kind === "worker.stalled" && event.resourceId === workerId && !event.read) {
+            markEventRead(state, eventId)
+        }
+    }
+}
+
 export function findSessionsForResource(state: PluginState, resourceId: string): string[] {
     const result: string[] = []
     for (const session of state.sessions.values()) {

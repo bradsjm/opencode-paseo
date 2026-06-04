@@ -78,7 +78,12 @@ export interface WorkerWaitResult {
 }
 
 export interface WorkerWaitNudgeEvent {
-    kind: "worker.finished" | "worker.failed" | "worker.blocked" | "permission.requested"
+    kind:
+        | "worker.stalled"
+        | "worker.finished"
+        | "worker.failed"
+        | "worker.blocked"
+        | "permission.requested"
     workerId: string
     summary: string
 }
@@ -348,6 +353,13 @@ export interface WorkerEventPayload extends Record<string, unknown> {
     summary?: string
 }
 
+export interface WorkerActivityPayload extends Record<string, unknown> {
+    workerId: string
+    timestamp?: string
+    subtype?: string
+    summary?: string
+}
+
 export interface PermissionRequestedPayload extends Record<string, unknown> {
     workerId: string
     permissionId?: string
@@ -380,6 +392,16 @@ export interface WorkerStartedEvent {
     payload: WorkerEventPayload
 }
 
+export interface WorkerStalledEvent {
+    type: "worker.stalled"
+    payload: WorkerEventPayload
+}
+
+export interface WorkerActivityEvent {
+    type: "worker.activity"
+    payload: WorkerActivityPayload
+}
+
 export interface WorkerFinishedEvent {
     type: "worker.finished"
     payload: WorkerEventPayload
@@ -410,6 +432,8 @@ export type DaemonEvent =
     | DaemonDisconnectedEvent
     | DaemonErrorEvent
     | WorkerStartedEvent
+    | WorkerStalledEvent
+    | WorkerActivityEvent
     | WorkerFinishedEvent
     | WorkerFailedEvent
     | WorkerBlockedEvent

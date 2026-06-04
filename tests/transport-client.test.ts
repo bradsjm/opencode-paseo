@@ -299,14 +299,21 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
         assert.equal(result.payload.permissionId, "p1")
     })
 
-    await t.test("agent_stream → null (ignored)", () => {
+    await t.test("agent_stream → worker.activity", () => {
         const result = translateUpstreamEvent({
             type: "agent_stream",
             agentId: "a1",
-            event: {},
+            event: { type: "turn_completed", summary: "Finished step" },
             timestamp: "2024-01-01T00:00:00Z",
         } as any)
-        assert.equal(result, null)
+        assert.ok(result)
+        assert.equal(result.type, "worker.activity")
+        assert.deepEqual(result.payload, {
+            workerId: "a1",
+            timestamp: "2024-01-01T00:00:00Z",
+            subtype: "turn_completed",
+            summary: "Finished step",
+        })
     })
 
     await t.test("error → daemon.error", () => {

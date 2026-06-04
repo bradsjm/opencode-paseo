@@ -19,6 +19,7 @@ import {
     unbindTerminalFromSessions,
     recordCreatedTerminal,
     findSessionsForResource,
+    markUnreadStallEventsRead,
 } from "../lib/state/state.js"
 import type { InboxEvent, TerminalSessionSummary, WorkerSummary } from "../lib/state/types.js"
 import type { AgentSummary } from "../lib/transport/types.js"
@@ -232,6 +233,40 @@ test("markEventRead", async (t) => {
         insertInboxEvent(state, event)
         markEventRead(state, "evt-1")
         assert.equal(state.inbox.get("evt-1")!.read, true)
+    })
+})
+
+test("markUnreadStallEventsRead", async (t) => {
+    await t.test("marks only unread stall events for the worker as read", () => {
+        const state = createPluginState()
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("w1")
+
+        insertInboxEvent(state, {
+            id: "evt-stalled",
+            kind: "worker.stalled",
+            resourceId: "w1",
+            blocking: false,
+            summary: "stalled",
+            read: false,
+            timestamp: Date.now(),
+        })
+        insertInboxEvent(state, {
+            id: "evt-other",
+            kind: "worker.finished",
+            resourceId: "w1",
+            blocking: false,
+            summary: "finished",
+            read: false,
+            timestamp: Date.now() + 1,
+        })
+
+        markUnreadStallEventsRead(state, "w1")
+
+        assert.equal(state.inbox.get("evt-stalled")?.read, true)
+        assert.equal(state.inbox.get("evt-other")?.read, false)
+        assert.equal(session.unreadEvents.has("evt-stalled"), false)
+        assert.equal(session.unreadEvents.has("evt-other"), true)
     })
 })
 

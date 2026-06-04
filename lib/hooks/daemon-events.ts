@@ -195,10 +195,13 @@ export function createDaemonEventHandler(
             }
 
             case "worker.started":
+            case "worker.stalled":
             case "worker.finished":
             case "worker.failed":
             case "worker.blocked": {
-                syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
+                if (daemonEvent.type !== "worker.stalled") {
+                    syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
+                }
                 const resourceId = daemonEvent.payload.workerId
                 const summary = truncateSummary(
                     getWorkerEventSummary(daemonEvent.type, resourceId, daemonEvent.payload),
@@ -218,6 +221,10 @@ export function createDaemonEventHandler(
                     summary,
                     metadata,
                 )
+                break
+            }
+
+            case "worker.activity": {
                 break
             }
 

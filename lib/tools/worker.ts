@@ -425,6 +425,7 @@ function getNudgeEventFromDaemonEvent(
     config: PluginConfig,
 ): WorkerWaitNudgeEvent | null {
     switch (event.type) {
+        case "worker.stalled":
         case "worker.finished":
         case "worker.failed":
         case "worker.blocked":
@@ -461,7 +462,8 @@ function getExistingUnreadNudge(
             continue
         }
         if (
-            (inboxEvent.kind === "worker.finished" ||
+            (inboxEvent.kind === "worker.stalled" ||
+                inboxEvent.kind === "worker.finished" ||
                 inboxEvent.kind === "worker.failed" ||
                 inboxEvent.kind === "worker.blocked" ||
                 inboxEvent.kind === "permission.requested") &&
