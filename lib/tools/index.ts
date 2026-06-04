@@ -1,4 +1,13 @@
 export { createStatusTool } from "./status.js"
+export {
+    createChatCreateTool,
+    createChatListTool,
+    createChatInspectTool,
+    createChatDeleteTool,
+    createChatPostTool,
+    createChatReadTool,
+    createChatWaitTool,
+} from "./chat.js"
 export { createInboxReadTool, createInboxStatusTool } from "./inbox.js"
 export {
     createTerminalListTool,

@@ -17,6 +17,7 @@ export type InboxEventKind =
     | "worker.finished"
     | "worker.failed"
     | "worker.blocked"
+    | "chat.mentioned"
     | "permission.requested"
     | "permission.resolved"
     | "daemon.connected"
@@ -53,6 +54,7 @@ export interface WorkerSummary {
     model: string | null
     currentModeId: string | null
     labels: string[]
+    chatRoom?: string
     worktreePath?: string
     branchName?: string
     pendingPermissions: Array<Record<string, unknown>>
@@ -88,6 +90,7 @@ export interface WorkerLaunchRecord {
     profile: string
     cwd: string
     worktreeName: string | null
+    chatRoom: string | null
     initialPrompt: string | null
     labels: Record<string, string>
     provider: string
@@ -110,6 +113,13 @@ export interface CapabilitySnapshot {
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error"
 
+export interface ChatRoomWatchState {
+    name: string
+    lastMessageId: string | null
+    seededAt: number | null
+    watching: boolean
+}
+
 export interface PluginState {
     /** Current connection status to the Paseo daemon */
     connectionStatus: ConnectionStatus
@@ -128,6 +138,9 @@ export interface PluginState {
 
     /** All known workers keyed by ID */
     workers: Map<string, WorkerSummary>
+
+    /** Known worker-attached chat rooms keyed by room name */
+    chatRooms: Map<string, ChatRoomWatchState>
 
     /** Global inbox events (across sessions), keyed by event ID */
     inbox: Map<string, InboxEvent>

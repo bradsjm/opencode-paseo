@@ -1,6 +1,6 @@
 import type { OutputConfig } from "../config.js"
 import { getHydrationPermissionEventId } from "../inbox/ids.js"
-import type { PluginState, InboxEvent, TerminalSessionSummary } from "../state/types.js"
+import type { PluginState, InboxEvent, TerminalSessionSummary, WorkerSummary } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { truncateSummary } from "../inbox/summary.js"
@@ -23,6 +23,7 @@ import {
 export interface HydrationResult {
     workers: number
     terminals: number
+    chatRooms: number
     inboxSeeded: number
 }
 
@@ -31,9 +32,11 @@ export async function hydrate(
     client: PaseoTransport,
     logger: Logger,
     output: OutputConfig,
+    onWorkerObserved?: (worker: WorkerSummary) => void,
 ): Promise<HydrationResult> {
     let workers = 0
     let terminals = 0
+    let chatRooms = 0
     let inboxSeeded = 0
 
     // 1. Server info from handshake — set capabilities
@@ -62,6 +65,7 @@ export async function hydrate(
         for (const a of agents) {
             const worker = mapAgentToWorkerSummary(a)
             upsertWorker(state, worker)
+            onWorkerObserved?.(worker)
             workers++
 
             if (worker.status === "blocked") {
@@ -92,6 +96,7 @@ export async function hydrate(
             }
         }
         logger.info("Hydrated agents", { count: workers })
+        chatRooms = state.chatRooms.size
     } catch (err: any) {
         logger.warn("Agent hydration failed", err.message)
     }
@@ -117,7 +122,7 @@ export async function hydrate(
     }
 
     setConnectionStatus(state, "connected")
-    logger.info("Hydration complete", { workers, terminals, inboxSeeded })
+    logger.info("Hydration complete", { workers, terminals, chatRooms, inboxSeeded })
 
-    return { workers, terminals, inboxSeeded }
+    return { workers, terminals, chatRooms, inboxSeeded }
 }

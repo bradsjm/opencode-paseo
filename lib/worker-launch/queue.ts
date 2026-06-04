@@ -1,4 +1,5 @@
 import { sendNudge } from "../notifier.js"
+import { RESERVED_CHAT_ROOM_LABEL } from "../chat/worker-room.js"
 import {
     getOrCreateSession,
     mapAgentToWorkerSummary,
@@ -23,6 +24,7 @@ export interface EnqueueWorkerLaunchInput {
     provider: string
     model?: string
     modeId: string
+    chatRoom?: string
     initialPrompt?: string
     labels?: Record<string, string>
     worktreeName?: string
@@ -35,6 +37,7 @@ export interface WorkerLaunchReceipt {
     profile: string
     cwd: string
     worktreeName: string | null
+    chatRoom: string | null
 }
 
 export interface WorkerLaunchStatusSnapshot {
@@ -43,6 +46,7 @@ export interface WorkerLaunchStatusSnapshot {
     profile: string
     cwd: string
     worktreeName: string | null
+    chatRoom: string | null
     enqueuedAt: string
     startedAt: string | null
     finishedAt: string | null
@@ -80,6 +84,9 @@ function buildLaunchLabels(
     if (input.worktreeName) {
         labels[RESERVED_WORKTREE_NAME_LABEL] = input.worktreeName
     }
+    if (input.chatRoom) {
+        labels[RESERVED_CHAT_ROOM_LABEL] = input.chatRoom
+    }
     return labels
 }
 
@@ -109,6 +116,7 @@ export function createWorkerLaunchQueueController(
     client: PaseoTransport,
     opencodeClient: OpencodeClient,
     logger: Logger,
+    onWorkerObserved?: (worker: WorkerSummary) => void,
 ): WorkerLaunchQueueController {
     let draining = false
 
@@ -159,6 +167,7 @@ export function createWorkerLaunchQueueController(
                         const worker = buildFallbackWorker(record, created)
                         getOrCreateSession(state, record.sessionId, record.projectRoot)
                         recordCreatedWorker(state, record.sessionId, worker)
+                        onWorkerObserved?.(worker)
                     } catch (err: unknown) {
                         logger.warn("Worker launch bookkeeping failed", {
                             launchId,
@@ -174,6 +183,7 @@ export function createWorkerLaunchQueueController(
                             mapped.unreadEventCount =
                                 state.workers.get(created.id)?.unreadEventCount ?? 0
                             upsertWorker(state, mapped)
+                            onWorkerObserved?.(mapped)
                         }
                     } catch (err: unknown) {
                         logger.warn("Worker launch enrichment failed", {
@@ -228,6 +238,7 @@ export function createWorkerLaunchQueueController(
                 profile: input.profile,
                 cwd: input.cwd,
                 worktreeName: input.worktreeName ?? null,
+                chatRoom: input.chatRoom ?? null,
                 initialPrompt: input.initialPrompt ?? null,
                 labels: buildLaunchLabels(input, launchId),
                 provider: input.provider,
@@ -250,6 +261,7 @@ export function createWorkerLaunchQueueController(
                 profile: record.profile,
                 cwd: record.cwd,
                 worktreeName: record.worktreeName,
+                chatRoom: record.chatRoom,
             }
         },
 
@@ -269,6 +281,7 @@ export function createWorkerLaunchQueueController(
                 profile: record.profile,
                 cwd: record.cwd,
                 worktreeName: record.worktreeName,
+                chatRoom: record.chatRoom,
                 enqueuedAt: record.enqueuedAt,
                 startedAt: record.startedAt,
                 finishedAt: record.finishedAt,

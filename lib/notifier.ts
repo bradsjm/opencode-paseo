@@ -23,6 +23,7 @@ const NON_BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
     "worker.stalled",
     "worker.finished",
     "worker.failed",
+    "chat.mentioned",
 ])
 
 /** Event kinds that always produce nudges (when notifications enabled). */

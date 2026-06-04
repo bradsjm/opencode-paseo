@@ -22,6 +22,18 @@ import type {
     PermissionResponse,
     CreateWorkerOptions,
     CreatedWorker,
+    CreateChatRoomOptions,
+    ChatMessage,
+    ChatMessageMutationResult,
+    ChatReadResult,
+    ChatRoomListResult,
+    ChatRoomMutationResult,
+    ChatRoomSummary,
+    ChatWaitResult,
+    DeleteChatRoomOptions,
+    InspectChatRoomOptions,
+    PostChatMessageOptions,
+    ReadChatMessagesOptions,
     WorkerWaitResult,
     ArchivedWorker,
     WorkerInspectResult,
@@ -46,6 +58,7 @@ import type {
     ScheduleMutationResult,
     ScheduleRecord,
     ScheduleRunRecord,
+    WaitForChatMessagesOptions,
     WorktreeWorkspaceRecord,
 } from "./types.js"
 
@@ -382,6 +395,77 @@ function mapScheduleRun(run: Record<string, unknown>): ScheduleRunRecord {
     }
 }
 
+function mapChatRoom(room: Record<string, unknown>): ChatRoomSummary {
+    return {
+        id: room.id as string,
+        name: room.name as string,
+        purpose: (room.purpose as string | null) ?? null,
+        createdAt: room.createdAt as string,
+        updatedAt: room.updatedAt as string,
+        messageCount: (room.messageCount as number) ?? 0,
+        lastMessageAt: (room.lastMessageAt as string | null) ?? null,
+    }
+}
+
+function mapChatMessage(message: Record<string, unknown>): ChatMessage {
+    return {
+        id: message.id as string,
+        roomId: message.roomId as string,
+        authorAgentId: message.authorAgentId as string,
+        body: message.body as string,
+        replyToMessageId: (message.replyToMessageId as string | null) ?? null,
+        mentionAgentIds: (message.mentionAgentIds as string[]) ?? [],
+        createdAt: message.createdAt as string,
+    }
+}
+
+function mapChatRoomMutationResult(result: Record<string, unknown>): ChatRoomMutationResult {
+    return {
+        requestId: result.requestId as string,
+        room: result.room ? mapChatRoom(result.room as Record<string, unknown>) : null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapChatRoomListResult(result: Record<string, unknown>): ChatRoomListResult {
+    return {
+        requestId: result.requestId as string,
+        rooms: Array.isArray(result.rooms)
+            ? result.rooms.map((room) => mapChatRoom(room as Record<string, unknown>))
+            : [],
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapChatMessageMutationResult(result: Record<string, unknown>): ChatMessageMutationResult {
+    return {
+        requestId: result.requestId as string,
+        message: result.message ? mapChatMessage(result.message as Record<string, unknown>) : null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapChatReadResult(result: Record<string, unknown>): ChatReadResult {
+    return {
+        requestId: result.requestId as string,
+        messages: Array.isArray(result.messages)
+            ? result.messages.map((message) => mapChatMessage(message as Record<string, unknown>))
+            : [],
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapChatWaitResult(result: Record<string, unknown>): ChatWaitResult {
+    return {
+        requestId: result.requestId as string,
+        messages: Array.isArray(result.messages)
+            ? result.messages.map((message) => mapChatMessage(message as Record<string, unknown>))
+            : [],
+        timedOut: Boolean(result.timedOut),
+        error: (result.error as string | null) ?? null,
+    }
+}
+
 function mapScheduleRecord(schedule: Record<string, unknown>): ScheduleRecord {
     return {
         id: schedule.id as string,
@@ -650,6 +734,43 @@ export class PaseoClient implements PaseoTransport {
             permissionId: options.permissionId,
             behavior: options.behavior,
         }
+    }
+
+    // ─── Chat Operations ─────────────────────────────────────────────────
+
+    async createChatRoom(options: CreateChatRoomOptions): Promise<ChatRoomMutationResult> {
+        const result = await this.daemon.createChatRoom(options)
+        return mapChatRoomMutationResult(result as unknown as Record<string, unknown>)
+    }
+
+    async listChatRooms(): Promise<ChatRoomListResult> {
+        const result = await this.daemon.listChatRooms()
+        return mapChatRoomListResult(result as unknown as Record<string, unknown>)
+    }
+
+    async inspectChatRoom(options: InspectChatRoomOptions): Promise<ChatRoomMutationResult> {
+        const result = await this.daemon.inspectChatRoom(options)
+        return mapChatRoomMutationResult(result as unknown as Record<string, unknown>)
+    }
+
+    async deleteChatRoom(options: DeleteChatRoomOptions): Promise<ChatRoomMutationResult> {
+        const result = await this.daemon.deleteChatRoom(options)
+        return mapChatRoomMutationResult(result as unknown as Record<string, unknown>)
+    }
+
+    async postChatMessage(options: PostChatMessageOptions): Promise<ChatMessageMutationResult> {
+        const result = await this.daemon.postChatMessage(options)
+        return mapChatMessageMutationResult(result as unknown as Record<string, unknown>)
+    }
+
+    async readChatMessages(options: ReadChatMessagesOptions): Promise<ChatReadResult> {
+        const result = await this.daemon.readChatMessages(options)
+        return mapChatReadResult(result as unknown as Record<string, unknown>)
+    }
+
+    async waitForChatMessages(options: WaitForChatMessagesOptions): Promise<ChatWaitResult> {
+        const result = await this.daemon.waitForChatMessages(options)
+        return mapChatWaitResult(result as unknown as Record<string, unknown>)
     }
 
     // ─── Worker Operations ───────────────────────────────────────────────

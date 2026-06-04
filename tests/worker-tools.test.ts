@@ -47,6 +47,18 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             permissionId: opts.permissionId,
             behavior: opts.behavior,
         }),
+        createChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+        listChatRooms: async () => ({ requestId: "req", rooms: [], error: null }),
+        inspectChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+        deleteChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+        postChatMessage: async () => ({ requestId: "req", message: null, error: null }),
+        readChatMessages: async () => ({ requestId: "req", messages: [], error: null }),
+        waitForChatMessages: async () => ({
+            requestId: "req",
+            messages: [],
+            timedOut: true,
+            error: null,
+        }),
         createWorker: async () => ({
             id: "w",
             provider: "test",
@@ -438,6 +450,29 @@ test("paseo_worker_wait", async (t) => {
         assert.equal(output.results[0].workerId, "w1")
     })
 
+    await t.test("early exit on unread chat.mentioned event for owned worker", async () => {
+        const state = createPluginState()
+        seedWorker(state, "w1")
+        insertInboxEvent(state, {
+            id: "evt-chat",
+            kind: "chat.mentioned",
+            resourceId: "w1",
+            blocking: false,
+            summary: 'Mentioned in room "ops" by manual: please review',
+            read: false,
+            timestamp: Date.now(),
+        })
+
+        const client = createMockTransport()
+        const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+        const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
+        const output = JSON.parse((result as { output: string }).output)
+
+        assert.equal(output.interruptedByNudge, true)
+        assert.equal(output.nudgeEvent.kind, "chat.mentioned")
+        assert.equal(output.nudgeEvent.workerId, "w1")
+    })
+
     await t.test("early exit on owned worker nudge for different owned worker", async () => {
         const state = createPluginState()
         seedWorker(state, "w1")
@@ -725,7 +760,7 @@ test("paseo_worker_list", async (t) => {
                     model: null,
                     status: "idle",
                     title: "New Worker",
-                    labels: {},
+                    labels: { "opencodePaseo.chatRoom": "ops-room" },
                     pendingPermissions: [],
                 },
             ],
@@ -747,6 +782,10 @@ test("paseo_worker_list", async (t) => {
             "w-live",
             "w-new",
         ])
+        assert.equal(
+            output.workers.find((worker: { id: string }) => worker.id === "w-new")?.chatRoom,
+            "ops-room",
+        )
     })
 
     await t.test("failed refresh does not prune local workers", async () => {
@@ -1092,6 +1131,107 @@ test("paseo_worker_update", async (t) => {
             })
         })
 
+        await t.test("appends chat room instructions and persists reserved label", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w-chat",
+                        provider: "opencode",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
+
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+            const result = await toolDef.execute(
+                {
+                    initialPrompt: "Solve the task.",
+                    chatRoom: "  room-alpha  ",
+                    labels: {
+                        priority: "high",
+                        "opencodePaseo.chatRoom": "wrong-room",
+                    },
+                },
+                mockContext(),
+            )
+
+            const output = JSON.parse((result as { output: string }).output)
+            assert.equal(output.chatRoom, "room-alpha")
+            assert.match(receivedOptions.initialPrompt, /^Solve the task\.\n\nPaseo chat coordination instructions:/)
+            assert.match(receivedOptions.initialPrompt, /room-alpha/)
+            assert.match(receivedOptions.initialPrompt, /paseo chat post/)
+            assert.match(receivedOptions.initialPrompt, /PASEO_AGENT_ID/)
+            assert.match(receivedOptions.initialPrompt, /@<worker-id>/)
+            assert.deepEqual(receivedOptions.labels, {
+                priority: "high",
+                "opencodePaseo.chatRoom": "room-alpha",
+                "opencodePaseo.launchId": output.launchId,
+                "opencodePaseo.sessionId": "sess-1",
+            })
+        })
+
+        await t.test("uses coordination block alone when no initial prompt exists", async () => {
+            const state = createPluginState()
+            let receivedOptions: any = null
+            const client = createMockTransport({
+                createWorker: async (opts) => {
+                    receivedOptions = opts
+                    return {
+                        id: "w-chat-only",
+                        provider: "opencode",
+                        cwd: "/tmp",
+                        model: null,
+                        status: "running" as const,
+                        title: null,
+                    }
+                },
+            })
+            const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
+
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+            await toolDef.execute({ chatRoom: "room-beta" }, mockContext())
+
+            assert.match(receivedOptions.initialPrompt, /^Paseo chat coordination instructions:/)
+            assert.match(receivedOptions.initialPrompt, /room-beta/)
+        })
+
+        await t.test("rejects empty chatRoom", async () => {
+            const state = createPluginState()
+            const client = createMockTransport()
+            const opencode = mockOpencodeClient()
+            const workerLaunchQueue = createWorkerLaunchQueueController(
+                state,
+                client,
+                opencode,
+                logger,
+            )
+
+            const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+            await assert.rejects(
+                () => toolDef.execute({ chatRoom: "   " }, mockContext()),
+                /chatRoom must be a non-empty string when provided/,
+            )
+        })
+
         await t.test("reports queued position behind an active launch", async () => {
             const state = createPluginState()
             const firstCreate = createDeferred<{
@@ -1372,7 +1512,8 @@ test("paseo_worker_inspect", async (t) => {
 
     await t.test("returns snapshot without activity by default", async () => {
         const state = createPluginState()
-        seedWorker(state, "w1")
+        const worker = seedWorker(state, "w1")
+        worker.chatRoom = "ops-room"
         let activityCalled = false
         const client = createMockTransport({
             fetchWorkerActivity: async () => {
@@ -1389,6 +1530,7 @@ test("paseo_worker_inspect", async (t) => {
         assert.equal(output.worker.id, "w1")
         assert.equal(output.worker.source, "local-cache")
         assert.equal(output.worker.rawStatus, "running")
+        assert.equal(output.worker.chatRoom, "ops-room")
         assert.equal(output.progress.activityState, "unknown")
         assert.equal(output.progress.summary, "Activity not fetched; worker status is running")
         assert.equal(output.runtimeInfo, undefined)

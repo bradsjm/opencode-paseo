@@ -12,7 +12,7 @@ import {
     setConnectionStatus,
     upsertWorker,
 } from "../state/state.js"
-import type { InboxEvent, PluginState } from "../state/types.js"
+import type { InboxEvent, PluginState, WorkerSummary } from "../state/types.js"
 import type {
     AgentSummary,
     DaemonEvent,
@@ -34,7 +34,7 @@ function syncWorkerFromPayload(
         | WorkerFailedEvent["type"]
         | WorkerBlockedEvent["type"],
     payload: WorkerEventPayload,
-): void {
+): WorkerSummary {
     const workerId = payload.workerId
     const current = state.workers.get(workerId)
     const agent = payload.agent as Record<string, unknown> | undefined
@@ -73,6 +73,9 @@ function syncWorkerFromPayload(
 
     const worker = mapAgentToWorkerSummary(merged)
     worker.unreadEventCount = current?.unreadEventCount ?? 0
+    if (!worker.chatRoom && current?.chatRoom) {
+        worker.chatRoom = current.chatRoom
+    }
 
     if (!agent?.status) {
         if (type === "worker.finished") worker.status = "finished"
@@ -81,6 +84,7 @@ function syncWorkerFromPayload(
     }
 
     upsertWorker(state, worker)
+    return worker
 }
 
 function getWorkerEventSummary(
@@ -164,6 +168,7 @@ export function createDaemonEventHandler(
     logger: Logger,
     config: PluginConfig,
     opencodeClient?: OpencodeClient,
+    onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
 ) {
     return (daemonEvent: DaemonEvent) => {
         let inboxEvent: InboxEvent | null = null
@@ -200,7 +205,8 @@ export function createDaemonEventHandler(
             case "worker.failed":
             case "worker.blocked": {
                 if (daemonEvent.type !== "worker.stalled") {
-                    syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
+                    const worker = syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
+                    onWorkerObserved?.(worker)
                 }
                 const resourceId = daemonEvent.payload.workerId
                 const summary = truncateSummary(

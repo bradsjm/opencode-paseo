@@ -53,6 +53,7 @@ test("shouldNudge", async (t) => {
         assert.equal(shouldNudge("worker.stalled", enabledBlockingOnly), false)
         assert.equal(shouldNudge("worker.finished", enabledBlockingOnly), false)
         assert.equal(shouldNudge("worker.failed", enabledBlockingOnly), false)
+        assert.equal(shouldNudge("chat.mentioned", enabledBlockingOnly), false)
     })
 
     await t.test("all eligible events nudge when blockingOnly is false", () => {
@@ -61,6 +62,7 @@ test("shouldNudge", async (t) => {
         assert.equal(shouldNudge("permission.requested", enabledAll), true)
         assert.equal(shouldNudge("worker.finished", enabledAll), true)
         assert.equal(shouldNudge("worker.failed", enabledAll), true)
+        assert.equal(shouldNudge("chat.mentioned", enabledAll), true)
     })
 })
 
@@ -80,5 +82,10 @@ test("formatNudgeMessage", async (t) => {
     await t.test("handles daemon lifecycle kind", () => {
         const msg = formatNudgeMessage("daemon.disconnected", "daemon", "Daemon disconnected")
         assert.equal(msg, "[paseo:daemon.disconnected] Daemon disconnected (resource: daemon)")
+    })
+
+    await t.test("handles chat mention kind", () => {
+        const msg = formatNudgeMessage("chat.mentioned", "w3", 'Mentioned in room "ops"')
+        assert.equal(msg, '[paseo:chat.mentioned] Mentioned in room "ops" (resource: w3)')
     })
 })

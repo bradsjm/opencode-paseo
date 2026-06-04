@@ -41,6 +41,7 @@ export function createStatusTool(
                         features: state.capabilities?.features ?? [],
                         lastError: state.lastError ?? null,
                         workers: state.workers.size,
+                        chatRooms: state.chatRooms.size,
                         terminals: state.terminals.size,
                         inboxUnread: unreadEvents.length,
                         inboxBlocking: blockingEvents.length,

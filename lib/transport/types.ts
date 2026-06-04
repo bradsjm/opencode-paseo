@@ -83,9 +83,94 @@ export interface WorkerWaitNudgeEvent {
         | "worker.finished"
         | "worker.failed"
         | "worker.blocked"
+        | "chat.mentioned"
         | "permission.requested"
     workerId: string
     summary: string
+}
+
+export interface ChatRoomSummary {
+    id: string
+    name: string
+    purpose: string | null
+    createdAt: string
+    updatedAt: string
+    messageCount: number
+    lastMessageAt: string | null
+}
+
+export interface ChatMessage {
+    id: string
+    roomId: string
+    authorAgentId: string
+    body: string
+    replyToMessageId: string | null
+    mentionAgentIds: string[]
+    createdAt: string
+}
+
+export interface CreateChatRoomOptions {
+    name: string
+    purpose?: string | null
+}
+
+export interface InspectChatRoomOptions {
+    room: string
+}
+
+export interface DeleteChatRoomOptions {
+    room: string
+}
+
+export interface PostChatMessageOptions {
+    room: string
+    body: string
+    authorAgentId?: string
+    replyToMessageId?: string | null
+}
+
+export interface ReadChatMessagesOptions {
+    room: string
+    limit?: number
+    since?: string
+    authorAgentId?: string
+}
+
+export interface WaitForChatMessagesOptions {
+    room: string
+    afterMessageId?: string | null
+    timeoutMs?: number
+}
+
+export interface ChatRoomMutationResult {
+    requestId: string
+    room: ChatRoomSummary | null
+    error: string | null
+}
+
+export interface ChatRoomListResult {
+    requestId: string
+    rooms: ChatRoomSummary[]
+    error: string | null
+}
+
+export interface ChatMessageMutationResult {
+    requestId: string
+    message: ChatMessage | null
+    error: string | null
+}
+
+export interface ChatReadResult {
+    requestId: string
+    messages: ChatMessage[]
+    error: string | null
+}
+
+export interface ChatWaitResult {
+    requestId: string
+    messages: ChatMessage[]
+    timedOut: boolean
+    error: string | null
 }
 
 export interface MultiWorkerWaitResult {
@@ -470,6 +555,15 @@ export interface PaseoTransport {
 
     // Phase 2: Permission operations
     respondToPermission(options: RespondPermissionOptions): Promise<PermissionResponse>
+
+    // Chat operations
+    createChatRoom(options: CreateChatRoomOptions): Promise<ChatRoomMutationResult>
+    listChatRooms(): Promise<ChatRoomListResult>
+    inspectChatRoom(options: InspectChatRoomOptions): Promise<ChatRoomMutationResult>
+    deleteChatRoom(options: DeleteChatRoomOptions): Promise<ChatRoomMutationResult>
+    postChatMessage(options: PostChatMessageOptions): Promise<ChatMessageMutationResult>
+    readChatMessages(options: ReadChatMessagesOptions): Promise<ChatReadResult>
+    waitForChatMessages(options: WaitForChatMessagesOptions): Promise<ChatWaitResult>
 
     // Phase 3: Worker operations
     createWorker(options: CreateWorkerOptions): Promise<CreatedWorker>

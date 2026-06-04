@@ -359,6 +359,25 @@ test("PaseoClient implements all schedule transport methods", () => {
     }
 })
 
+test("PaseoClient implements all chat transport methods", () => {
+    const chatMethods = [
+        "createChatRoom",
+        "listChatRooms",
+        "inspectChatRoom",
+        "deleteChatRoom",
+        "postChatMessage",
+        "readChatMessages",
+        "waitForChatMessages",
+    ]
+    for (const method of chatMethods) {
+        assert.equal(
+            typeof (PaseoClient.prototype as unknown as Record<string, unknown>)[method],
+            "function",
+            `PaseoClient.prototype.${method} should be a function`,
+        )
+    }
+})
+
 // ─── Worker Extension Methods on PaseoClient ─────────────────────────────────
 
 test("PaseoClient implements extended worker transport methods", () => {

@@ -65,6 +65,18 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             permissionId: options.permissionId,
             behavior: options.behavior,
         }),
+        createChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+        listChatRooms: async () => ({ requestId: "req", rooms: [], error: null }),
+        inspectChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+        deleteChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+        postChatMessage: async () => ({ requestId: "req", message: null, error: null }),
+        readChatMessages: async () => ({ requestId: "req", messages: [], error: null }),
+        waitForChatMessages: async () => ({
+            requestId: "req",
+            messages: [],
+            timedOut: true,
+            error: null,
+        }),
         // Phase 3: Worker operations
         createWorker: async (options) => ({
             id: `w-${Date.now()}`,
@@ -131,6 +143,7 @@ test("hydrate", async (t) => {
 
         assert.equal(result.workers, 2)
         assert.equal(result.terminals, 1)
+        assert.equal(result.chatRooms, 0)
         assert.equal(state.connectionStatus, "connected")
         assert.equal(state.workers.size, 2)
         assert.equal(state.terminals.size, 1)
@@ -292,5 +305,32 @@ test("hydrate", async (t) => {
         assert.equal(worker.branchName, "feature/test")
         assert.deepEqual(worker.pendingPermissionIds, ["perm-1"])
         assert.equal(worker.pendingPermissions.length, 1)
+    })
+
+    await t.test("hydrates worker chatRoom from reserved label and tracks room count", async () => {
+        const state = createPluginState()
+        const client = createMockTransport({
+            fetchAgents: async () => [
+                {
+                    id: "w-chat",
+                    title: "Chat Worker",
+                    provider: "codex",
+                    status: "running",
+                    cwd: "/repo",
+                    model: null,
+                    labels: {
+                        lane: "main",
+                        "opencodePaseo.chatRoom": "ops-room",
+                    },
+                    requiresAttention: false,
+                },
+            ],
+        })
+
+        const result = await hydrate(state, client, logger, outputConfig)
+
+        assert.equal(result.chatRooms, 1)
+        assert.equal(state.workers.get("w-chat")?.chatRoom, "ops-room")
+        assert.equal(state.chatRooms.get("ops-room")?.name, "ops-room")
     })
 })

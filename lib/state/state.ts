@@ -7,6 +7,7 @@ import type {
     WorkerSummary,
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
+import { getChatRoomFromAgentLabels } from "../chat/worker-room.js"
 import { mapDaemonWorkerStatus } from "./status.js"
 
 const INTERNAL_WORKER_LABEL_PREFIX = "opencodePaseo."
@@ -46,6 +47,7 @@ export function createPluginState(): PluginState {
         sessions: new Map(),
         terminals: new Map(),
         workers: new Map(),
+        chatRooms: new Map(),
         inbox: new Map(),
         workerLaunches: new Map(),
         workerLaunchQueue: [],
@@ -61,6 +63,7 @@ export function resetPluginState(state: PluginState): void {
     state.sessions.clear()
     state.terminals.clear()
     state.workers.clear()
+    state.chatRooms.clear()
     state.inbox.clear()
     state.workerLaunches.clear()
     state.workerLaunchQueue = []
@@ -106,6 +109,17 @@ export function upsertTerminal(state: PluginState, terminal: TerminalSessionSumm
 
 export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
     state.workers.set(worker.id, worker)
+    if (worker.chatRoom) {
+        const existing = state.chatRooms.get(worker.chatRoom)
+        if (!existing) {
+            state.chatRooms.set(worker.chatRoom, {
+                name: worker.chatRoom,
+                lastMessageId: null,
+                seededAt: null,
+                watching: false,
+            })
+        }
+    }
 }
 
 // ─── Session-Terminal Binding ────────────────────────────────────────────────
@@ -136,7 +150,7 @@ export function recordCreatedWorker(
     sessionId: string,
     worker: WorkerSummary,
 ): void {
-    state.workers.set(worker.id, worker)
+    upsertWorker(state, worker)
     const session = state.sessions.get(sessionId)
     if (session) {
         session.createdWorkerIds.add(worker.id)
@@ -229,6 +243,7 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
     const pendingPermissionIds = pendingPermissions
         .map((p) => p?.id as string | undefined)
         .filter((id): id is string => typeof id === "string")
+    const chatRoom = getChatRoomFromAgentLabels(rawLabels)
 
     return {
         id: agent.id,
@@ -249,6 +264,7 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
         rawStatus: agent.status,
         cwd: agent.cwd ?? "",
         labels,
+        chatRoom,
         worktreePath: agent.worktreePath,
         branchName: agent.branchName,
         pendingPermissions,

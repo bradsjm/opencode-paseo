@@ -1,6 +1,10 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState, WorkerStatus, WorkerSummary } from "../state/types.js"
 import type { PluginConfig } from "../config.js"
+import {
+    appendChatRoomCoordinationPrompt,
+    normalizeChatRoom,
+} from "../chat/worker-room.js"
 import { shouldNudge } from "../notifier.js"
 import type { WorkerLaunchQueueController } from "../worker-launch/queue.js"
 import type {
@@ -27,6 +31,8 @@ import {
     getBlockingAction,
 } from "../state/state.js"
 
+type WorkerRefreshObserver = (worker: WorkerSummary) => void
+
 function isWorkerMissingUpstreamError(err: unknown): err is Error {
     return (
         err instanceof Error &&
@@ -40,6 +46,7 @@ export function createWorkerListTool(
     state: PluginState,
     client: PaseoTransport,
     logger: Logger,
+    onWorkerObserved?: WorkerRefreshObserver,
 ): ToolDefinition {
     return tool({
         description:
@@ -62,6 +69,7 @@ export function createWorkerListTool(
                         worker.unreadEventCount = existing.unreadEventCount
                     }
                     upsertWorker(state, worker)
+                    onWorkerObserved?.(worker)
                 }
 
                 for (const workerId of preexistingWorkerIds) {
@@ -81,6 +89,7 @@ export function createWorkerListTool(
                 provider: w.provider,
                 model: w.model,
                 currentModeId: w.currentModeId,
+                chatRoom: w.chatRoom,
                 worktreePath: w.worktreePath,
                 branchName: w.branchName,
                 pendingPermissionIds: w.pendingPermissionIds,
@@ -134,10 +143,15 @@ export function createWorkerCreateTool(
                 .string()
                 .optional()
                 .describe("Name for a git worktree to create for this worker"),
+            chatRoom: tool.schema
+                .string()
+                .optional()
+                .describe("Optional Paseo chat room to coordinate this worker through"),
         },
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
             const profileName = normalizeProfileName(args.profile)
+            const chatRoom = normalizeChatRoom(args.chatRoom)
 
             logger.info("Tool: paseo_worker_create invoked", {
                 cwd,
@@ -157,7 +171,10 @@ export function createWorkerCreateTool(
                 model: workerFields.model,
                 modeId: workerFields.modeId,
                 cwd,
-                initialPrompt: args.initialPrompt,
+                initialPrompt: chatRoom
+                    ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom)
+                    : args.initialPrompt,
+                chatRoom,
                 labels: args.labels as Record<string, string> | undefined,
                 worktreeName: args.worktreeName,
             })
@@ -180,6 +197,7 @@ export function createWorkerCreateTool(
                         profile: receipt.profile,
                         cwd: receipt.cwd,
                         worktreeName: receipt.worktreeName,
+                        chatRoom: receipt.chatRoom,
                         message:
                             "Worker launch queued. Use paseo_worker_launch_status with the launchId " +
                             "to monitor progress and retrieve the workerId once created.",
@@ -216,6 +234,7 @@ export function createWorkerLaunchStatusTool(
                         profile: status.profile,
                         cwd: status.cwd,
                         worktreeName: status.worktreeName,
+                        chatRoom: status.chatRoom,
                         enqueuedAt: status.enqueuedAt,
                         startedAt: status.startedAt,
                         finishedAt: status.finishedAt,
@@ -291,6 +310,7 @@ interface WorkerInspectResponse {
         provider: string
         model: string | null
         currentModeId: string | null
+        chatRoom?: string
         cwd: string
         worktreePath?: string
         branchName?: string
@@ -466,6 +486,7 @@ function getExistingUnreadNudge(
                 inboxEvent.kind === "worker.finished" ||
                 inboxEvent.kind === "worker.failed" ||
                 inboxEvent.kind === "worker.blocked" ||
+                inboxEvent.kind === "chat.mentioned" ||
                 inboxEvent.kind === "permission.requested") &&
             shouldNudge(inboxEvent.kind, config.notifications)
         ) {
@@ -789,6 +810,7 @@ export function createWorkerUpdateTool(
     state: PluginState,
     client: PaseoTransport,
     logger: Logger,
+    onWorkerObserved?: WorkerRefreshObserver,
 ): ToolDefinition {
     return tool({
         description:
@@ -849,6 +871,7 @@ export function createWorkerUpdateTool(
                     const refreshed = mapAgentToWorkerSummary(fetched.agent)
                     refreshed.unreadEventCount = worker.unreadEventCount
                     upsertWorker(state, refreshed)
+                    onWorkerObserved?.(refreshed)
                 }
             }
 
@@ -866,6 +889,7 @@ export function createWorkerInspectTool(
     state: PluginState,
     client: PaseoTransport,
     logger: Logger,
+    onWorkerObserved?: WorkerRefreshObserver,
 ): ToolDefinition {
     return tool({
         description:
@@ -900,6 +924,7 @@ export function createWorkerInspectTool(
                     mapped.unreadEventCount = existing.unreadEventCount
                 }
                 upsertWorker(state, mapped)
+                onWorkerObserved?.(mapped)
                 worker = mapped
 
                 snapshot = {
@@ -911,6 +936,7 @@ export function createWorkerInspectTool(
                     provider: mapped.provider,
                     model: mapped.model,
                     currentModeId: mapped.currentModeId,
+                    chatRoom: mapped.chatRoom,
                     worktreePath: mapped.worktreePath,
                     branchName: mapped.branchName,
                     createdAt: mapped.createdAt,
@@ -928,6 +954,7 @@ export function createWorkerInspectTool(
                     provider: worker.provider,
                     model: worker.model,
                     currentModeId: worker.currentModeId,
+                    chatRoom: worker.chatRoom,
                     worktreePath: worker.worktreePath,
                     branchName: worker.branchName,
                     createdAt: worker.createdAt,
