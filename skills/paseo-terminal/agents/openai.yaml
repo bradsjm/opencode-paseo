@@ -1,0 +1,4 @@
+interface:
+    display_name: "Paseo Terminal"
+    short_description: "Manage persistent terminal sessions"
+    default_prompt: "Use $paseo-terminal to run and manage a long-running process in a persistent terminal session."
