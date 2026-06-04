@@ -13,22 +13,6 @@ function ensureLogDir(): string {
     return LOG_DIR
 }
 
-function getCallerFile(): string {
-    const stack = new Error().stack
-    if (!stack) return "unknown"
-
-    const lines = stack.split("\n")
-    // Walk up the stack to find the first frame outside this file
-    for (let i = 3; i < lines.length; i++) {
-        const match = lines[i].match(/(?:at\s+.*?\s+\(|at\s+)(.*?):\d+:\d+/)
-        if (match && !match[1].includes("logger.")) {
-            const parts = match[1].split("/")
-            return parts[parts.length - 1] || "unknown"
-        }
-    }
-    return "unknown"
-}
-
 function formatDate(): string {
     return new Date().toISOString().split("T")[0]
 }
@@ -59,10 +43,9 @@ export class Logger {
 
         const dir = ensureLogDir()
         const file = join(dir, `${formatDate()}.log`)
-        const caller = getCallerFile()
         const ts = formatTimestamp()
         const extra = data !== undefined ? ` ${compactData(data)}` : ""
-        const line = `[${ts}] [${level}] [${caller}] ${message}${extra}\n`
+        const line = `[${ts}] [${level}] ${message}${extra}\n`
 
         try {
             appendFileSync(file, line, "utf-8")
