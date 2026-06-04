@@ -223,7 +223,7 @@ export function createTerminalSendInputTool(
                 inputLength: args.input.length,
             })
 
-            await client.sendTerminalInput(args.terminalId, args.input)
+            client.sendTerminalInput(args.terminalId, args.input)
 
             return {
                 title: "Input Sent",
@@ -267,7 +267,7 @@ export function createTerminalSendLinesTool(
 
             const joined = args.lines.join("\n") + "\n"
 
-            await client.sendTerminalInput(args.terminalId, joined)
+            client.sendTerminalInput(args.terminalId, joined)
 
             return {
                 title: "Lines Sent",

@@ -29,7 +29,7 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             lineCount: 0,
             truncated: false,
         }),
-        sendTerminalInput: async () => {},
+        sendTerminalInput: () => {},
         killTerminal: async () => ({ id: "t", exitCode: null }),
         respondToPermission: async (opts) => ({
             workerId: opts.workerId,
@@ -70,18 +70,18 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             workerId: opts.workerId,
             timeline: null,
         }),
-        listWorktrees: async () => ({}),
-        createWorktree: async () => ({}),
-        archiveWorktree: async () => ({}),
-        scheduleList: async () => ({}),
-        scheduleInspect: async () => ({}),
-        scheduleCreate: async () => ({}),
-        scheduleUpdate: async () => ({}),
-        schedulePause: async () => ({}),
-        scheduleResume: async () => ({}),
-        scheduleDelete: async () => ({}),
-        scheduleRunOnce: async () => ({}),
-        scheduleLogs: async () => ({}),
+        listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
+        createWorktree: async () => ({ requestId: "req", workspace: null, error: null }),
+        archiveWorktree: async () => ({ requestId: "req", success: true, error: null }),
+        scheduleList: async () => ({ requestId: "req", schedules: [], error: null }),
+        scheduleInspect: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleCreate: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleUpdate: async () => ({ requestId: "req", schedule: null, error: null }),
+        schedulePause: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleResume: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleDelete: async () => ({ requestId: "req", scheduleId: "sched", error: null }),
+        scheduleRunOnce: async () => ({ requestId: "req", schedule: null, error: null }),
+        scheduleLogs: async () => ({ requestId: "req", runs: [], error: null }),
         ...overrides,
     }
 }
@@ -96,7 +96,7 @@ test("paseo_terminal_send_input", async (t) => {
         let receivedTerminalId: string | undefined
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (terminalId, input) => {
+            sendTerminalInput: (terminalId, input) => {
                 receivedTerminalId = terminalId
                 receivedInput = input
             },
@@ -116,7 +116,7 @@ test("paseo_terminal_send_input", async (t) => {
         const state = createPluginState()
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (_terminalId, input) => {
+            sendTerminalInput: (_terminalId, input) => {
                 receivedInput = input
             },
         })
@@ -132,7 +132,7 @@ test("paseo_terminal_send_input", async (t) => {
         const state = createPluginState()
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (_terminalId, input) => {
+            sendTerminalInput: (_terminalId, input) => {
                 receivedInput = input
             },
         })
@@ -149,7 +149,7 @@ test("paseo_terminal_send_input", async (t) => {
         const state = createPluginState()
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (_terminalId, input) => {
+            sendTerminalInput: (_terminalId, input) => {
                 receivedInput = input
             },
         })
@@ -159,6 +159,21 @@ test("paseo_terminal_send_input", async (t) => {
         await toolDef.execute({ terminalId: "t1", input: specialInput })
 
         assert.equal(receivedInput, specialInput)
+    })
+
+    await t.test("surfaces synchronous transport throws", async () => {
+        const state = createPluginState()
+        const client = createMockTransport({
+            sendTerminalInput: () => {
+                throw new Error("send failed")
+            },
+        })
+
+        const toolDef = createTerminalSendInputTool(state, client, logger)
+        await assert.rejects(
+            () => toolDef.execute({ terminalId: "t1", input: "pwd\n" }),
+            /send failed/,
+        )
     })
 })
 
@@ -172,7 +187,7 @@ test("paseo_terminal_send_lines", async (t) => {
         let receivedTerminalId: string | undefined
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (terminalId, input) => {
+            sendTerminalInput: (terminalId, input) => {
                 receivedTerminalId = terminalId
                 receivedInput = input
             },
@@ -196,7 +211,7 @@ test("paseo_terminal_send_lines", async (t) => {
         const state = createPluginState()
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (_terminalId, input) => {
+            sendTerminalInput: (_terminalId, input) => {
                 receivedInput = input
             },
         })
@@ -214,7 +229,7 @@ test("paseo_terminal_send_lines", async (t) => {
         const state = createPluginState()
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (_terminalId, input) => {
+            sendTerminalInput: (_terminalId, input) => {
                 receivedInput = input
             },
         })
@@ -229,7 +244,7 @@ test("paseo_terminal_send_lines", async (t) => {
         const state = createPluginState()
         let receivedInput: string | undefined
         const client = createMockTransport({
-            sendTerminalInput: async (_terminalId, input) => {
+            sendTerminalInput: (_terminalId, input) => {
                 receivedInput = input
             },
         })

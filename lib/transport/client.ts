@@ -32,9 +32,19 @@ import type {
     WorktreeListOptions,
     WorktreeCreateOptions,
     WorktreeArchiveOptions,
+    WorktreeArchiveResult,
+    WorktreeCreateResult,
+    WorktreeListResult,
     ScheduleCreateOptions,
+    ScheduleDeleteResult,
     ScheduleUpdateOptions,
     ScheduleInspectOptions,
+    ScheduleListResult,
+    ScheduleLogsResult,
+    ScheduleMutationResult,
+    ScheduleRecord,
+    ScheduleRunRecord,
+    WorktreeWorkspaceRecord,
 } from "./types.js"
 
 // ─── Paseo Client Adapter ─────────────────────────────────────────────────────
@@ -115,10 +125,7 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
 
             const agent = payload.agent as Record<string, unknown> | undefined
             if (!agent) {
-                return {
-                    type: "agent_update",
-                    payload: { ...payload, workerId: event.agentId },
-                }
+                return null
             }
 
             const agentId = agent.id as string
@@ -188,6 +195,127 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
 
         default:
             return null
+    }
+}
+
+function mapScheduleRun(run: Record<string, unknown>): ScheduleRunRecord {
+    return {
+        id: run.id as string,
+        scheduledFor: run.scheduledFor as string,
+        startedAt: run.startedAt as string,
+        endedAt: (run.endedAt as string | null) ?? null,
+        status: run.status as ScheduleRunRecord["status"],
+        agentId: (run.agentId as string | null) ?? null,
+        output: (run.output as string | null) ?? null,
+        error: (run.error as string | null) ?? null,
+    }
+}
+
+function mapScheduleRecord(schedule: Record<string, unknown>): ScheduleRecord {
+    return {
+        id: schedule.id as string,
+        name: (schedule.name as string | null) ?? null,
+        prompt: schedule.prompt as string,
+        cadence: schedule.cadence as ScheduleRecord["cadence"],
+        target: schedule.target as ScheduleRecord["target"],
+        status: schedule.status as ScheduleRecord["status"],
+        createdAt: schedule.createdAt as string,
+        updatedAt: schedule.updatedAt as string,
+        nextRunAt: (schedule.nextRunAt as string | null) ?? null,
+        lastRunAt: (schedule.lastRunAt as string | null) ?? null,
+        pausedAt: (schedule.pausedAt as string | null) ?? null,
+        expiresAt: (schedule.expiresAt as string | null) ?? null,
+        maxRuns: (schedule.maxRuns as number | null) ?? null,
+        runs: Array.isArray(schedule.runs)
+            ? schedule.runs.map((run) => mapScheduleRun(run as Record<string, unknown>))
+            : [],
+    }
+}
+
+function mapScheduleMutationResult(result: Record<string, unknown>): ScheduleMutationResult {
+    return {
+        requestId: result.requestId as string,
+        schedule: result.schedule
+            ? mapScheduleRecord(result.schedule as Record<string, unknown>)
+            : null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapScheduleListResult(result: Record<string, unknown>): ScheduleListResult {
+    return {
+        requestId: result.requestId as string,
+        schedules: Array.isArray(result.schedules)
+            ? result.schedules.map((schedule) => mapScheduleRecord(schedule as Record<string, unknown>))
+            : [],
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapScheduleDeleteResult(result: Record<string, unknown>): ScheduleDeleteResult {
+    return {
+        requestId: result.requestId as string,
+        scheduleId: result.scheduleId as string,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapScheduleLogsResult(result: Record<string, unknown>): ScheduleLogsResult {
+    return {
+        requestId: result.requestId as string,
+        runs: Array.isArray(result.runs)
+            ? result.runs.map((run) => mapScheduleRun(run as Record<string, unknown>))
+            : [],
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapWorktreeWorkspace(workspace: Record<string, unknown>): WorktreeWorkspaceRecord {
+    return {
+        id: workspace.id as string,
+        projectId: workspace.projectId as string,
+        projectDisplayName: workspace.projectDisplayName as string,
+        projectCustomName: (workspace.projectCustomName as string | null) ?? undefined,
+        projectRootPath: workspace.projectRootPath as string,
+        workspaceDirectory: workspace.workspaceDirectory as string,
+        projectKind: workspace.projectKind as WorktreeWorkspaceRecord["projectKind"],
+        workspaceKind: workspace.workspaceKind as WorktreeWorkspaceRecord["workspaceKind"],
+        name: workspace.name as string,
+        archivingAt: (workspace.archivingAt as string | null) ?? null,
+        status: workspace.status as WorktreeWorkspaceRecord["status"],
+        activityAt: (workspace.activityAt as string | null) ?? null,
+        diffStat: (workspace.diffStat as WorktreeWorkspaceRecord["diffStat"]) ?? undefined,
+        scripts: (workspace.scripts as WorktreeWorkspaceRecord["scripts"]) ?? [],
+        gitRuntime: (workspace.gitRuntime as WorktreeWorkspaceRecord["gitRuntime"]) ?? undefined,
+        githubRuntime:
+            (workspace.githubRuntime as WorktreeWorkspaceRecord["githubRuntime"]) ?? undefined,
+    }
+}
+
+function mapWorktreeListResult(result: Record<string, unknown>): WorktreeListResult {
+    return {
+        requestId: result.requestId as string,
+        worktrees: (result.worktrees as WorktreeListResult["worktrees"]) ?? [],
+        error: (result.error as WorktreeListResult["error"]) ?? null,
+    }
+}
+
+function mapWorktreeCreateResult(result: Record<string, unknown>): WorktreeCreateResult {
+    return {
+        requestId: result.requestId as string,
+        workspace: result.workspace
+            ? mapWorktreeWorkspace(result.workspace as Record<string, unknown>)
+            : null,
+        error: (result.error as string | null) ?? null,
+    }
+}
+
+function mapWorktreeArchiveResult(result: Record<string, unknown>): WorktreeArchiveResult {
+    return {
+        requestId: result.requestId as string,
+        success: Boolean(result.success),
+        removedAgents: (result.removedAgents as string[] | undefined) ?? undefined,
+        error: (result.error as WorktreeArchiveResult["error"]) ?? null,
     }
 }
 
@@ -316,7 +444,7 @@ export class PaseoClient implements PaseoTransport {
         }
     }
 
-    async sendTerminalInput(terminalId: string, input: string): Promise<void> {
+    sendTerminalInput(terminalId: string, input: string): void {
         this.daemon.sendTerminalInput(terminalId, { type: "input", data: input })
     }
 
@@ -546,15 +674,15 @@ export class PaseoClient implements PaseoTransport {
 
     // ─── Worktree Operations ─────────────────────────────────────────────
 
-    async listWorktrees(options: WorktreeListOptions): Promise<Record<string, unknown>> {
+    async listWorktrees(options: WorktreeListOptions): Promise<WorktreeListResult> {
         const result = await this.daemon.getPaseoWorktreeList({
             cwd: options.cwd,
             repoRoot: options.repoRoot,
         })
-        return result as unknown as Record<string, unknown>
+        return mapWorktreeListResult(result as unknown as Record<string, unknown>)
     }
 
-    async createWorktree(options: WorktreeCreateOptions): Promise<Record<string, unknown>> {
+    async createWorktree(options: WorktreeCreateOptions): Promise<WorktreeCreateResult> {
         const input: Record<string, unknown> = { cwd: options.cwd }
         if (options.projectId !== undefined) input.projectId = options.projectId
         if (options.worktreeSlug !== undefined) input.worktreeSlug = options.worktreeSlug
@@ -566,31 +694,31 @@ export class PaseoClient implements PaseoTransport {
         const result = await this.daemon.createPaseoWorktree(
             input as Parameters<typeof this.daemon.createPaseoWorktree>[0],
         )
-        return result as unknown as Record<string, unknown>
+        return mapWorktreeCreateResult(result as unknown as Record<string, unknown>)
     }
 
-    async archiveWorktree(options: WorktreeArchiveOptions): Promise<Record<string, unknown>> {
+    async archiveWorktree(options: WorktreeArchiveOptions): Promise<WorktreeArchiveResult> {
         const result = await this.daemon.archivePaseoWorktree({
             worktreePath: options.worktreePath,
             repoRoot: options.repoRoot,
             branchName: options.branchName,
         })
-        return result as unknown as Record<string, unknown>
+        return mapWorktreeArchiveResult(result as unknown as Record<string, unknown>)
     }
 
     // ─── Schedule Operations ─────────────────────────────────────────────
 
-    async scheduleList(): Promise<Record<string, unknown>> {
+    async scheduleList(): Promise<ScheduleListResult> {
         const result = await this.daemon.scheduleList()
-        return result as unknown as Record<string, unknown>
+        return mapScheduleListResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleInspect(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+    async scheduleInspect(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
         const result = await this.daemon.scheduleInspect({ id: options.id })
-        return result as unknown as Record<string, unknown>
+        return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleCreate(options: ScheduleCreateOptions): Promise<Record<string, unknown>> {
+    async scheduleCreate(options: ScheduleCreateOptions): Promise<ScheduleMutationResult> {
         const result = await this.daemon.scheduleCreate({
             prompt: options.prompt,
             name: options.name,
@@ -600,10 +728,10 @@ export class PaseoClient implements PaseoTransport {
             expiresAt: options.expiresAt,
             runOnCreate: options.runOnCreate,
         } as Parameters<typeof this.daemon.scheduleCreate>[0])
-        return result as unknown as Record<string, unknown>
+        return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleUpdate(options: ScheduleUpdateOptions): Promise<Record<string, unknown>> {
+    async scheduleUpdate(options: ScheduleUpdateOptions): Promise<ScheduleMutationResult> {
         const result = await this.daemon.scheduleUpdate({
             id: options.id,
             name: options.name,
@@ -615,32 +743,32 @@ export class PaseoClient implements PaseoTransport {
             maxRuns: options.maxRuns,
             expiresAt: options.expiresAt,
         } as Parameters<typeof this.daemon.scheduleUpdate>[0])
-        return result as unknown as Record<string, unknown>
+        return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
     }
 
-    async schedulePause(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+    async schedulePause(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
         const result = await this.daemon.schedulePause({ id: options.id })
-        return result as unknown as Record<string, unknown>
+        return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleResume(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+    async scheduleResume(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
         const result = await this.daemon.scheduleResume({ id: options.id })
-        return result as unknown as Record<string, unknown>
+        return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleDelete(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+    async scheduleDelete(options: ScheduleInspectOptions): Promise<ScheduleDeleteResult> {
         const result = await this.daemon.scheduleDelete({ id: options.id })
-        return result as unknown as Record<string, unknown>
+        return mapScheduleDeleteResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleRunOnce(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+    async scheduleRunOnce(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
         const result = await this.daemon.scheduleRunOnce({ id: options.id })
-        return result as unknown as Record<string, unknown>
+        return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
     }
 
-    async scheduleLogs(options: ScheduleInspectOptions): Promise<Record<string, unknown>> {
+    async scheduleLogs(options: ScheduleInspectOptions): Promise<ScheduleLogsResult> {
         const result = await this.daemon.scheduleLogs({ id: options.id })
-        return result as unknown as Record<string, unknown>
+        return mapScheduleLogsResult(result as unknown as Record<string, unknown>)
     }
 
     // ─── Event Subscription ──────────────────────────────────────────────
