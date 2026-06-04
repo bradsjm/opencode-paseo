@@ -149,6 +149,45 @@ test("insertInboxEvent", async (t) => {
         assert.equal(session.unreadEvents.size, 1)
         assert.equal(session.pendingPermissions.size, 1)
     })
+
+    await t.test("evicts oldest events and prunes session references when over limit", () => {
+        const state = createPluginState()
+        const session = getOrCreateSession(state, "sess-1", "/project")
+        session.createdWorkerIds.add("w1")
+
+        insertInboxEvent(
+            state,
+            {
+                id: "evt-1",
+                kind: "worker.blocked",
+                resourceId: "w1",
+                blocking: true,
+                summary: "oldest",
+                read: false,
+                timestamp: 1,
+            },
+            1,
+        )
+        insertInboxEvent(
+            state,
+            {
+                id: "evt-2",
+                kind: "worker.started",
+                resourceId: "w1",
+                blocking: false,
+                summary: "newest",
+                read: false,
+                timestamp: 2,
+            },
+            1,
+        )
+
+        assert.equal(state.inbox.size, 1)
+        assert.equal(state.inbox.has("evt-1"), false)
+        assert.equal(state.inbox.has("evt-2"), true)
+        assert.equal(session.unreadEvents.has("evt-1"), false)
+        assert.equal(session.pendingPermissions.has("evt-1"), false)
+    })
 })
 
 test("markEventRead", async (t) => {

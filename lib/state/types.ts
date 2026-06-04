@@ -16,12 +16,8 @@ export type InboxEventKind =
     | "worker.finished"
     | "worker.failed"
     | "worker.blocked"
-    | "terminal.exited"
-    | "terminal.error"
     | "permission.requested"
     | "permission.resolved"
-    | "session.created"
-    | "session.destroyed"
     | "daemon.connected"
     | "daemon.disconnected"
 

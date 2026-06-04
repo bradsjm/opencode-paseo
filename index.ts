@@ -65,7 +65,7 @@ const server: Plugin = (async (ctx) => {
     logger.info("Connected to Paseo daemon")
 
     // Hydrate state from daemon
-    const hydration = await hydrate(state, client, logger)
+    const hydration = await hydrate(state, client, logger, config.output)
     logger.info("Hydration complete", hydration)
 
     // Attach live event listener

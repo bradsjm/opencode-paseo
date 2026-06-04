@@ -1,6 +1,9 @@
+import type { OutputConfig } from "../config.js"
+import { getHydrationPermissionEventId } from "../inbox/ids.js"
 import type { PluginState, InboxEvent, TerminalSessionSummary } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
+import { truncateSummary } from "../inbox/summary.js"
 import {
     setConnectionStatus,
     setCapabilities,
@@ -27,6 +30,7 @@ export async function hydrate(
     state: PluginState,
     client: PaseoTransport,
     logger: Logger,
+    output: OutputConfig,
 ): Promise<HydrationResult> {
     let workers = 0
     let terminals = 0
@@ -64,19 +68,25 @@ export async function hydrate(
                 // Determine if the block is a permission request or a general question
                 const hasPermissions = worker.pendingPermissionIds.length > 0
                 const blockKind = hasPermissions ? "permission.requested" : "worker.blocked"
+                const permissionId = hasPermissions ? worker.pendingPermissionIds[0] : undefined
                 const event: InboxEvent = {
-                    id: `hydration-worker-blocked-${a.id}`,
-                    kind: "worker.blocked",
+                    id: permissionId
+                        ? getHydrationPermissionEventId(permissionId)
+                        : `hydration-worker-blocked-${a.id}`,
+                    kind: blockKind,
                     resourceId: a.id,
                     blocking: true,
-                    summary: a.attentionReason ?? `Worker "${a.title ?? a.id}" requires attention`,
+                    summary: truncateSummary(
+                        a.attentionReason ?? `Worker "${a.title ?? a.id}" requires attention`,
+                        output.maxSummaryLength,
+                    ),
                     read: false,
                     timestamp: Date.now(),
                     metadata: buildBlockingMetadata(blockKind, a.id, {
-                        permissionId: hasPermissions ? worker.pendingPermissionIds[0] : undefined,
+                        permissionId,
                     }),
                 }
-                if (insertInboxEvent(state, event)) {
+                if (insertInboxEvent(state, event, output.maxInboxItems)) {
                     inboxSeeded++
                 }
             }

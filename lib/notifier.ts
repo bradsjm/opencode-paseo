@@ -14,20 +14,20 @@ import type { Logger } from "./logger.js"
 const NEVER_NUDGE: ReadonlySet<InboxEventKind> = new Set([
     "worker.started",
     "permission.resolved",
+    "daemon.connected",
+    "daemon.disconnected",
 ])
 
 /** Event kinds that are nudged only when blockingOnly is false. */
 const NON_BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
     "worker.finished",
     "worker.failed",
-    "terminal.exited",
 ])
 
 /** Event kinds that always produce nudges (when notifications enabled). */
 const BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
     "worker.blocked",
     "permission.requested",
-    "terminal.error",
 ])
 
 /**

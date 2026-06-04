@@ -1,16 +1,21 @@
 import type {
     PluginState,
     SessionMapping,
-    InboxEvent,
-    InboxEventKind,
     ConnectionStatus,
     CapabilitySnapshot,
     TerminalSessionSummary,
     WorkerSummary,
-    WorkerStatus,
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
 import { mapDaemonWorkerStatus } from "./status.js"
+export {
+    insertInboxEvent,
+    markEventRead,
+    markAllRead,
+    findSessionsForResource,
+    buildBlockingMetadata,
+    getBlockingAction,
+} from "./inbox-state.js"
 
 export function createSessionMapping(
     opencodeSessionId: string,
@@ -81,55 +86,6 @@ export function getOrCreateSession(
         state.sessions.set(sessionId, mapping)
     }
     return mapping
-}
-
-// ─── Inbox Operations ────────────────────────────────────────────────────────
-
-export function insertInboxEvent(state: PluginState, event: InboxEvent): boolean {
-    if (state.inbox.has(event.id)) {
-        return false // dedup
-    }
-    state.inbox.set(event.id, event)
-    state.eventCounter++
-
-    // Also add to relevant session's unread
-    for (const session of state.sessions.values()) {
-        if (
-            session.createdWorkerIds.has(event.resourceId) ||
-            session.createdTerminalIds.has(event.resourceId)
-        ) {
-            session.unreadEvents.set(event.id, event)
-            if (event.blocking) {
-                session.pendingPermissions.set(event.id, event)
-            }
-            session.updatedAt = Date.now()
-        }
-    }
-
-    return true
-}
-
-export function markEventRead(state: PluginState, eventId: string): void {
-    const event = state.inbox.get(eventId)
-    if (event) {
-        event.read = true
-    }
-
-    // Remove from session unread
-    for (const session of state.sessions.values()) {
-        session.unreadEvents.delete(eventId)
-        session.pendingPermissions.delete(eventId)
-    }
-}
-
-export function markAllRead(state: PluginState): void {
-    for (const event of state.inbox.values()) {
-        event.read = true
-    }
-    for (const session of state.sessions.values()) {
-        session.unreadEvents.clear()
-        session.pendingPermissions.clear()
-    }
 }
 
 // ─── Terminal / Worker Updates ───────────────────────────────────────────────
@@ -219,83 +175,6 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
     for (const session of state.sessions.values()) {
         session.createdTerminalIds.delete(terminalId)
     }
-}
-
-// ─── Resource → Session Reverse Lookup ───────────────────────────────────────
-
-/**
- * Find all OpenCode session IDs that own a given resource (worker or terminal).
- * Used by the nudge delivery path to route session prompts to the correct
- * controller sessions.
- */
-export function findSessionsForResource(state: PluginState, resourceId: string): string[] {
-    const result: string[] = []
-    for (const session of state.sessions.values()) {
-        if (
-            session.createdWorkerIds.has(resourceId) ||
-            session.createdTerminalIds.has(resourceId)
-        ) {
-            result.push(session.opencodeSessionId)
-        }
-    }
-    return result
-}
-
-// ─── Blocking Metadata Helpers ──────────────────────────────────────────────
-
-/**
- * Build controller-actionable metadata for a blocking inbox event.
- * Used by both the live daemon event handler and the hydration path
- * to ensure consistent actionKind/suggestedTool enrichment.
- */
-export function buildBlockingMetadata(
-    kind: InboxEventKind,
-    resourceId: string,
-    extra?: Record<string, unknown>,
-): Record<string, unknown> {
-    if (kind === "permission.requested") {
-        return {
-            ...extra,
-            actionKind: "permission",
-            workerId: resourceId,
-            permissionId: extra?.permissionId as string | undefined,
-            suggestedTool: "paseo_permission_respond",
-        }
-    }
-    if (kind === "worker.blocked") {
-        return {
-            ...extra,
-            actionKind: "worker-question",
-            workerId: resourceId,
-            suggestedTool: "paseo_worker_send",
-        }
-    }
-    if (kind === "terminal.error") {
-        return {
-            ...extra,
-            actionKind: "notify-only",
-            terminalId: resourceId,
-        }
-    }
-    return extra ?? {}
-}
-
-/**
- * Determine the suggested controller action for a worker based on its
- * current status and pending permission state.
- * Returns the tool ID the controller should use, or null if no action needed.
- */
-export function getBlockingAction(w: {
-    status: WorkerStatus
-    pendingPermissionIds: string[]
-}): string | null {
-    if (w.status === "blocked") {
-        if (w.pendingPermissionIds.length > 0) {
-            return "paseo_permission_respond"
-        }
-        return "paseo_worker_send"
-    }
-    return null
 }
 
 // ─── Agent → WorkerSummary Mapper ────────────────────────────────────────────

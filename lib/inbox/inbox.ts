@@ -1,4 +1,5 @@
 import type { PluginState, InboxEvent, InboxEventKind } from "../state/types.js"
+import { markEventRead } from "../state/state.js"
 
 // ─── Inbox Query Operations ──────────────────────────────────────────────────
 
@@ -59,12 +60,7 @@ export function readInbox(state: PluginState, options: InboxReadOptions = {}): I
     // Mark read if requested
     if (markRead) {
         for (const event of paginated) {
-            event.read = true
-            // Remove from session unread maps
-            for (const session of state.sessions.values()) {
-                session.unreadEvents.delete(event.id)
-                session.pendingPermissions.delete(event.id)
-            }
+            markEventRead(state, event.id)
         }
     }
 
