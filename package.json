@@ -1,58 +1,54 @@
 {
-    "name": "@opencode-paseo/opencode-paseo",
-    "version": "0.1.0",
-    "description": "OpenCode plugin for Paseo terminal session management",
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        }
-    },
-    "files": [
-        "dist/",
-        "paseo.schema.json",
-        "DESIGN.md",
-        "PLAN.md",
-        "README.md",
-        "SPEC.md",
-        "LICENSE"
-    ],
-    "scripts": {
-        "clean": "rm -rf dist",
-        "build": "tsup && tsc --emitDeclarationOnly --declaration --outDir dist",
-        "typecheck": "tsc --noEmit",
-        "test": "node --import tsx --test tests/*.test.ts",
-        "test:integration": "node --import tsx --test tests/integration/*.test.ts",
-        "dev": "tsup --watch",
-        "format": "prettier --write .",
-        "format:check": "prettier --check .",
-        "lint": "prettier --check ."
-    },
-    "keywords": [
-        "opencode",
-        "paseo",
-        "terminal",
-        "plugin"
-    ],
-    "license": "MIT",
-    "peerDependencies": {
-        "@opencode-ai/plugin": ">=1.4.3"
-    },
-    "dependencies": {
-        "@getpaseo/client": "^0.1.89",
-        "@opencode-ai/sdk": "^1.15.13",
-        "jsonc-parser": "^3.3.1",
-        "zod": "^4.4.3"
-    },
-    "devDependencies": {
-        "@opencode-ai/plugin": "^1.4.3",
-        "@types/node": "^22.15.0",
-        "prettier": "^3.5.3",
-        "tsup": "^8.4.0",
-        "tsx": "^4.19.4",
-        "typescript": "^5.8.3"
+  "name": "@bradsjm/opencode-paseo",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for Paseo",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
+  },
+  "files": [
+    "dist/",
+    "paseo.schema.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsup && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts",
+    "dev": "tsup --watch",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "prettier --check ."
+  },
+  "keywords": [
+    "opencode",
+    "paseo",
+    "plugin"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.4.3"
+  },
+  "dependencies": {
+    "@getpaseo/client": "^0.1.89",
+    "@opencode-ai/sdk": "^1.15.13",
+    "jsonc-parser": "^3.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.4.3",
+    "@types/node": "^22.15.0",
+    "prettier": "^3.5.3",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
 }

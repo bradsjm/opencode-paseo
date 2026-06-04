@@ -22,7 +22,7 @@ Add the plugin to your OpenCode project config:
 
 ```jsonc
 {
-    "plugin": ["@opencode-paseo/opencode-paseo"],
+    "plugin": ["@bradsjm/opencode-paseo"],
 }
 ```
 
