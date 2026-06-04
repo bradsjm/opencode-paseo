@@ -208,6 +208,15 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
         assert.equal(result.payload.summary, "permission")
     })
 
+    await t.test("agent_update without agent payload is ignored", () => {
+        const result = translateUpstreamEvent({
+            type: "agent_update",
+            agentId: "a1",
+            payload: { kind: "upsert" },
+        } as any)
+        assert.equal(result, null)
+    })
+
     await t.test("agent_update remove → worker.finished", () => {
         const result = translateUpstreamEvent({
             type: "agent_update",
@@ -413,4 +422,136 @@ test("PaseoClient.createWorker sets background/detached even without model/modeI
     assert.equal(capturedPayload!.background, true)
     assert.equal(capturedPayload!.detached, true)
     assert.equal(capturedPayload!.config, undefined, "config should be absent when no model/modeId")
+})
+
+test("PaseoClient.sendTerminalInput is synchronous and surfaces send errors", () => {
+    const client = new PaseoClient({
+        host: "127.0.0.1",
+        port: 1,
+        connectionTimeoutMs: 100,
+    })
+    ;(client as any).daemon = {
+        sendTerminalInput: () => {
+            throw new Error("socket closed")
+        },
+    }
+
+    assert.throws(() => client.sendTerminalInput("t1", "pwd\n"), /socket closed/)
+})
+
+test("PaseoClient maps schedule and worktree payloads to plugin-owned result shapes", async () => {
+    const client = new PaseoClient({
+        host: "127.0.0.1",
+        port: 1,
+        connectionTimeoutMs: 100,
+    })
+    ;(client as any).daemon = {
+        scheduleCreate: async () => ({
+            requestId: "sched-req",
+            error: null,
+            schedule: {
+                id: "sched-1",
+                name: "Nightly",
+                prompt: "Run nightly",
+                cadence: { type: "every", everyMs: 1000 },
+                target: { type: "agent", agentId: "a1" },
+                status: "active",
+                createdAt: "2024-01-01T00:00:00Z",
+                updatedAt: "2024-01-01T00:00:00Z",
+                nextRunAt: "2024-01-01T00:01:00Z",
+                lastRunAt: null,
+                pausedAt: null,
+                expiresAt: null,
+                maxRuns: 5,
+                runs: [
+                    {
+                        id: "run-1",
+                        scheduledFor: "2024-01-01T00:01:00Z",
+                        startedAt: "2024-01-01T00:01:00Z",
+                        endedAt: null,
+                        status: "running",
+                        agentId: "a1",
+                        output: null,
+                        error: null,
+                    },
+                ],
+            },
+        }),
+        scheduleLogs: async () => ({
+            requestId: "logs-req",
+            error: null,
+            runs: [
+                {
+                    id: "run-2",
+                    scheduledFor: "2024-01-02T00:01:00Z",
+                    startedAt: "2024-01-02T00:01:00Z",
+                    endedAt: "2024-01-02T00:02:00Z",
+                    status: "succeeded",
+                    agentId: "a1",
+                    output: "ok",
+                    error: null,
+                },
+            ],
+        }),
+        createPaseoWorktree: async () => ({
+            requestId: "wt-req",
+            error: null,
+            workspace: {
+                id: "ws-1",
+                projectId: "proj-1",
+                projectDisplayName: "Repo",
+                projectRootPath: "/repo",
+                workspaceDirectory: "/repo/.worktrees/feature",
+                projectKind: "git",
+                workspaceKind: "worktree",
+                name: "feature",
+                archivingAt: null,
+                status: "running",
+                activityAt: null,
+                scripts: [],
+            },
+        }),
+        getPaseoWorktreeList: async () => ({
+            requestId: "wt-list-req",
+            error: null,
+            worktrees: [
+                {
+                    worktreePath: "/repo/.worktrees/feature",
+                    createdAt: "2024-01-01T00:00:00Z",
+                    branchName: "feature",
+                    head: "abc123",
+                },
+            ],
+        }),
+        archivePaseoWorktree: async () => ({
+            requestId: "wt-archive-req",
+            success: true,
+            removedAgents: ["a1"],
+            error: null,
+        }),
+    }
+
+    const createdSchedule = await client.scheduleCreate({
+        prompt: "Run nightly",
+        cadence: { type: "every", everyMs: 1000 },
+        target: { type: "agent", agentId: "a1" },
+    })
+    assert.equal(createdSchedule.requestId, "sched-req")
+    assert.equal(createdSchedule.schedule?.runs[0]?.id, "run-1")
+
+    const logs = await client.scheduleLogs({ id: "sched-1" })
+    assert.equal(logs.requestId, "logs-req")
+    assert.equal(logs.runs[0]?.status, "succeeded")
+
+    const createdWorktree = await client.createWorktree({ cwd: "/repo" })
+    assert.equal(createdWorktree.requestId, "wt-req")
+    assert.equal(createdWorktree.workspace?.workspaceDirectory, "/repo/.worktrees/feature")
+
+    const worktreeList = await client.listWorktrees({ cwd: "/repo" })
+    assert.equal(worktreeList.requestId, "wt-list-req")
+    assert.equal(worktreeList.worktrees[0]?.branchName, "feature")
+
+    const archivedWorktree = await client.archiveWorktree({ repoRoot: "/repo" })
+    assert.equal(archivedWorktree.requestId, "wt-archive-req")
+    assert.deepEqual(archivedWorktree.removedAgents, ["a1"])
 })

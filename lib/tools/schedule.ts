@@ -1,6 +1,6 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
-import type { PaseoTransport, ScheduleCadence } from "../transport/types.js"
+import type { PaseoTransport, ScheduleCadence, ScheduleTarget } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import {
     listProfiles,
@@ -22,6 +22,74 @@ async function resolveScheduleProfileConfig(
     const profiles = await listProfiles(opencodeClient, cwd)
     const profile = resolveProfile(profiles, trimmedProfile)
     return profileToWorkerFields(profile)
+}
+
+function ensureNonEmptyPrompt(prompt: string | undefined): string | undefined {
+    if (prompt === undefined) {
+        return undefined
+    }
+    if (!prompt.trim()) {
+        throw new Error("prompt must not be empty")
+    }
+    return prompt
+}
+
+function buildScheduleCadence(args: {
+    cadenceType?: "every" | "cron"
+    everyMs?: number
+    cronExpression?: string
+    timezone?: string
+}): ScheduleCadence | undefined {
+    if (!args.cadenceType) {
+        return undefined
+    }
+    if (args.cadenceType === "every") {
+        if (!args.everyMs || args.everyMs <= 0) {
+            throw new Error("everyMs must be a positive integer for 'every' cadence")
+        }
+        return { type: "every", everyMs: args.everyMs }
+    }
+    if (!args.cronExpression?.trim()) {
+        throw new Error("cronExpression must not be empty for 'cron' cadence")
+    }
+    return {
+        type: "cron",
+        expression: args.cronExpression,
+        timezone: args.timezone,
+    }
+}
+
+async function resolveValidatedScheduleProfile(
+    client: PaseoTransport,
+    opencodeClient: OpencodeClient,
+    logger: Logger,
+    profileName: string,
+    cwd: string,
+) {
+    const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profileName, cwd)
+
+    try {
+        const providers = await client.getProvidersSnapshot(cwd)
+        const found = providers.some(
+            (p) => p.id === resolvedProfile.provider || p.provider === resolvedProfile.provider,
+        )
+        if (!found) {
+            const available = providers
+                .map((p) => p.id || p.provider)
+                .filter(Boolean)
+                .join(", ")
+            throw new Error(
+                `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
+            )
+        }
+    } catch (err: any) {
+        if (err.message?.includes("not found in daemon provider snapshot")) {
+            throw err
+        }
+        logger.warn("Provider validation skipped due to snapshot fetch failure", err.message)
+    }
+
+    return resolvedProfile
 }
 
 // ─── Schedule List Tool ──────────────────────────────────────────────────────
@@ -141,41 +209,13 @@ export function createScheduleCreateTool(
                 targetType: args.targetType,
             })
 
-            // Validate prompt
-            if (!args.prompt.trim()) {
-                throw new Error("prompt must not be empty")
+            ensureNonEmptyPrompt(args.prompt)
+            const cadence = buildScheduleCadence(args)
+            if (!cadence) {
+                throw new Error("cadenceType is required")
             }
 
-            // Build cadence
-            const cadence =
-                args.cadenceType === "every"
-                    ? (() => {
-                          if (!args.everyMs || args.everyMs <= 0) {
-                              throw new Error(
-                                  "everyMs must be a positive integer for 'every' cadence",
-                              )
-                          }
-                          return { type: "every" as const, everyMs: args.everyMs }
-                      })()
-                    : (() => {
-                          if (!args.cronExpression?.trim()) {
-                              throw new Error("cronExpression must not be empty for 'cron' cadence")
-                          }
-                          return {
-                              type: "cron" as const,
-                              expression: args.cronExpression,
-                              timezone: args.timezone,
-                          }
-                      })()
-
-            // Build target
-            let target:
-                | { type: "self"; agentId: string }
-                | { type: "agent"; agentId: string }
-                | {
-                      type: "new-agent"
-                      config: { provider: string; cwd: string; model?: string; modeId?: string }
-                  }
+            let target: ScheduleTarget
 
             switch (args.targetType) {
                 case "self":
@@ -197,35 +237,13 @@ export function createScheduleCreateTool(
                         throw new Error("profile is required for 'new-agent' target")
                     }
 
-                    const resolvedProfile = await resolveScheduleProfileConfig(
+                    const resolvedProfile = await resolveValidatedScheduleProfile(
+                        client,
                         opencodeClient,
+                        logger,
                         args.profile,
                         cwd,
                     )
-
-                    try {
-                        const providers = await client.getProvidersSnapshot(cwd)
-                        const found = providers.some(
-                            (p) => p.id === resolvedProfile.provider || p.provider === resolvedProfile.provider,
-                        )
-                        if (!found) {
-                            const available = providers
-                                .map((p) => p.id || p.provider)
-                                .filter(Boolean)
-                                .join(", ")
-                            throw new Error(
-                                `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
-                            )
-                        }
-                    } catch (err: any) {
-                        if (err.message?.includes("not found in daemon provider snapshot")) {
-                            throw err
-                        }
-                        logger.warn(
-                            "Provider validation skipped due to snapshot fetch failure",
-                            err.message,
-                        )
-                    }
 
                     target = {
                         type: "new-agent",
@@ -320,29 +338,11 @@ export function createScheduleUpdateTool(
         async execute(args, context: ToolContext) {
             logger.info("Tool: paseo_schedule_update invoked", { id: args.id })
 
-            // Build optional cadence
-            let cadence: ScheduleCadence | undefined
-            if (args.cadenceType) {
-                if (args.cadenceType === "every") {
-                    if (!args.everyMs || args.everyMs <= 0) {
-                        throw new Error("everyMs must be a positive integer for 'every' cadence")
-                    }
-                    cadence = { type: "every", everyMs: args.everyMs }
-                } else {
-                    if (!args.cronExpression?.trim()) {
-                        throw new Error("cronExpression must not be empty for 'cron' cadence")
-                    }
-                    cadence = {
-                        type: "cron",
-                        expression: args.cronExpression,
-                        timezone: args.timezone,
-                    }
-                }
-            }
+            const cadence = buildScheduleCadence(args)
 
             // Build optional newAgentConfig
             let newAgentConfig:
-                | { provider?: string; model?: string; modeId?: string; cwd?: string }
+                | { provider?: string; model?: string | null; modeId?: string | null; cwd?: string }
                 | undefined
 
             if (args.profile !== undefined && !args.profile.trim()) {
@@ -355,48 +355,21 @@ export function createScheduleUpdateTool(
                 }
             }
 
-            // Validate prompt if provided
-            if (args.prompt !== undefined && !args.prompt.trim()) {
-                throw new Error("prompt must not be empty")
-            }
+            ensureNonEmptyPrompt(args.prompt)
 
             // Resolve and validate profile-backed provider for newAgentConfig if provided
             if (newAgentConfig && args.profile) {
                 const cwd = newAgentConfig.cwd ?? context.directory
-                const resolvedProfile = await resolveScheduleProfileConfig(
+                const resolvedProfile = await resolveValidatedScheduleProfile(
+                    client,
                     opencodeClient,
+                    logger,
                     args.profile,
                     cwd,
                 )
-                try {
-                    newAgentConfig.provider = resolvedProfile.provider
-                    newAgentConfig.model = resolvedProfile.model
-                    newAgentConfig.modeId = resolvedProfile.modeId
-
-                    const providers = await client.getProvidersSnapshot(cwd)
-                    const found = providers.some(
-                        (p) =>
-                            p.id === resolvedProfile.provider ||
-                            p.provider === resolvedProfile.provider,
-                    )
-                    if (!found) {
-                        const available = providers
-                            .map((p) => p.id || p.provider)
-                            .filter(Boolean)
-                            .join(", ")
-                        throw new Error(
-                            `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
-                        )
-                    }
-                } catch (err: any) {
-                    if (err.message?.includes("not found in daemon provider snapshot")) {
-                        throw err
-                    }
-                    logger.warn(
-                        "Provider validation skipped due to snapshot fetch failure",
-                        err.message,
-                    )
-                }
+                newAgentConfig.provider = resolvedProfile.provider
+                newAgentConfig.model = resolvedProfile.model ?? null
+                newAgentConfig.modeId = resolvedProfile.modeId ?? null
             }
 
             const result = await client.scheduleUpdate({

@@ -56,7 +56,7 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             lineCount: 0,
             truncated: false,
         }),
-        sendTerminalInput: async () => {},
+        sendTerminalInput: () => {},
         killTerminal: async (terminalId) => ({ id: terminalId, exitCode: null }),
         respondToPermission: async (options) => ({
             workerId: options.workerId,
@@ -99,9 +99,9 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
             timeline: null,
         }),
         // Phase 3: Worktree operations
-        listWorktrees: async () => ({ worktrees: [] }),
-        createWorktree: async () => ({ worktreePath: "/tmp/wt" }),
-        archiveWorktree: async () => ({ archivedAt: new Date().toISOString() }),
+        listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
+        createWorktree: async () => ({ requestId: "req", workspace: null, error: null }),
+        archiveWorktree: async () => ({ requestId: "req", success: true, error: null }),
         ...overrides,
     }
 }

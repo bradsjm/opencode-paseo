@@ -176,14 +176,80 @@ export interface ScheduleNewAgentConfig {
     model?: string
 }
 
+export interface ScheduleTargetSelf {
+    type: "self"
+    agentId: string
+}
+
+export interface ScheduleTargetAgent {
+    type: "agent"
+    agentId: string
+}
+
+export interface ScheduleTargetNewAgent {
+    type: "new-agent"
+    config: ScheduleNewAgentConfig
+}
+
+export type ScheduleTarget = ScheduleTargetSelf | ScheduleTargetAgent | ScheduleTargetNewAgent
+
+export interface ScheduleRunRecord {
+    id: string
+    scheduledFor: string
+    startedAt: string
+    endedAt: string | null
+    status: "running" | "succeeded" | "failed"
+    agentId: string | null
+    output: string | null
+    error: string | null
+}
+
+export interface ScheduleRecord {
+    id: string
+    name: string | null
+    prompt: string
+    cadence: ScheduleCadence
+    target: ScheduleTarget
+    status: "active" | "paused" | "completed"
+    createdAt: string
+    updatedAt: string
+    nextRunAt: string | null
+    lastRunAt: string | null
+    pausedAt: string | null
+    expiresAt: string | null
+    maxRuns: number | null
+    runs: ScheduleRunRecord[]
+}
+
+export interface ScheduleMutationResult {
+    requestId: string
+    schedule: ScheduleRecord | null
+    error: string | null
+}
+
+export interface ScheduleListResult {
+    requestId: string
+    schedules: ScheduleRecord[]
+    error: string | null
+}
+
+export interface ScheduleDeleteResult {
+    requestId: string
+    scheduleId: string
+    error: string | null
+}
+
+export interface ScheduleLogsResult {
+    requestId: string
+    runs: ScheduleRunRecord[]
+    error: string | null
+}
+
 export interface ScheduleCreateOptions {
     prompt: string
     name?: string
     cadence: ScheduleCadence
-    target:
-        | { type: "self"; agentId: string }
-        | { type: "agent"; agentId: string }
-        | { type: "new-agent"; config: ScheduleNewAgentConfig }
+    target: ScheduleTarget
     maxRuns?: number
     expiresAt?: string
     runOnCreate?: boolean
@@ -196,8 +262,8 @@ export interface ScheduleUpdateOptions {
     cadence?: ScheduleCadence
     newAgentConfig?: {
         provider?: string
-        model?: string
-        modeId?: string
+        model?: string | null
+        modeId?: string | null
         cwd?: string
     }
     maxRuns?: number
@@ -248,10 +314,78 @@ export interface WorkerActivityResult {
 // The adapter translates upstream DaemonClient events into this shape
 // before delivering them to plugin consumers.
 
-export interface DaemonEvent {
-    type: string
-    payload: Record<string, unknown>
+export interface WorkerEventPayload extends Record<string, unknown> {
+    workerId: string
+    summary?: string
 }
+
+export interface PermissionRequestedPayload extends Record<string, unknown> {
+    workerId: string
+    permissionId?: string
+    request: Record<string, unknown>
+}
+
+export interface PermissionResolvedPayload extends Record<string, unknown> {
+    workerId: string
+    permissionId: string
+    resolution: Record<string, unknown>
+}
+
+export interface DaemonConnectedEvent {
+    type: "daemon.connected"
+    payload: {}
+}
+
+export interface DaemonDisconnectedEvent {
+    type: "daemon.disconnected"
+    payload: {}
+}
+
+export interface DaemonErrorEvent {
+    type: "daemon.error"
+    payload: { message: string }
+}
+
+export interface WorkerStartedEvent {
+    type: "worker.started"
+    payload: WorkerEventPayload
+}
+
+export interface WorkerFinishedEvent {
+    type: "worker.finished"
+    payload: WorkerEventPayload
+}
+
+export interface WorkerFailedEvent {
+    type: "worker.failed"
+    payload: WorkerEventPayload
+}
+
+export interface WorkerBlockedEvent {
+    type: "worker.blocked"
+    payload: WorkerEventPayload
+}
+
+export interface PermissionRequestedEvent {
+    type: "permission.requested"
+    payload: PermissionRequestedPayload
+}
+
+export interface PermissionResolvedEvent {
+    type: "permission.resolved"
+    payload: PermissionResolvedPayload
+}
+
+export type DaemonEvent =
+    | DaemonConnectedEvent
+    | DaemonDisconnectedEvent
+    | DaemonErrorEvent
+    | WorkerStartedEvent
+    | WorkerFinishedEvent
+    | WorkerFailedEvent
+    | WorkerBlockedEvent
+    | PermissionRequestedEvent
+    | PermissionResolvedEvent
 
 export type DaemonEventCallback = (event: DaemonEvent) => void
 
@@ -278,7 +412,7 @@ export interface PaseoTransport {
     // Phase 2: Terminal operations
     createTerminal(options: CreateTerminalOptions): Promise<CreatedTerminal>
     captureTerminal(options: CaptureTerminalOptions): Promise<TerminalCapture>
-    sendTerminalInput(terminalId: string, input: string): Promise<void>
+    sendTerminalInput(terminalId: string, input: string): void
     killTerminal(terminalId: string): Promise<KilledTerminal>
 
     // Phase 2: Permission operations
@@ -296,18 +430,130 @@ export interface PaseoTransport {
     fetchWorkerActivity(options: WorkerActivityOptions): Promise<WorkerActivityResult>
 
     // Phase 3: Worktree operations
-    listWorktrees(options: WorktreeListOptions): Promise<Record<string, unknown>>
-    createWorktree(options: WorktreeCreateOptions): Promise<Record<string, unknown>>
-    archiveWorktree(options: WorktreeArchiveOptions): Promise<Record<string, unknown>>
+    listWorktrees(options: WorktreeListOptions): Promise<WorktreeListResult>
+    createWorktree(options: WorktreeCreateOptions): Promise<WorktreeCreateResult>
+    archiveWorktree(options: WorktreeArchiveOptions): Promise<WorktreeArchiveResult>
 
     // Schedule operations
-    scheduleList(): Promise<Record<string, unknown>>
-    scheduleInspect(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
-    scheduleCreate(options: ScheduleCreateOptions): Promise<Record<string, unknown>>
-    scheduleUpdate(options: ScheduleUpdateOptions): Promise<Record<string, unknown>>
-    schedulePause(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
-    scheduleResume(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
-    scheduleDelete(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
-    scheduleRunOnce(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
-    scheduleLogs(options: ScheduleInspectOptions): Promise<Record<string, unknown>>
+    scheduleList(): Promise<ScheduleListResult>
+    scheduleInspect(options: ScheduleInspectOptions): Promise<ScheduleMutationResult>
+    scheduleCreate(options: ScheduleCreateOptions): Promise<ScheduleMutationResult>
+    scheduleUpdate(options: ScheduleUpdateOptions): Promise<ScheduleMutationResult>
+    schedulePause(options: ScheduleInspectOptions): Promise<ScheduleMutationResult>
+    scheduleResume(options: ScheduleInspectOptions): Promise<ScheduleMutationResult>
+    scheduleDelete(options: ScheduleInspectOptions): Promise<ScheduleDeleteResult>
+    scheduleRunOnce(options: ScheduleInspectOptions): Promise<ScheduleMutationResult>
+    scheduleLogs(options: ScheduleInspectOptions): Promise<ScheduleLogsResult>
+}
+
+export interface WorktreeOperationError {
+    code: "NOT_GIT_REPO" | "NOT_ALLOWED" | "MERGE_CONFLICT" | "UNKNOWN"
+    message: string
+}
+
+export interface WorktreeListEntry {
+    worktreePath: string
+    createdAt: string
+    branchName?: string | null
+    head?: string | null
+}
+
+export interface WorktreeListResult {
+    requestId: string
+    worktrees: WorktreeListEntry[]
+    error: WorktreeOperationError | null
+}
+
+export interface WorktreeScriptEntry {
+    scriptName: string
+    type: "script" | "service"
+    hostname: string
+    port: number | null
+    localProxyUrl?: string | null
+    publicProxyUrl?: string | null
+    proxyUrl: string | null
+    lifecycle: "running" | "stopped"
+    health: "healthy" | "unhealthy" | null
+    exitCode: number | null
+    terminalId: string | null
+}
+
+export interface WorktreeDiffStat {
+    additions: number
+    deletions: number
+}
+
+export interface WorktreeGitRuntime {
+    currentBranch?: string | null
+    remoteUrl?: string | null
+    isPaseoOwnedWorktree?: boolean
+    isDirty?: boolean | null
+    aheadBehind?: { ahead: number; behind: number } | null
+    aheadOfOrigin?: number | null
+    behindOfOrigin?: number | null
+}
+
+export interface WorktreeGithubCheck {
+    name: string
+    status: "success" | "failure" | "pending" | "skipped" | "cancelled"
+    url: string | null
+    workflow?: string
+    duration?: string
+}
+
+export interface WorktreeGithubPullRequest {
+    title: string
+    url: string
+    baseRefName: string
+    headRefName: string
+    state: string
+    isMerged: boolean
+    number?: number
+    repoOwner?: string
+    repoName?: string
+    isDraft?: boolean
+    mergeable?: "UNKNOWN" | "MERGEABLE" | "CONFLICTING"
+    checks?: WorktreeGithubCheck[]
+    checksStatus?: "none" | "success" | "failure" | "pending"
+    reviewDecision?: "pending" | "approved" | "changes_requested" | null
+    github?: unknown
+}
+
+export interface WorktreeGithubRuntime {
+    error?: { message: string } | null
+    pullRequest?: WorktreeGithubPullRequest | null
+    featuresEnabled?: boolean
+    refreshedAt?: string | null
+}
+
+export interface WorktreeWorkspaceRecord {
+    id: string
+    projectId: string
+    projectDisplayName: string
+    projectCustomName?: string | null
+    projectRootPath: string
+    workspaceDirectory: string
+    projectKind: "git" | "non_git" | "directory"
+    workspaceKind: "directory" | "local_checkout" | "checkout" | "worktree"
+    name: string
+    archivingAt: string | null
+    status: "needs_input" | "failed" | "running" | "attention" | "done"
+    activityAt: string | null
+    diffStat?: WorktreeDiffStat | null
+    scripts: WorktreeScriptEntry[]
+    gitRuntime?: WorktreeGitRuntime | null
+    githubRuntime?: WorktreeGithubRuntime | null
+}
+
+export interface WorktreeCreateResult {
+    requestId: string
+    workspace: WorktreeWorkspaceRecord | null
+    error: string | null
+}
+
+export interface WorktreeArchiveResult {
+    requestId: string
+    success: boolean
+    removedAgents?: string[]
+    error: WorktreeOperationError | null
 }
