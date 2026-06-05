@@ -229,7 +229,7 @@ function mergeLayer(config: PluginConfig, data: ConfigLayer): PluginConfig {
 function queueConfigWarning(ctx: PluginInput, title: string, message: string): void {
     setTimeout(() => {
         try {
-            ctx.client.tui.showToast({
+            void ctx.client.tui.showToast({
                 body: {
                     title,
                     message,
@@ -237,7 +237,9 @@ function queueConfigWarning(ctx: PluginInput, title: string, message: string): v
                     duration: 7000,
                 },
             })
-        } catch {}
+        } catch {
+            return
+        }
     }, CONFIG_WARNING_DELAY_MS)
 }
 

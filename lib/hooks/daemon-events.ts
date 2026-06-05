@@ -53,22 +53,44 @@ function syncWorkerFromPayload(
                 : (current?.status ?? "unknown"),
         title: (typeof agent?.title === "string" && agent.title) || current?.title || null,
         labels: (agent?.labels as Record<string, string>) ?? current?.labels ?? {},
-        requiresAttention: agent?.requiresAttention as boolean | undefined,
-        attentionReason: (agent?.attentionReason as string | null) ?? undefined,
         pendingPermissions:
             (agent?.pendingPermissions as Array<Record<string, unknown>>) ??
             current?.pendingPermissions ??
             [],
-        capabilities: (agent?.capabilities as Record<string, unknown>) ?? undefined,
-        runtimeInfo:
-            (agent?.runtimeInfo as Record<string, unknown>) ?? current?.runtimeInfo ?? undefined,
-        worktreePath:
-            (typeof agent?.worktreePath === "string" && agent.worktreePath) ||
-            current?.worktreePath,
-        branchName:
-            (typeof agent?.branchName === "string" && agent.branchName) || current?.branchName,
-        createdAt: (agent?.createdAt as string) ?? current?.createdAt,
-        updatedAt: (agent?.updatedAt as string) ?? current?.updatedAt,
+        ...(typeof agent?.requiresAttention === "boolean"
+            ? { requiresAttention: agent.requiresAttention }
+            : {}),
+        ...(agent?.attentionReason !== undefined
+            ? { attentionReason: agent.attentionReason as string | null }
+            : {}),
+        ...(agent?.capabilities !== undefined
+            ? { capabilities: agent.capabilities as Record<string, unknown> }
+            : {}),
+        ...(agent?.runtimeInfo !== undefined
+            ? { runtimeInfo: agent.runtimeInfo as Record<string, unknown> }
+            : current?.runtimeInfo !== null && current?.runtimeInfo !== undefined
+              ? { runtimeInfo: current.runtimeInfo }
+              : {}),
+        ...((typeof agent?.worktreePath === "string" && agent.worktreePath) || current?.worktreePath
+            ? {
+                  worktreePath:
+                      (typeof agent?.worktreePath === "string" && agent.worktreePath) ||
+                      current?.worktreePath,
+              }
+            : {}),
+        ...((typeof agent?.branchName === "string" && agent.branchName) || current?.branchName
+            ? {
+                  branchName:
+                      (typeof agent?.branchName === "string" && agent.branchName) ||
+                      current?.branchName,
+              }
+            : {}),
+        ...(((agent?.createdAt as string | undefined) ?? current?.createdAt)
+            ? { createdAt: ((agent?.createdAt as string | undefined) ?? current?.createdAt)! }
+            : {}),
+        ...(((agent?.updatedAt as string | undefined) ?? current?.updatedAt)
+            ? { updatedAt: ((agent?.updatedAt as string | undefined) ?? current?.updatedAt)! }
+            : {}),
     }
 
     const worker = mapAgentToWorkerSummary(merged)
@@ -119,7 +141,7 @@ function createInboxEvent(
         summary,
         read: false,
         timestamp: Date.now(),
-        metadata,
+        ...(metadata !== undefined ? { metadata } : {}),
     }
 }
 

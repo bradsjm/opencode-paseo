@@ -46,9 +46,11 @@ export function createPermissionRespondTool(
                 workerId: args.workerId,
                 permissionId: args.permissionId,
                 behavior: args.behavior,
-                message: args.message,
-                interrupt: args.interrupt,
-                selectedActionId: args.selectedActionId,
+                ...(args.message !== undefined ? { message: args.message } : {}),
+                ...(args.interrupt !== undefined ? { interrupt: args.interrupt } : {}),
+                ...(args.selectedActionId !== undefined
+                    ? { selectedActionId: args.selectedActionId }
+                    : {}),
             })
 
             // Mark matching permission events as read

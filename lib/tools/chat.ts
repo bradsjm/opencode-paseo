@@ -21,7 +21,10 @@ export function createChatCreateTool(client: PaseoTransport, logger: Logger): To
         async execute(args) {
             const name = requireChatRoom(args.name)
             logger.info("Tool: paseo_chat_create invoked", { name })
-            const result = await client.createChatRoom({ name, purpose: args.purpose })
+            const result = await client.createChatRoom({
+                name,
+                ...(args.purpose !== undefined ? { purpose: args.purpose } : {}),
+            })
             return {
                 title: `Chat Room Created: ${name}`,
                 output: JSON.stringify(result, null, 2),
@@ -107,7 +110,9 @@ export function createChatPostTool(client: PaseoTransport, logger: Logger): Tool
                 room,
                 body: args.body,
                 authorAgentId: args.authorAgentId ?? "manual",
-                replyToMessageId: args.replyToMessageId,
+                ...(args.replyToMessageId !== undefined
+                    ? { replyToMessageId: args.replyToMessageId }
+                    : {}),
             })
             return {
                 title: `Chat Message Posted: ${room}`,
@@ -142,9 +147,9 @@ export function createChatReadTool(client: PaseoTransport, logger: Logger): Tool
             })
             const result = await client.readChatMessages({
                 room,
-                limit: args.limit,
-                since: args.since,
-                authorAgentId: args.authorAgentId,
+                ...(args.limit !== undefined ? { limit: args.limit } : {}),
+                ...(args.since !== undefined ? { since: args.since } : {}),
+                ...(args.authorAgentId !== undefined ? { authorAgentId: args.authorAgentId } : {}),
             })
             return {
                 title: `Chat Messages: ${room}`,
@@ -175,7 +180,7 @@ export function createChatWaitTool(client: PaseoTransport, logger: Logger): Tool
             const result = await client.waitForChatMessages({
                 room,
                 afterMessageId,
-                timeoutMs: args.timeoutMs,
+                ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
             })
 
             return {

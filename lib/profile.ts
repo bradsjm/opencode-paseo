@@ -74,9 +74,10 @@ function summarizeBashPermission(
         .filter((value): value is unknown => value !== undefined)
         .map(normalizePermissionValue)
 
-    if (values.length === 0) return "mixed"
+    const firstValue = values[0]
+    if (firstValue === undefined) return "mixed"
 
-    return values.every((value) => value === values[0]) ? values[0] : "mixed"
+    return values.every((value) => value === firstValue) ? firstValue : "mixed"
 }
 
 export function formatProfileModelLabel(

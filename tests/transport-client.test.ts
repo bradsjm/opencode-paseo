@@ -171,7 +171,6 @@ test("projectTimeline projects compact activity summaries", async (t) => {
                     kind: "tool",
                     timestamp: "2024-01-01T00:00:00Z",
                     toolName: "read",
-                    status: undefined,
                     summary: "Read src/index.ts and summarized the error path",
                 },
             ],

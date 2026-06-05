@@ -132,7 +132,7 @@ export interface PluginState {
     connectionStatus: ConnectionStatus
 
     /** Last error message from connection attempts */
-    lastError?: string
+    lastError: string | undefined
 
     /** Daemon capabilities discovered on connect */
     capabilities: CapabilitySnapshot | null

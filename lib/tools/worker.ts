@@ -178,15 +178,21 @@ export function createWorkerCreateTool(
                 projectRoot: context.worktree ?? context.directory,
                 profile: profileName,
                 provider: workerFields.provider,
-                model: workerFields.model,
+                ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
                 modeId: workerFields.modeId,
                 cwd,
-                initialPrompt: chatRoom
+                ...((chatRoom
                     ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom)
-                    : args.initialPrompt,
-                chatRoom,
-                labels: args.labels as Record<string, string> | undefined,
-                worktreeName: args.worktreeName,
+                    : args.initialPrompt) !== undefined
+                    ? {
+                          initialPrompt: chatRoom
+                              ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom)
+                              : args.initialPrompt,
+                      }
+                    : {}),
+                ...(chatRoom !== undefined ? { chatRoom } : {}),
+                ...(args.labels !== undefined ? { labels: args.labels } : {}),
+                ...(args.worktreeName !== undefined ? { worktreeName: args.worktreeName } : {}),
             })
 
             void workerLaunchQueue.drainWorkerLaunchQueue()
@@ -329,13 +335,13 @@ export function createWorkerRunTool(
             const createdWorker = await client.runWorker({
                 cwd,
                 provider: workerFields.provider,
-                model: workerFields.model,
+                ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
                 modeId: workerFields.modeId,
                 initialPrompt: chatRoom
                     ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom)
                     : args.prompt,
-                labels: args.labels as Record<string, string> | undefined,
-                worktreeName: args.worktreeName,
+                ...(args.labels !== undefined ? { labels: args.labels } : {}),
+                ...(args.worktreeName !== undefined ? { worktreeName: args.worktreeName } : {}),
                 background,
             })
 
@@ -802,7 +808,7 @@ export function createWorkerWaitTool(
                     .map((workerId) => completedResults.get(workerId)!),
                 pendingWorkerIds,
                 interruptedByNudge,
-                nudgeEvent,
+                ...(nudgeEvent !== undefined ? { nudgeEvent } : {}),
                 timedOut,
             })
 
@@ -854,7 +860,7 @@ export function createWorkerWaitTool(
                         ),
                     )
 
-                    for (const [index, settledResult] of settled.entries()) {
+                    for (const [, settledResult] of settled.entries()) {
                         if (settledResult.status === "rejected") {
                             throw settledResult.reason
                         }
@@ -1092,9 +1098,9 @@ export function createWorkerUpdateTool(
 
             const result = await client.updateWorker({
                 workerId: args.workerId,
-                name: args.name,
-                labels: args.labels,
-                settings: args.settings,
+                ...(args.name !== undefined ? { name: args.name } : {}),
+                ...(args.labels !== undefined ? { labels: args.labels } : {}),
+                ...(args.settings !== undefined ? { settings: args.settings } : {}),
             })
 
             // Refresh local state from daemon if update succeeded
@@ -1169,11 +1175,13 @@ export function createWorkerInspectTool(
                     provider: mapped.provider,
                     model: mapped.model,
                     currentModeId: mapped.currentModeId,
-                    chatRoom: mapped.chatRoom,
-                    worktreePath: mapped.worktreePath,
-                    branchName: mapped.branchName,
-                    createdAt: mapped.createdAt,
-                    updatedAt: mapped.updatedAt,
+                    ...(mapped.chatRoom !== undefined ? { chatRoom: mapped.chatRoom } : {}),
+                    ...(mapped.worktreePath !== undefined
+                        ? { worktreePath: mapped.worktreePath }
+                        : {}),
+                    ...(mapped.branchName !== undefined ? { branchName: mapped.branchName } : {}),
+                    ...(mapped.createdAt !== undefined ? { createdAt: mapped.createdAt } : {}),
+                    ...(mapped.updatedAt !== undefined ? { updatedAt: mapped.updatedAt } : {}),
                     source: "daemon",
                 }
             } else if (worker) {
@@ -1187,11 +1195,13 @@ export function createWorkerInspectTool(
                     provider: worker.provider,
                     model: worker.model,
                     currentModeId: worker.currentModeId,
-                    chatRoom: worker.chatRoom,
-                    worktreePath: worker.worktreePath,
-                    branchName: worker.branchName,
-                    createdAt: worker.createdAt,
-                    updatedAt: worker.updatedAt,
+                    ...(worker.chatRoom !== undefined ? { chatRoom: worker.chatRoom } : {}),
+                    ...(worker.worktreePath !== undefined
+                        ? { worktreePath: worker.worktreePath }
+                        : {}),
+                    ...(worker.branchName !== undefined ? { branchName: worker.branchName } : {}),
+                    ...(worker.createdAt !== undefined ? { createdAt: worker.createdAt } : {}),
+                    ...(worker.updatedAt !== undefined ? { updatedAt: worker.updatedAt } : {}),
                     source: "local-cache",
                 }
             } else {
@@ -1204,7 +1214,7 @@ export function createWorkerInspectTool(
             if (activityFetched) {
                 const activityResult = await client.fetchWorkerActivity({
                     workerId: args.workerId,
-                    limit: args.activityLimit,
+                    ...(args.activityLimit !== undefined ? { limit: args.activityLimit } : {}),
                 })
                 activity = activityResult.activity
             }

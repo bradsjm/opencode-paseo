@@ -32,7 +32,7 @@ function buildChatMentionSummary(
 ): string {
     const author = message.authorAgentId || "unknown"
     const body = message.body.replace(/\s+/g, " ").trim() || "(empty message)"
-    return truncateSummary(`Mentioned in room \"${room}\" by ${author}: ${body}`, maxSummaryLength)
+    return truncateSummary(`Mentioned in room "${room}" by ${author}: ${body}`, maxSummaryLength)
 }
 
 export function createChatWatcher(

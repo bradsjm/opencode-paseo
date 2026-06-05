@@ -37,7 +37,7 @@ export function appendChatRoomCoordinationPrompt(
 ): string {
     const block = [
         "Paseo chat coordination instructions:",
-        `- Use the Paseo chat room \"${chatRoom}\" with \`paseo chat post\`, \`paseo chat read\`, and \`paseo chat wait\`.`,
+        `- Use the Paseo chat room "${chatRoom}" with \`paseo chat post\`, \`paseo chat read\`, and \`paseo chat wait\`.`,
         "- Rely on the automatic PASEO_AGENT_ID author identity when posting to chat unless explicitly instructed otherwise.",
         "- Post progress updates, blockers, and final completion in that room.",
         "- For reliable plugin nudges, mention coworkers with exact `@<worker-id>` tokens.",

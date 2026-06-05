@@ -33,8 +33,8 @@ export function createWorktreeListTool(
             }
 
             const result = await client.listWorktrees({
-                cwd,
-                repoRoot: args.repoRoot,
+                ...(cwd !== undefined ? { cwd } : {}),
+                ...(args.repoRoot !== undefined ? { repoRoot: args.repoRoot } : {}),
             })
 
             return {
@@ -92,11 +92,13 @@ export function createWorktreeCreateTool(
 
             const result = await client.createWorktree({
                 cwd,
-                projectId: args.projectId,
-                worktreeSlug: args.worktreeSlug,
-                refName: args.refName,
-                action: args.action,
-                githubPrNumber: args.githubPrNumber,
+                ...(args.projectId !== undefined ? { projectId: args.projectId } : {}),
+                ...(args.worktreeSlug !== undefined ? { worktreeSlug: args.worktreeSlug } : {}),
+                ...(args.refName !== undefined ? { refName: args.refName } : {}),
+                ...(args.action !== undefined ? { action: args.action } : {}),
+                ...(args.githubPrNumber !== undefined
+                    ? { githubPrNumber: args.githubPrNumber }
+                    : {}),
             })
 
             return {
@@ -148,9 +150,9 @@ export function createWorktreeArchiveTool(
             }
 
             const result = await client.archiveWorktree({
-                worktreePath: args.worktreePath,
+                ...(args.worktreePath !== undefined ? { worktreePath: args.worktreePath } : {}),
                 repoRoot: args.repoRoot ?? cwd,
-                branchName: args.branchName,
+                ...(args.branchName !== undefined ? { branchName: args.branchName } : {}),
             })
 
             for (const workerId of result.removedAgents ?? []) {

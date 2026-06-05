@@ -94,10 +94,10 @@ export function createTerminalCreateTool(
 
             const result = await client.createTerminal({
                 cwd,
-                name: args.name,
-                agentId: args.agentId,
-                command: args.command,
-                args: args.args,
+                ...(args.name !== undefined ? { name: args.name } : {}),
+                ...(args.agentId !== undefined ? { agentId: args.agentId } : {}),
+                ...(args.command !== undefined ? { command: args.command } : {}),
+                ...(args.args !== undefined ? { args: args.args } : {}),
             })
 
             // Bind terminal to the session

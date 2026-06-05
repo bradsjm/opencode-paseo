@@ -152,11 +152,15 @@ export function createWorkerLaunchQueueController(
                         cwd: record.cwd,
                         profile: record.profile,
                         provider: record.provider,
-                        model: record.model,
+                        ...(record.model !== undefined ? { model: record.model } : {}),
                         modeId: record.modeId,
-                        initialPrompt: record.initialPrompt ?? undefined,
+                        ...(record.initialPrompt !== null
+                            ? { initialPrompt: record.initialPrompt }
+                            : {}),
                         labels: record.labels,
-                        worktreeName: record.worktreeName ?? undefined,
+                        ...(record.worktreeName !== null
+                            ? { worktreeName: record.worktreeName }
+                            : {}),
                     })
 
                     record.status = "created"

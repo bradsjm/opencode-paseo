@@ -293,16 +293,20 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
             null,
         status: mapDaemonWorkerStatus({
             status: agent.status,
-            requiresAttention: agent.requiresAttention,
-            attentionReason: agent.attentionReason,
+            ...(agent.requiresAttention !== undefined
+                ? { requiresAttention: agent.requiresAttention }
+                : {}),
+            ...(agent.attentionReason !== undefined
+                ? { attentionReason: agent.attentionReason }
+                : {}),
             pendingPermissions,
         }),
-        rawStatus: agent.status,
+        ...(agent.status !== undefined ? { rawStatus: agent.status } : {}),
         cwd: agent.cwd ?? "",
         labels,
-        chatRoom,
-        worktreePath: agent.worktreePath,
-        branchName: agent.branchName,
+        ...(chatRoom !== undefined ? { chatRoom } : {}),
+        ...(agent.worktreePath !== undefined ? { worktreePath: agent.worktreePath } : {}),
+        ...(agent.branchName !== undefined ? { branchName: agent.branchName } : {}),
         pendingPermissions,
         pendingPermissionIds,
         requiresAttention: Boolean(agent.requiresAttention),
@@ -310,7 +314,7 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
         runtimeInfo: agent.runtimeInfo ?? null,
         persistence: (agent.capabilities?.persistence as Record<string, unknown>) ?? null,
         unreadEventCount: 0,
-        createdAt: agent.createdAt,
-        updatedAt: agent.updatedAt,
+        ...(agent.createdAt !== undefined ? { createdAt: agent.createdAt } : {}),
+        ...(agent.updatedAt !== undefined ? { updatedAt: agent.updatedAt } : {}),
     }
 }

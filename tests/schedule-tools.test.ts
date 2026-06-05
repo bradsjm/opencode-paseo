@@ -201,7 +201,6 @@ test("paseo_schedule_create", async (t) => {
             provider: "opencode",
             cwd: "/tmp",
             modeId: "partial",
-            model: undefined,
         })
     })
 
@@ -296,7 +295,6 @@ test("paseo_schedule_update", async (t) => {
             provider: "opencode",
             model: "openai/gpt-5.4",
             modeId: "build",
-            cwd: undefined,
         })
     })
 

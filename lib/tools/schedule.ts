@@ -55,7 +55,7 @@ function buildScheduleCadence(args: {
     return {
         type: "cron",
         expression: args.cronExpression,
-        timezone: args.timezone,
+        ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
     }
 }
 
@@ -210,7 +210,14 @@ export function createScheduleCreateTool(
             })
 
             ensureNonEmptyPrompt(args.prompt)
-            const cadence = buildScheduleCadence(args)
+            const cadence = buildScheduleCadence({
+                cadenceType: args.cadenceType,
+                ...(args.everyMs !== undefined ? { everyMs: args.everyMs } : {}),
+                ...(args.cronExpression !== undefined
+                    ? { cronExpression: args.cronExpression }
+                    : {}),
+                ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
+            })
             if (!cadence) {
                 throw new Error("cadenceType is required")
             }
@@ -250,7 +257,9 @@ export function createScheduleCreateTool(
                         config: {
                             provider: resolvedProfile.provider,
                             cwd,
-                            model: resolvedProfile.model,
+                            ...(resolvedProfile.model !== undefined
+                                ? { model: resolvedProfile.model }
+                                : {}),
                             modeId: resolvedProfile.modeId,
                         },
                     }
@@ -260,12 +269,12 @@ export function createScheduleCreateTool(
 
             const result = await client.scheduleCreate({
                 prompt: args.prompt,
-                name: args.name,
+                ...(args.name !== undefined ? { name: args.name } : {}),
                 cadence,
                 target,
-                maxRuns: args.maxRuns,
-                expiresAt: args.expiresAt,
-                runOnCreate: args.runOnCreate,
+                ...(args.maxRuns !== undefined ? { maxRuns: args.maxRuns } : {}),
+                ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
+                ...(args.runOnCreate !== undefined ? { runOnCreate: args.runOnCreate } : {}),
             })
 
             return {
@@ -338,7 +347,14 @@ export function createScheduleUpdateTool(
         async execute(args, context: ToolContext) {
             logger.info("Tool: paseo_schedule_update invoked", { id: args.id })
 
-            const cadence = buildScheduleCadence(args)
+            const cadence = buildScheduleCadence({
+                ...(args.cadenceType !== undefined ? { cadenceType: args.cadenceType } : {}),
+                ...(args.everyMs !== undefined ? { everyMs: args.everyMs } : {}),
+                ...(args.cronExpression !== undefined
+                    ? { cronExpression: args.cronExpression }
+                    : {}),
+                ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
+            })
 
             // Build optional newAgentConfig
             let newAgentConfig:
@@ -351,7 +367,7 @@ export function createScheduleUpdateTool(
 
             if (args.profile || args.cwd) {
                 newAgentConfig = {
-                    cwd: args.cwd,
+                    ...(args.cwd !== undefined ? { cwd: args.cwd } : {}),
                 }
             }
 
@@ -374,12 +390,12 @@ export function createScheduleUpdateTool(
 
             const result = await client.scheduleUpdate({
                 id: args.id,
-                name: args.name,
-                prompt: args.prompt,
-                cadence,
-                newAgentConfig,
-                maxRuns: args.maxRuns,
-                expiresAt: args.expiresAt,
+                ...(args.name !== undefined ? { name: args.name } : {}),
+                ...(args.prompt !== undefined ? { prompt: args.prompt } : {}),
+                ...(cadence !== undefined ? { cadence } : {}),
+                ...(newAgentConfig !== undefined ? { newAgentConfig } : {}),
+                ...(args.maxRuns !== undefined ? { maxRuns: args.maxRuns } : {}),
+                ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
             })
 
             return {

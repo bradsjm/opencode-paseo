@@ -154,18 +154,18 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
             const result = await client.loopRun({
                 prompt,
                 cwd,
-                provider,
-                model,
-                modeId,
-                verifierProvider,
-                verifierModel,
-                verifierModeId,
-                verifyPrompt,
-                verifyChecks,
-                name,
-                sleepMs,
-                maxIterations,
-                maxTimeMs,
+                ...(provider !== undefined ? { provider } : {}),
+                ...(model !== undefined ? { model } : {}),
+                ...(modeId !== undefined ? { modeId } : {}),
+                ...(verifierProvider !== undefined ? { verifierProvider } : {}),
+                ...(verifierModel !== undefined ? { verifierModel } : {}),
+                ...(verifierModeId !== undefined ? { verifierModeId } : {}),
+                ...(verifyPrompt !== undefined ? { verifyPrompt } : {}),
+                ...(verifyChecks !== undefined ? { verifyChecks } : {}),
+                ...(name !== undefined ? { name } : {}),
+                ...(sleepMs !== undefined ? { sleepMs } : {}),
+                ...(maxIterations !== undefined ? { maxIterations } : {}),
+                ...(maxTimeMs !== undefined ? { maxTimeMs } : {}),
             })
 
             return {
@@ -231,7 +231,10 @@ export function createLoopLogsTool(client: PaseoTransport, logger: Logger): Tool
             const id = normalizeLoopId(args.id)
             const afterSeq = normalizeNonNegativeInteger(args.afterSeq, "afterSeq")
             logger.info("Tool: paseo_loop_logs invoked", { id, afterSeq })
-            const result = await client.loopLogs({ id, afterSeq })
+            const result = await client.loopLogs({
+                id,
+                ...(afterSeq !== undefined ? { afterSeq } : {}),
+            })
             return {
                 title: `Loop Logs: ${id}`,
                 output: JSON.stringify(result, null, 2),

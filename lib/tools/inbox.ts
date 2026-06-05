@@ -38,12 +38,12 @@ export function createInboxReadTool(state: PluginState, logger: Logger): ToolDef
             })
 
             const result = readInbox(state, {
-                unreadOnly: args.unreadOnly,
-                kind: args.kind,
-                resourceId: args.resourceId,
-                cursor: args.cursor,
-                limit: args.limit,
-                markRead: args.markRead,
+                ...(args.unreadOnly !== undefined ? { unreadOnly: args.unreadOnly } : {}),
+                ...(args.kind !== undefined ? { kind: args.kind } : {}),
+                ...(args.resourceId !== undefined ? { resourceId: args.resourceId } : {}),
+                ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+                ...(args.limit !== undefined ? { limit: args.limit } : {}),
+                ...(args.markRead !== undefined ? { markRead: args.markRead } : {}),
             })
 
             return {

@@ -94,7 +94,7 @@ export function buildDaemonConfig(config: DaemonConfig): DaemonClientConfig {
         clientId: `opencode-paseo-${crypto.randomUUID()}`,
         clientType: "cli",
         appVersion: APP_VERSION,
-        password: config.password,
+        ...(config.password !== undefined ? { password: config.password } : {}),
         connectTimeoutMs: config.connectionTimeoutMs,
         reconnect: { enabled: false },
         suppressSendErrors: true,
@@ -110,15 +110,34 @@ export function mapServerInfo(info: {
 }): ServerInfo {
     return {
         serverId: info.serverId,
-        hostname: info.hostname ?? undefined,
-        version: info.version ?? undefined,
-        features: (info.features ?? {}) as Record<string, boolean>,
-        capabilities: (info.capabilities ?? {}) as Record<string, unknown>,
+        ...(info.hostname != null ? { hostname: info.hostname } : {}),
+        ...(info.version != null ? { version: info.version } : {}),
+        features: info.features ?? {},
+        capabilities: info.capabilities ?? {},
     }
 }
 
 export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
     const labels = (agent.labels ?? {}) as Record<string, string>
+    const requiresAttention =
+        typeof agent.requiresAttention === "boolean" ? agent.requiresAttention : undefined
+    const attentionReason =
+        typeof agent.attentionReason === "string" || agent.attentionReason === null
+            ? agent.attentionReason
+            : undefined
+    const attentionTimestamp =
+        typeof agent.attentionTimestamp === "string" || agent.attentionTimestamp === null
+            ? agent.attentionTimestamp
+            : undefined
+    const runtimeInfo = asRecord(agent.runtimeInfo)
+    const createdAt = typeof agent.createdAt === "string" ? agent.createdAt : undefined
+    const updatedAt = typeof agent.updatedAt === "string" ? agent.updatedAt : undefined
+    const worktreePath =
+        (typeof agent.worktreePath === "string" ? agent.worktreePath : undefined) ??
+        labels.worktreePath
+    const branchName =
+        (typeof agent.branchName === "string" ? agent.branchName : undefined) ?? labels.branchName
+
     return {
         id: agent.id as string,
         provider: (agent.provider as string) ?? "unknown",
@@ -127,17 +146,16 @@ export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
         status: (agent.status as string) ?? "unknown",
         title: (agent.title as string | null) ?? null,
         labels,
-        requiresAttention: agent.requiresAttention as boolean | undefined,
-        attentionReason: (agent.attentionReason as string | null) ?? null,
-        attentionTimestamp: (agent.attentionTimestamp as string | null) ?? null,
+        ...(requiresAttention !== undefined ? { requiresAttention } : {}),
+        ...(attentionReason !== undefined ? { attentionReason } : {}),
+        ...(attentionTimestamp !== undefined ? { attentionTimestamp } : {}),
         pendingPermissions: (agent.pendingPermissions as Array<Record<string, unknown>>) ?? [],
-        capabilities: (agent.capabilities as Record<string, unknown>) ?? {},
-        runtimeInfo: (agent.runtimeInfo as Record<string, unknown>) ?? undefined,
-        createdAt: agent.createdAt as string | undefined,
-        updatedAt: agent.updatedAt as string | undefined,
-        worktreePath:
-            (agent.worktreePath as string | undefined) ?? labels.worktreePath ?? undefined,
-        branchName: (agent.branchName as string | undefined) ?? labels.branchName ?? undefined,
+        capabilities: asRecord(agent.capabilities) ?? {},
+        ...(runtimeInfo !== null ? { runtimeInfo } : {}),
+        ...(createdAt !== undefined ? { createdAt } : {}),
+        ...(updatedAt !== undefined ? { updatedAt } : {}),
+        ...(worktreePath !== undefined ? { worktreePath } : {}),
+        ...(branchName !== undefined ? { branchName } : {}),
     }
 }
 
@@ -267,9 +285,9 @@ function projectTimelineEntry(entry: unknown): WorkerActivityEntrySummary | null
 
     return {
         kind,
-        timestamp,
-        toolName,
-        status,
+        ...(timestamp !== undefined ? { timestamp } : {}),
+        ...(toolName !== undefined ? { toolName } : {}),
+        ...(status !== undefined ? { status } : {}),
         summary,
     }
 }
@@ -354,9 +372,11 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
                 type: "worker.activity",
                 payload: {
                     workerId: event.agentId,
-                    timestamp: typeof event.timestamp === "string" ? event.timestamp : undefined,
-                    subtype,
-                    summary: firstString(streamEvent) ?? undefined,
+                    ...(typeof event.timestamp === "string" ? { timestamp: event.timestamp } : {}),
+                    ...(subtype !== undefined ? { subtype } : {}),
+                    ...(firstString(streamEvent) !== null
+                        ? { summary: firstString(streamEvent)! }
+                        : {}),
                 },
             }
         }

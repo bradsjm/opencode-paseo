@@ -49,7 +49,7 @@ export async function hydrate(
     if (serverInfo) {
         const features = Object.keys(serverInfo.features).filter((k) => serverInfo.features[k])
         setCapabilities(state, {
-            version: serverInfo.version,
+            ...(serverInfo.version !== undefined ? { version: serverInfo.version } : {}),
             features,
             fetchedAt: Date.now(),
         })
