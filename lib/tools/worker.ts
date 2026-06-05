@@ -46,8 +46,7 @@ async function resolveWorkerProfileFields(
 
 function isWorkerMissingUpstreamError(err: unknown): err is Error {
     return (
-        err instanceof Error &&
-        /\b(agent|worker)\b.*\bnot found\b|\bnot found\b.*\b(agent|worker)\b/i.test(err.message)
+        err instanceof Error && /\b(agent|worker)\b.*\bnot found\b|\bnot found\b.*\b(agent|worker)\b/i.test(err.message)
     )
 }
 
@@ -142,18 +141,12 @@ export function createWorkerCreateTool(
                 .describe(
                     `OpenCode profile name to use (default: "${DEFAULT_PROFILE}"). Use paseo_profile_list to see available profiles.`,
                 ),
-            initialPrompt: tool.schema
-                .string()
-                .optional()
-                .describe("Initial prompt to send to the worker on creation"),
+            initialPrompt: tool.schema.string().optional().describe("Initial prompt to send to the worker on creation"),
             labels: tool.schema
                 .record(tool.schema.string(), tool.schema.string())
                 .optional()
                 .describe("Key-value labels to attach to the worker"),
-            worktreeName: tool.schema
-                .string()
-                .optional()
-                .describe("Name for a git worktree to create for this worker"),
+            worktreeName: tool.schema.string().optional().describe("Name for a git worktree to create for this worker"),
             chatRoom: tool.schema
                 .string()
                 .optional()
@@ -162,11 +155,7 @@ export function createWorkerCreateTool(
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
             const chatRoom = normalizeChatRoom(args.chatRoom)
-            const { profileName, workerFields } = await resolveWorkerProfileFields(
-                opencodeClient,
-                cwd,
-                args.profile,
-            )
+            const { profileName, workerFields } = await resolveWorkerProfileFields(opencodeClient, cwd, args.profile)
 
             logger.info("Tool: paseo_worker_create invoked", {
                 cwd,
@@ -181,9 +170,8 @@ export function createWorkerCreateTool(
                 ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
                 modeId: workerFields.modeId,
                 cwd,
-                ...((chatRoom
-                    ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom)
-                    : args.initialPrompt) !== undefined
+                ...((chatRoom ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom) : args.initialPrompt) !==
+                undefined
                     ? {
                           initialPrompt: chatRoom
                               ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom)
@@ -236,32 +224,34 @@ export function createWorkerLaunchStatusTool(
         args: {
             launchId: tool.schema.string().describe("ID of the worker launch to inspect"),
         },
-        async execute(args) {
-            logger.info("Tool: paseo_worker_launch_status invoked", { launchId: args.launchId })
+        execute(args) {
+            return Promise.resolve().then(() => {
+                logger.info("Tool: paseo_worker_launch_status invoked", { launchId: args.launchId })
 
-            const status = workerLaunchQueue.getWorkerLaunchStatus(args.launchId)
+                const status = workerLaunchQueue.getWorkerLaunchStatus(args.launchId)
 
-            return {
-                title: "Worker Launch Status",
-                output: JSON.stringify(
-                    {
-                        launchId: status.launchId,
-                        status: status.status,
-                        profile: status.profile,
-                        cwd: status.cwd,
-                        worktreeName: status.worktreeName,
-                        chatRoom: status.chatRoom,
-                        enqueuedAt: status.enqueuedAt,
-                        startedAt: status.startedAt,
-                        finishedAt: status.finishedAt,
-                        ...(status.position !== undefined ? { position: status.position } : {}),
-                        ...(status.workerId ? { workerId: status.workerId } : {}),
-                        ...(status.error ? { error: status.error } : {}),
-                    },
-                    null,
-                    2,
-                ),
-            }
+                return {
+                    title: "Worker Launch Status",
+                    output: JSON.stringify(
+                        {
+                            launchId: status.launchId,
+                            status: status.status,
+                            profile: status.profile,
+                            cwd: status.cwd,
+                            worktreeName: status.worktreeName,
+                            chatRoom: status.chatRoom,
+                            enqueuedAt: status.enqueuedAt,
+                            startedAt: status.startedAt,
+                            finishedAt: status.finishedAt,
+                            ...(status.position !== undefined ? { position: status.position } : {}),
+                            ...(status.workerId ? { workerId: status.workerId } : {}),
+                            ...(status.error ? { error: status.error } : {}),
+                        },
+                        null,
+                        2,
+                    ),
+                }
+            })
         },
     })
 }
@@ -293,10 +283,7 @@ export function createWorkerRunTool(
                 .boolean()
                 .optional()
                 .describe("If true, return immediately instead of waiting for completion"),
-            worktreeName: tool.schema
-                .string()
-                .optional()
-                .describe("Name for a git worktree to create for this worker"),
+            worktreeName: tool.schema.string().optional().describe("Name for a git worktree to create for this worker"),
             chatRoom: tool.schema
                 .string()
                 .optional()
@@ -318,11 +305,7 @@ export function createWorkerRunTool(
             const background = args.background === true
             const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
             const chatRoom = normalizeChatRoom(args.chatRoom)
-            const { profileName, workerFields } = await resolveWorkerProfileFields(
-                opencodeClient,
-                cwd,
-                args.profile,
-            )
+            const { profileName, workerFields } = await resolveWorkerProfileFields(opencodeClient, cwd, args.profile)
 
             logger.info("Tool: paseo_worker_run invoked", {
                 cwd,
@@ -337,9 +320,7 @@ export function createWorkerRunTool(
                 provider: workerFields.provider,
                 ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
                 modeId: workerFields.modeId,
-                initialPrompt: chatRoom
-                    ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom)
-                    : args.prompt,
+                initialPrompt: chatRoom ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom) : args.prompt,
                 ...(args.labels !== undefined ? { labels: args.labels } : {}),
                 ...(args.worktreeName !== undefined ? { worktreeName: args.worktreeName } : {}),
                 background,
@@ -491,11 +472,7 @@ export function createWorkerRunTool(
 
 // ─── Worker Send Tool ────────────────────────────────────────────────────────
 
-export function createWorkerSendTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createWorkerSendTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
         description: "Send a message to an existing Paseo worker. Does not wait for a response.",
         args: {
@@ -582,11 +559,7 @@ function deriveActivityState(
     activity: WorkerActivitySummary | null,
     activityFetched: boolean,
 ): InspectActivityState {
-    if (
-        worker.requiresAttention ||
-        worker.pendingPermissionIds.length > 0 ||
-        worker.status === "blocked"
-    ) {
+    if (worker.requiresAttention || worker.pendingPermissionIds.length > 0 || worker.status === "blocked") {
         return "blocked"
     }
     if (isTerminalWorkerStatus(worker.status)) {
@@ -603,22 +576,14 @@ function deriveActivityState(
 
 function deriveReadyForDependentWork(status: string): ReadyForDependentWork {
     if (status === "finished") return true
-    if (
-        status === "running" ||
-        status === "blocked" ||
-        status === "failed" ||
-        status === "canceled"
-    ) {
+    if (status === "running" || status === "blocked" || status === "failed" || status === "canceled") {
         return false
     }
     return "unknown"
 }
 
 function deriveProgressSummary(
-    worker: Pick<
-        WorkerSummary,
-        "status" | "pendingPermissionIds" | "requiresAttention" | "attentionReason"
-    >,
+    worker: Pick<WorkerSummary, "status" | "pendingPermissionIds" | "requiresAttention" | "attentionReason">,
     activityState: InspectActivityState,
     activity: WorkerActivitySummary | null,
     activityFetched: boolean,
@@ -634,16 +599,13 @@ function deriveProgressSummary(
         return {
             summary:
                 worker.attentionReason ??
-                (worker.pendingPermissionIds.length > 0
-                    ? "Waiting for permission response"
-                    : "Worker needs attention"),
+                (worker.pendingPermissionIds.length > 0 ? "Waiting for permission response" : "Worker needs attention"),
             lastMeaningfulUpdate: null,
         }
     }
     if (activityState === "finished") {
         return {
-            summary:
-                worker.status === "failed" ? "Worker failed" : "Worker reached a terminal state",
+            summary: worker.status === "failed" ? "Worker failed" : "Worker reached a terminal state",
             lastMeaningfulUpdate: null,
         }
     }
@@ -750,10 +712,7 @@ export function createWorkerWaitTool(
         description:
             "Wait for one or more Paseo workers to finish their current tasks. Supports waiting for any or all targets, respects a global timeout, and stops early if this session receives a nudge-eligible owned-worker event.",
         args: {
-            workerIds: tool.schema
-                .array(tool.schema.string())
-                .min(1)
-                .describe("IDs of one or more workers to wait on"),
+            workerIds: tool.schema.array(tool.schema.string()).min(1).describe("IDs of one or more workers to wait on"),
             waitFor: tool.schema
                 .enum(["any", "all"])
                 .optional()
@@ -764,16 +723,12 @@ export function createWorkerWaitTool(
                 .number()
                 .int()
                 .optional()
-                .describe(
-                    `Maximum time to wait in milliseconds (default: ${DEFAULT_WAIT_TIMEOUT_MS})`,
-                ),
+                .describe(`Maximum time to wait in milliseconds (default: ${DEFAULT_WAIT_TIMEOUT_MS})`),
         },
         async execute(args, context: ToolContext) {
             const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
             const waitFor = args.waitFor ?? "all"
-            const workerIds = Array.from(
-                new Set(args.workerIds.map((id) => id.trim()).filter(Boolean)),
-            )
+            const workerIds = Array.from(new Set(args.workerIds.map((id) => id.trim()).filter(Boolean)))
             logger.info("Tool: paseo_worker_wait invoked", {
                 workerIds,
                 waitFor,
@@ -855,9 +810,7 @@ export function createWorkerWaitTool(
                     const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, remaining)
                     const sliceWorkerIds = [...pendingWorkerIds]
                     const settled = await Promise.allSettled(
-                        sliceWorkerIds.map((workerId) =>
-                            client.waitForWorker(workerId, sliceTimeout),
-                        ),
+                        sliceWorkerIds.map((workerId) => client.waitForWorker(workerId, sliceTimeout)),
                     )
 
                     for (const [, settledResult] of settled.entries()) {
@@ -874,9 +827,7 @@ export function createWorkerWaitTool(
                         completedResults.set(result.workerId, result)
                     }
 
-                    pendingWorkerIds = pendingWorkerIds.filter(
-                        (workerId) => !completedResults.has(workerId),
-                    )
+                    pendingWorkerIds = pendingWorkerIds.filter((workerId) => !completedResults.has(workerId))
 
                     if (waitFor === "any" && completedResults.size > 0) {
                         return {
@@ -912,11 +863,7 @@ export function createWorkerWaitTool(
 
 // ─── Worker Cancel Tool ──────────────────────────────────────────────────────
 
-export function createWorkerCancelTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createWorkerCancelTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
         description:
             "Cancel a running Paseo worker's current task. Before using forceKill=true, capture " +
@@ -960,8 +907,7 @@ export function createWorkerCancelTool(
                         {
                             workerId: args.workerId,
                             action: "killed",
-                            warning:
-                                "Worker was permanently terminated and removed from plugin state.",
+                            warning: "Worker was permanently terminated and removed from plugin state.",
                         },
                         null,
                         2,
@@ -992,11 +938,7 @@ export function createWorkerCancelTool(
 
 // ─── Worker Archive Tool ─────────────────────────────────────────────────────
 
-export function createWorkerArchiveTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createWorkerArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
         description: "Archive a Paseo worker. The worker is removed from the active list.",
         args: {
@@ -1065,15 +1007,8 @@ export function createWorkerUpdateTool(
                 .describe("Replacement label map"),
             settings: tool.schema
                 .object({
-                    modeId: tool.schema
-                        .string()
-                        .optional()
-                        .describe("Mode to switch the worker to"),
-                    model: tool.schema
-                        .string()
-                        .nullable()
-                        .optional()
-                        .describe("Model ID to set, or null to clear"),
+                    modeId: tool.schema.string().optional().describe("Mode to switch the worker to"),
+                    model: tool.schema.string().nullable().optional().describe("Model ID to set, or null to clear"),
                     thinkingOptionId: tool.schema
                         .string()
                         .nullable()
@@ -1176,9 +1111,7 @@ export function createWorkerInspectTool(
                     model: mapped.model,
                     currentModeId: mapped.currentModeId,
                     ...(mapped.chatRoom !== undefined ? { chatRoom: mapped.chatRoom } : {}),
-                    ...(mapped.worktreePath !== undefined
-                        ? { worktreePath: mapped.worktreePath }
-                        : {}),
+                    ...(mapped.worktreePath !== undefined ? { worktreePath: mapped.worktreePath } : {}),
                     ...(mapped.branchName !== undefined ? { branchName: mapped.branchName } : {}),
                     ...(mapped.createdAt !== undefined ? { createdAt: mapped.createdAt } : {}),
                     ...(mapped.updatedAt !== undefined ? { updatedAt: mapped.updatedAt } : {}),
@@ -1196,9 +1129,7 @@ export function createWorkerInspectTool(
                     model: worker.model,
                     currentModeId: worker.currentModeId,
                     ...(worker.chatRoom !== undefined ? { chatRoom: worker.chatRoom } : {}),
-                    ...(worker.worktreePath !== undefined
-                        ? { worktreePath: worker.worktreePath }
-                        : {}),
+                    ...(worker.worktreePath !== undefined ? { worktreePath: worker.worktreePath } : {}),
                     ...(worker.branchName !== undefined ? { branchName: worker.branchName } : {}),
                     ...(worker.createdAt !== undefined ? { createdAt: worker.createdAt } : {}),
                     ...(worker.updatedAt !== undefined ? { updatedAt: worker.updatedAt } : {}),

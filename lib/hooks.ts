@@ -3,21 +3,12 @@ import type { PluginState } from "./state/types.js"
 import type { Logger } from "./logger.js"
 import type { PaseoTransport } from "./transport/types.js"
 import type { Config } from "@opencode-ai/plugin"
-import {
-    listEphemeralWorkerIdsForSession,
-    removeEphemeralWorkerRun,
-    removeSession,
-} from "./state/state.js"
+import { listEphemeralWorkerIdsForSession, removeEphemeralWorkerRun, removeSession } from "./state/state.js"
 export { createDaemonEventHandler } from "./hooks/daemon-events.js"
 
 // ─── Event Handler Factory ───────────────────────────────────────────────────
 
-export function createEventHandler(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-    _config: unknown,
-) {
+export function createEventHandler(state: PluginState, client: PaseoTransport, logger: Logger, _config: unknown) {
     return async (input: { event: Event }) => {
         const event = input.event
 
@@ -52,8 +43,9 @@ export function createEventHandler(
 // ─── Config Handler Factory ──────────────────────────────────────────────────
 
 export function createConfigHandler(_config: unknown, logger: Logger) {
-    return async (_opencodeConfig: Config) => {
+    return (_opencodeConfig: Config) => {
         // Register Paseo plugin config section in opencode's config
         logger.debug("Config hook invoked")
+        return Promise.resolve()
     }
 }

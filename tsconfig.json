@@ -12,7 +12,6 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "noFallthroughCasesInSwitch": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -28,6 +27,7 @@
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "tests"
   ]
 }

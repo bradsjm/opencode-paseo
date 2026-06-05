@@ -2,22 +2,13 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
-import {
-    getOrCreateSession,
-    recordCreatedTerminal,
-    unbindTerminalFromSessions,
-} from "../state/state.js"
+import { getOrCreateSession, recordCreatedTerminal, unbindTerminalFromSessions } from "../state/state.js"
 
 // ─── Terminal List Tool ──────────────────────────────────────────────────────
 
-export function createTerminalListTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createTerminalListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "List all known Paseo terminals. Returns ID, title, status, and line count for each.",
+        description: "List all known Paseo terminals. Returns ID, title, status, and line count for each.",
         args: {
             cwd: tool.schema.string().optional().describe("Filter terminals by working directory"),
         },
@@ -61,32 +52,18 @@ export function createTerminalListTool(
 
 // ─── Terminal Create Tool ────────────────────────────────────────────────────
 
-export function createTerminalCreateTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createTerminalCreateTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Create a new Paseo terminal session. The terminal is bound to the current opencode session.",
+        description: "Create a new Paseo terminal session. The terminal is bound to the current opencode session.",
         args: {
             cwd: tool.schema
                 .string()
                 .optional()
                 .describe("Working directory for the terminal (defaults to session directory)"),
             name: tool.schema.string().optional().describe("Human-readable name for the terminal"),
-            command: tool.schema
-                .string()
-                .optional()
-                .describe("Initial command to run in the terminal"),
-            args: tool.schema
-                .array(tool.schema.string())
-                .optional()
-                .describe("Arguments for the initial command"),
-            agentId: tool.schema
-                .string()
-                .optional()
-                .describe("Associate terminal with a specific agent"),
+            command: tool.schema.string().optional().describe("Initial command to run in the terminal"),
+            args: tool.schema.array(tool.schema.string()).optional().describe("Arguments for the initial command"),
+            agentId: tool.schema.string().optional().describe("Associate terminal with a specific agent"),
         },
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
@@ -138,27 +115,17 @@ export function createTerminalCreateTool(
 
 const DEFAULT_CAPTURE_LINES = 200
 
-export function createTerminalCaptureTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createTerminalCaptureTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Capture output from a Paseo terminal. Returns terminal content with line count.",
+        description: "Capture output from a Paseo terminal. Returns terminal content with line count.",
         args: {
             terminalId: tool.schema.string().describe("ID of the terminal to capture"),
             lines: tool.schema
                 .number()
                 .int()
                 .optional()
-                .describe(
-                    `Number of lines to capture from the end (default: ${DEFAULT_CAPTURE_LINES})`,
-                ),
-            stripAnsi: tool.schema
-                .boolean()
-                .optional()
-                .describe("Strip ANSI escape codes from output (default: true)"),
+                .describe(`Number of lines to capture from the end (default: ${DEFAULT_CAPTURE_LINES})`),
+            stripAnsi: tool.schema.boolean().optional().describe("Strip ANSI escape codes from output (default: true)"),
         },
         async execute(args) {
             logger.info("Tool: paseo_terminal_capture invoked", {
@@ -217,25 +184,27 @@ export function createTerminalSendInputTool(
                     "Raw text or keystrokes to send. Characters are sent as-is with no escape-sequence interpretation.",
                 ),
         },
-        async execute(args) {
-            logger.info("Tool: paseo_terminal_send_input invoked", {
-                terminalId: args.terminalId,
-                inputLength: args.input.length,
+        execute(args) {
+            return Promise.resolve().then(() => {
+                logger.info("Tool: paseo_terminal_send_input invoked", {
+                    terminalId: args.terminalId,
+                    inputLength: args.input.length,
+                })
+
+                client.sendTerminalInput(args.terminalId, args.input)
+
+                return {
+                    title: "Input Sent",
+                    output: JSON.stringify(
+                        {
+                            terminalId: args.terminalId,
+                            sent: args.input.length,
+                        },
+                        null,
+                        2,
+                    ),
+                }
             })
-
-            client.sendTerminalInput(args.terminalId, args.input)
-
-            return {
-                title: "Input Sent",
-                output: JSON.stringify(
-                    {
-                        terminalId: args.terminalId,
-                        sent: args.input.length,
-                    },
-                    null,
-                    2,
-                ),
-            }
         },
     })
 }
@@ -259,39 +228,37 @@ export function createTerminalSendLinesTool(
                 .min(1)
                 .describe("Command lines to send. Each line is separated by a newline."),
         },
-        async execute(args) {
-            logger.info("Tool: paseo_terminal_send_lines invoked", {
-                terminalId: args.terminalId,
-                lineCount: args.lines.length,
+        execute(args) {
+            return Promise.resolve().then(() => {
+                logger.info("Tool: paseo_terminal_send_lines invoked", {
+                    terminalId: args.terminalId,
+                    lineCount: args.lines.length,
+                })
+
+                const joined = args.lines.join("\n") + "\n"
+
+                client.sendTerminalInput(args.terminalId, joined)
+
+                return {
+                    title: "Lines Sent",
+                    output: JSON.stringify(
+                        {
+                            terminalId: args.terminalId,
+                            lineCount: args.lines.length,
+                            sent: joined.length,
+                        },
+                        null,
+                        2,
+                    ),
+                }
             })
-
-            const joined = args.lines.join("\n") + "\n"
-
-            client.sendTerminalInput(args.terminalId, joined)
-
-            return {
-                title: "Lines Sent",
-                output: JSON.stringify(
-                    {
-                        terminalId: args.terminalId,
-                        lineCount: args.lines.length,
-                        sent: joined.length,
-                    },
-                    null,
-                    2,
-                ),
-            }
         },
     })
 }
 
 // ─── Terminal Kill Tool ──────────────────────────────────────────────────────
 
-export function createTerminalKillTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createTerminalKillTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
         description:
             "Kill a running Paseo terminal session. Destructive: capture any important output " +

@@ -25,11 +25,7 @@ function buildChatMentionEventId(message: ChatMessage, workerId: string): string
     return `chat-mention-${message.roomId}-${message.id}-${workerId}`
 }
 
-function buildChatMentionSummary(
-    room: string,
-    message: ChatMessage,
-    maxSummaryLength: number,
-): string {
+function buildChatMentionSummary(room: string, message: ChatMessage, maxSummaryLength: number): string {
     const author = message.authorAgentId || "unknown"
     const body = message.body.replace(/\s+/g, " ").trim() || "(empty message)"
     return truncateSummary(`Mentioned in room "${room}" by ${author}: ${body}`, maxSummaryLength)
@@ -142,12 +138,7 @@ export function createChatWatcher(
                     continue
                 }
 
-                sendNudge(
-                    opencodeClient,
-                    sessionIds,
-                    formatNudgeMessage(event.kind, workerId, event.summary),
-                    logger,
-                )
+                sendNudge(opencodeClient, sessionIds, formatNudgeMessage(event.kind, workerId, event.summary), logger)
             }
         }
     }
@@ -234,12 +225,13 @@ export function createChatWatcher(
             void watchRoom(room)
         },
 
-        async dispose() {
+        dispose() {
             disposed = true
             watchedRooms.clear()
             for (const entry of state.chatRooms.values()) {
                 entry.watching = false
             }
+            return Promise.resolve()
         },
     }
 }
