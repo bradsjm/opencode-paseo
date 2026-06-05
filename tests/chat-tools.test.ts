@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import type { ToolContext } from "@opencode-ai/plugin/tool"
 import { Logger } from "../lib/logger.js"
 import {
   createChatCreateTool,
@@ -96,16 +97,29 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
   } as PaseoTransport
 }
 
+function mockContext(directory = "/context-dir"): ToolContext {
+  return {
+    sessionID: "sess-1",
+    messageID: "msg-1",
+    agent: "test",
+    directory,
+    worktree: directory,
+    abort: new AbortController().signal,
+    metadata: () => {},
+    ask: async () => {},
+  }
+}
+
 test("chat tools", async (t) => {
   const logger = new Logger(false)
 
   await t.test("create/list/inspect/delete return daemon-backed room results", async () => {
     const client = createMockTransport()
 
-    const created = await createChatCreateTool(client, logger).execute({ name: " ops " })
-    const listed = await createChatListTool(client, logger).execute({})
-    const inspected = await createChatInspectTool(client, logger).execute({ room: "ops" })
-    const deleted = await createChatDeleteTool(client, logger).execute({ room: "ops" })
+    const created = await createChatCreateTool(client, logger).execute({ name: " ops " }, mockContext())
+    const listed = await createChatListTool(client, logger).execute({}, mockContext())
+    const inspected = await createChatInspectTool(client, logger).execute({ room: "ops" }, mockContext())
+    const deleted = await createChatDeleteTool(client, logger).execute({ room: "ops" }, mockContext())
 
     assert.equal(JSON.parse((created as { output: string }).output).room.name, "ops")
     assert.equal(JSON.parse((listed as { output: string }).output).count, 1)
@@ -134,10 +148,13 @@ test("chat tools", async (t) => {
       },
     })
 
-    const result = await createChatPostTool(client, logger).execute({
-      room: "ops",
-      body: "hello",
-    })
+    const result = await createChatPostTool(client, logger).execute(
+      {
+        room: "ops",
+        body: "hello",
+      },
+      mockContext(),
+    )
     const output = JSON.parse((result as { output: string }).output)
 
     assert.equal(receivedAuthorAgentId, "manual")
@@ -167,12 +184,15 @@ test("chat tools", async (t) => {
       },
     })
 
-    const result = await createChatReadTool(client, logger).execute({
-      room: "ops",
-      limit: 5,
-      since: "2024-01-01T00:00:00Z",
-      authorAgentId: "worker-1",
-    })
+    const result = await createChatReadTool(client, logger).execute(
+      {
+        room: "ops",
+        limit: 5,
+        since: "2024-01-01T00:00:00Z",
+        authorAgentId: "worker-1",
+      },
+      mockContext(),
+    )
     const output = JSON.parse((result as { output: string }).output)
 
     assert.deepEqual(received, {
@@ -226,10 +246,13 @@ test("chat tools", async (t) => {
       },
     })
 
-    const result = await createChatWaitTool(client, logger).execute({
-      room: "ops",
-      timeoutMs: 1234,
-    })
+    const result = await createChatWaitTool(client, logger).execute(
+      {
+        room: "ops",
+        timeoutMs: 1234,
+      },
+      mockContext(),
+    )
     const output = JSON.parse((result as { output: string }).output)
 
     assert.deepEqual(calls, [

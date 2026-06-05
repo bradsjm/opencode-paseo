@@ -9,7 +9,22 @@ import type { DaemonConfig } from "../../lib/config.js"
 // Tests are skipped if the daemon is not reachable.
 
 const DAEMON_PORT = parseInt(process.env.PASEO_DAEMON_PORT || "6767", 10)
-const DAEMON_HOST = process.env.PASEO_DAEMON_HOST || "127.0.0.1"
+const LOCALHOST_DAEMON_HOSTS = ["127.0.0.1", "localhost", "::1"] as const
+type LocalhostDaemonHost = (typeof LOCALHOST_DAEMON_HOSTS)[number]
+
+function parseDaemonHost(value: string | undefined): LocalhostDaemonHost {
+  if (value === undefined || value === "") {
+    return "127.0.0.1"
+  }
+  if (LOCALHOST_DAEMON_HOSTS.includes(value as LocalhostDaemonHost)) {
+    return value as LocalhostDaemonHost
+  }
+  throw new Error(
+    `PASEO_DAEMON_HOST must be one of ${LOCALHOST_DAEMON_HOSTS.join(", ")}; received ${JSON.stringify(value)}`,
+  )
+}
+
+const DAEMON_HOST = parseDaemonHost(process.env.PASEO_DAEMON_HOST)
 const DAEMON_PASSWORD = process.env.PASEO_DAEMON_PASSWORD || undefined
 
 function createDaemonConfig(): DaemonConfig {

@@ -296,7 +296,7 @@ test("paseo_loop_list returns transport output", async () => {
     }),
   })
 
-  const result = await createLoopListTool(client, logger).execute({})
+  const result = await createLoopListTool(client, logger).execute({}, mockContext())
   assert.deepEqual(JSON.parse((result as { output: string }).output), {
     requestId: "req",
     loops: [{ id: "loop-1", status: "running" }],
@@ -314,7 +314,7 @@ test("paseo_loop_inspect forwards id", async () => {
     },
   })
 
-  await createLoopInspectTool(client, logger).execute({ id: "  loop-1  " })
+  await createLoopInspectTool(client, logger).execute({ id: "  loop-1  " }, mockContext())
   assert.equal(receivedId, "loop-1")
 })
 
@@ -328,7 +328,7 @@ test("paseo_loop_logs forwards id and afterSeq", async () => {
     },
   })
 
-  await createLoopLogsTool(client, logger).execute({ id: "  loop-1  ", afterSeq: 11 })
+  await createLoopLogsTool(client, logger).execute({ id: "  loop-1  ", afterSeq: 11 }, mockContext())
   assert.deepEqual(received, { id: "loop-1", afterSeq: 11 })
 })
 
@@ -342,6 +342,6 @@ test("paseo_loop_stop forwards id", async () => {
     },
   })
 
-  await createLoopStopTool(client, logger).execute({ id: "  loop-1  " })
+  await createLoopStopTool(client, logger).execute({ id: "  loop-1  " }, mockContext())
   assert.equal(receivedId, "loop-1")
 })
