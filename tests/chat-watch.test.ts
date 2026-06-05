@@ -103,9 +103,7 @@ function createMockOpencodeClient(messages: string[]): OpencodeClient {
     return {
         session: {
             prompt: async ({ body }) => {
-                const text = body.parts
-                    .map((part) => (part.type === "text" ? part.text : ""))
-                    .join("")
+                const text = body.parts.map((part) => (part.type === "text" ? part.text : "")).join("")
                 messages.push(text)
                 return { data: null }
             },
@@ -146,13 +144,7 @@ test("chat watcher", async (t) => {
             }),
             waitForChatMessages: async () => waiting.promise,
         })
-        const watcher = createChatWatcher(
-            state,
-            client,
-            createMockOpencodeClient(promptMessages),
-            logger,
-            TEST_CONFIG,
-        )
+        const watcher = createChatWatcher(state, client, createMockOpencodeClient(promptMessages), logger, TEST_CONFIG)
 
         watcher.observeWorker(attachOwnedWorker(state, "sess-1", "worker-1", "ops"))
         await flushAsyncWork()
@@ -176,13 +168,7 @@ test("chat watcher", async (t) => {
                 error: null,
             }),
         })
-        const watcher = createChatWatcher(
-            state,
-            client,
-            createMockOpencodeClient(promptMessages),
-            logger,
-            TEST_CONFIG,
-        )
+        const watcher = createChatWatcher(state, client, createMockOpencodeClient(promptMessages), logger, TEST_CONFIG)
 
         watcher.observeWorker(attachOwnedWorker(state, "sess-1", "worker-1", "ops"))
         await flushAsyncWork()
@@ -211,13 +197,7 @@ test("chat watcher", async (t) => {
                 error: null,
             }),
         })
-        const watcher = createChatWatcher(
-            state,
-            client,
-            createMockOpencodeClient(promptMessages),
-            logger,
-            TEST_CONFIG,
-        )
+        const watcher = createChatWatcher(state, client, createMockOpencodeClient(promptMessages), logger, TEST_CONFIG)
 
         watcher.observeWorker(attachOwnedWorker(state, "sess-1", "worker-1", "ops"))
         await flushAsyncWork()
@@ -235,20 +215,12 @@ test("chat watcher", async (t) => {
             readChatMessages: async () => ({ requestId: "req-read", messages: [], error: null }),
             waitForChatMessages: async () => ({
                 requestId: "req-wait",
-                messages: [
-                    buildMessage({ body: "@friendly-bot", mentionAgentIds: ["friendly-bot"] }),
-                ],
+                messages: [buildMessage({ body: "@friendly-bot", mentionAgentIds: ["friendly-bot"] })],
                 timedOut: false,
                 error: null,
             }),
         })
-        const watcher = createChatWatcher(
-            state,
-            client,
-            createMockOpencodeClient(promptMessages),
-            logger,
-            TEST_CONFIG,
-        )
+        const watcher = createChatWatcher(state, client, createMockOpencodeClient(promptMessages), logger, TEST_CONFIG)
 
         watcher.observeWorker(attachOwnedWorker(state, "sess-1", "worker-1", "ops"))
         await flushAsyncWork()
@@ -266,20 +238,12 @@ test("chat watcher", async (t) => {
             readChatMessages: async () => ({ requestId: "req-read", messages: [], error: null }),
             waitForChatMessages: async () => ({
                 requestId: "req-wait",
-                messages: [
-                    buildMessage({ authorAgentId: "worker-1", mentionAgentIds: ["worker-1"] }),
-                ],
+                messages: [buildMessage({ authorAgentId: "worker-1", mentionAgentIds: ["worker-1"] })],
                 timedOut: false,
                 error: null,
             }),
         })
-        const watcher = createChatWatcher(
-            state,
-            client,
-            createMockOpencodeClient(promptMessages),
-            logger,
-            TEST_CONFIG,
-        )
+        const watcher = createChatWatcher(state, client, createMockOpencodeClient(promptMessages), logger, TEST_CONFIG)
 
         watcher.observeWorker(attachOwnedWorker(state, "sess-1", "worker-1", "ops"))
         await flushAsyncWork()
@@ -315,13 +279,7 @@ test("chat watcher", async (t) => {
                 }
             },
         })
-        const watcher = createChatWatcher(
-            state,
-            client,
-            createMockOpencodeClient(promptMessages),
-            logger,
-            TEST_CONFIG,
-        )
+        const watcher = createChatWatcher(state, client, createMockOpencodeClient(promptMessages), logger, TEST_CONFIG)
 
         watcher.observeWorker(attachOwnedWorker(state, "sess-1", "worker-1", "ops"))
         await flushAsyncWork()

@@ -1,9 +1,5 @@
 import { DaemonClient } from "@getpaseo/client"
-import type {
-    DaemonClientConfig,
-    DaemonEvent as UpstreamDaemonEvent,
-    ConnectionState,
-} from "@getpaseo/client"
+import type { DaemonClientConfig, DaemonEvent as UpstreamDaemonEvent, ConnectionState } from "@getpaseo/client"
 import type { DaemonConfig } from "../config.js"
 import type {
     AgentSummary,
@@ -119,12 +115,9 @@ export function mapServerInfo(info: {
 
 export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
     const labels = (agent.labels ?? {}) as Record<string, string>
-    const requiresAttention =
-        typeof agent.requiresAttention === "boolean" ? agent.requiresAttention : undefined
+    const requiresAttention = typeof agent.requiresAttention === "boolean" ? agent.requiresAttention : undefined
     const attentionReason =
-        typeof agent.attentionReason === "string" || agent.attentionReason === null
-            ? agent.attentionReason
-            : undefined
+        typeof agent.attentionReason === "string" || agent.attentionReason === null ? agent.attentionReason : undefined
     const attentionTimestamp =
         typeof agent.attentionTimestamp === "string" || agent.attentionTimestamp === null
             ? agent.attentionTimestamp
@@ -133,10 +126,8 @@ export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
     const createdAt = typeof agent.createdAt === "string" ? agent.createdAt : undefined
     const updatedAt = typeof agent.updatedAt === "string" ? agent.updatedAt : undefined
     const worktreePath =
-        (typeof agent.worktreePath === "string" ? agent.worktreePath : undefined) ??
-        labels.worktreePath
-    const branchName =
-        (typeof agent.branchName === "string" ? agent.branchName : undefined) ?? labels.branchName
+        (typeof agent.worktreePath === "string" ? agent.worktreePath : undefined) ?? labels.worktreePath
+    const branchName = (typeof agent.branchName === "string" ? agent.branchName : undefined) ?? labels.branchName
 
     return {
         id: agent.id as string,
@@ -160,9 +151,7 @@ export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-    return value && typeof value === "object" && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : null
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
 function getNestedValue(record: Record<string, unknown>, path: string[]): unknown {
@@ -181,9 +170,7 @@ function firstString(value: unknown, maxLength = 160): string | null {
     if (typeof value === "string") {
         const normalized = value.replace(/\s+/g, " ").trim()
         if (!normalized) return null
-        return normalized.length > maxLength
-            ? `${normalized.slice(0, maxLength - 1).trimEnd()}…`
-            : normalized
+        return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1).trimEnd()}…` : normalized
     }
 
     if (Array.isArray(value)) {
@@ -374,9 +361,7 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
                     workerId: event.agentId,
                     ...(typeof event.timestamp === "string" ? { timestamp: event.timestamp } : {}),
                     ...(subtype !== undefined ? { subtype } : {}),
-                    ...(firstString(streamEvent) !== null
-                        ? { summary: firstString(streamEvent)! }
-                        : {}),
+                    ...(firstString(streamEvent) !== null ? { summary: firstString(streamEvent)! } : {}),
                 },
             }
         }
@@ -534,9 +519,7 @@ function mapLoopIteration(iteration: Record<string, unknown>): LoopIterationReco
             ? mapLoopVerifyPromptResult(iteration.verifyPromptResult as Record<string, unknown>)
             : undefined,
         verifyCheckResults: Array.isArray(iteration.verifyCheckResults)
-            ? iteration.verifyCheckResults.map((result) =>
-                  mapLoopVerifyCheckResult(result as Record<string, unknown>),
-              )
+            ? iteration.verifyCheckResults.map((result) => mapLoopVerifyCheckResult(result as Record<string, unknown>))
             : undefined,
     }
 }
@@ -560,9 +543,7 @@ function mapLoopRecord(loop: Record<string, unknown>): LoopRecord {
         ...mapLoopListItem(loop),
         stoppedAt: (loop.stoppedAt as string | null | undefined) ?? undefined,
         iterations: Array.isArray(loop.iterations)
-            ? loop.iterations.map((iteration) =>
-                  mapLoopIteration(iteration as Record<string, unknown>),
-              )
+            ? loop.iterations.map((iteration) => mapLoopIteration(iteration as Record<string, unknown>))
             : [],
     }
 }
@@ -648,9 +629,7 @@ function mapScheduleRecord(schedule: Record<string, unknown>): ScheduleRecord {
 function mapScheduleMutationResult(result: Record<string, unknown>): ScheduleMutationResult {
     return {
         requestId: result.requestId as string,
-        schedule: result.schedule
-            ? mapScheduleRecord(result.schedule as Record<string, unknown>)
-            : null,
+        schedule: result.schedule ? mapScheduleRecord(result.schedule as Record<string, unknown>) : null,
         error: (result.error as string | null) ?? null,
     }
 }
@@ -659,9 +638,7 @@ function mapScheduleListResult(result: Record<string, unknown>): ScheduleListRes
     return {
         requestId: result.requestId as string,
         schedules: Array.isArray(result.schedules)
-            ? result.schedules.map((schedule) =>
-                  mapScheduleRecord(schedule as Record<string, unknown>),
-              )
+            ? result.schedules.map((schedule) => mapScheduleRecord(schedule as Record<string, unknown>))
             : [],
         error: (result.error as string | null) ?? null,
     }
@@ -702,8 +679,7 @@ function mapWorktreeWorkspace(workspace: Record<string, unknown>): WorktreeWorks
         diffStat: (workspace.diffStat as WorktreeWorkspaceRecord["diffStat"]) ?? undefined,
         scripts: (workspace.scripts as WorktreeWorkspaceRecord["scripts"]) ?? [],
         gitRuntime: (workspace.gitRuntime as WorktreeWorkspaceRecord["gitRuntime"]) ?? undefined,
-        githubRuntime:
-            (workspace.githubRuntime as WorktreeWorkspaceRecord["githubRuntime"]) ?? undefined,
+        githubRuntime: (workspace.githubRuntime as WorktreeWorkspaceRecord["githubRuntime"]) ?? undefined,
     }
 }
 
@@ -718,9 +694,7 @@ function mapWorktreeListResult(result: Record<string, unknown>): WorktreeListRes
 function mapWorktreeCreateResult(result: Record<string, unknown>): WorktreeCreateResult {
     return {
         requestId: result.requestId as string,
-        workspace: result.workspace
-            ? mapWorktreeWorkspace(result.workspace as Record<string, unknown>)
-            : null,
+        workspace: result.workspace ? mapWorktreeWorkspace(result.workspace as Record<string, unknown>) : null,
         error: (result.error as string | null) ?? null,
     }
 }
@@ -1011,9 +985,7 @@ export class PaseoClient implements PaseoTransport {
             workerId,
             error: result.error,
             lastMessage: result.lastMessage,
-            finalSnapshot: result.final
-                ? mapAgentSnapshot(result.final as unknown as Record<string, unknown>)
-                : null,
+            finalSnapshot: result.final ? mapAgentSnapshot(result.final as unknown as Record<string, unknown>) : null,
         }
     }
 
@@ -1068,9 +1040,7 @@ export class PaseoClient implements PaseoTransport {
                 await this.daemon.updateAgent(options.workerId, updates)
                 metadataUpdated = true
             } catch (err: unknown) {
-                errors.push(
-                    `metadata update failed: ${err instanceof Error ? err.message : String(err)}`,
-                )
+                errors.push(`metadata update failed: ${err instanceof Error ? err.message : String(err)}`)
             }
         }
 
@@ -1084,9 +1054,7 @@ export class PaseoClient implements PaseoTransport {
                     await this.daemon.setAgentMode(options.workerId, s.modeId)
                     anySettingApplied = true
                 } catch (err: unknown) {
-                    errors.push(
-                        `setAgentMode failed: ${err instanceof Error ? err.message : String(err)}`,
-                    )
+                    errors.push(`setAgentMode failed: ${err instanceof Error ? err.message : String(err)}`)
                 }
             }
 
@@ -1095,9 +1063,7 @@ export class PaseoClient implements PaseoTransport {
                     await this.daemon.setAgentModel(options.workerId, s.model)
                     anySettingApplied = true
                 } catch (err: unknown) {
-                    errors.push(
-                        `setAgentModel failed: ${err instanceof Error ? err.message : String(err)}`,
-                    )
+                    errors.push(`setAgentModel failed: ${err instanceof Error ? err.message : String(err)}`)
                 }
             }
 
@@ -1106,9 +1072,7 @@ export class PaseoClient implements PaseoTransport {
                     await this.daemon.setAgentThinkingOption(options.workerId, s.thinkingOptionId)
                     anySettingApplied = true
                 } catch (err: unknown) {
-                    errors.push(
-                        `setAgentThinkingOption failed: ${err instanceof Error ? err.message : String(err)}`,
-                    )
+                    errors.push(`setAgentThinkingOption failed: ${err instanceof Error ? err.message : String(err)}`)
                 }
             }
 
@@ -1171,8 +1135,7 @@ export class PaseoClient implements PaseoTransport {
         if (options.refName !== undefined) input.refName = options.refName
         if (options.action !== undefined) input.action = options.action
         if (options.githubPrNumber !== undefined) input.githubPrNumber = options.githubPrNumber
-        if (options.firstAgentContext !== undefined)
-            input.firstAgentContext = options.firstAgentContext
+        if (options.firstAgentContext !== undefined) input.firstAgentContext = options.firstAgentContext
         const result = await this.daemon.createPaseoWorktree(
             input as Parameters<typeof this.daemon.createPaseoWorktree>[0],
         )
@@ -1261,9 +1224,7 @@ export class PaseoClient implements PaseoTransport {
             name: options.name,
             prompt: options.prompt,
             cadence: options.cadence as unknown as Record<string, unknown> | undefined,
-            newAgentConfig: options.newAgentConfig as unknown as
-                | Record<string, unknown>
-                | undefined,
+            newAgentConfig: options.newAgentConfig as unknown as Record<string, unknown> | undefined,
             maxRuns: options.maxRuns,
             expiresAt: options.expiresAt,
         } as Parameters<typeof this.daemon.scheduleUpdate>[0])

@@ -58,42 +58,24 @@ function normalizeVerifyChecks(verifyChecks: string[] | undefined): string[] | u
 
 export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Run a daemon-native Paseo loop with required verification and bounded stop conditions.",
+        description: "Run a daemon-native Paseo loop with required verification and bounded stop conditions.",
         args: {
             prompt: tool.schema.string().describe("Prompt for the loop worker"),
             cwd: tool.schema
                 .string()
                 .optional()
                 .describe("Working directory for the loop (defaults to session directory)"),
-            provider: tool.schema
-                .string()
-                .optional()
-                .describe("Provider override for the loop worker"),
+            provider: tool.schema.string().optional().describe("Provider override for the loop worker"),
             model: tool.schema.string().optional().describe("Model override for the loop worker"),
             modeId: tool.schema.string().optional().describe("Mode override for the loop worker"),
-            verifierProvider: tool.schema
-                .string()
-                .optional()
-                .describe("Provider override for the verifier worker"),
-            verifierModel: tool.schema
-                .string()
-                .optional()
-                .describe("Model override for the verifier worker"),
-            verifierModeId: tool.schema
-                .string()
-                .optional()
-                .describe("Mode override for the verifier worker"),
-            verifyPrompt: tool.schema
-                .string()
-                .optional()
-                .describe("Verifier prompt. Must be non-empty when provided."),
+            verifierProvider: tool.schema.string().optional().describe("Provider override for the verifier worker"),
+            verifierModel: tool.schema.string().optional().describe("Model override for the verifier worker"),
+            verifierModeId: tool.schema.string().optional().describe("Mode override for the verifier worker"),
+            verifyPrompt: tool.schema.string().optional().describe("Verifier prompt. Must be non-empty when provided."),
             verifyChecks: tool.schema
                 .array(tool.schema.string())
                 .optional()
-                .describe(
-                    "Verifier commands. Must contain at least one non-empty command when provided.",
-                ),
+                .describe("Verifier commands. Must contain at least one non-empty command when provided."),
             name: tool.schema.string().optional().describe("Optional human-readable loop name"),
             sleepMs: tool.schema
                 .number()
@@ -121,10 +103,7 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
             const provider = normalizeOptionalString(args.provider, "provider")
             const model = normalizeOptionalString(args.model, "model")
             const modeId = normalizeOptionalString(args.modeId, "modeId")
-            const verifierProvider = normalizeOptionalString(
-                args.verifierProvider,
-                "verifierProvider",
-            )
+            const verifierProvider = normalizeOptionalString(args.verifierProvider, "verifierProvider")
             const verifierModel = normalizeOptionalString(args.verifierModel, "verifierModel")
             const verifierModeId = normalizeOptionalString(args.verifierModeId, "verifierModeId")
             const verifyPrompt = normalizeOptionalString(args.verifyPrompt, "verifyPrompt")
@@ -135,9 +114,7 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
             const maxTimeMs = normalizePositiveInteger(args.maxTimeMs, "maxTimeMs")
 
             if (!verifyPrompt && !verifyChecks) {
-                throw new Error(
-                    "at least one verification mechanism is required: verifyPrompt or verifyChecks",
-                )
+                throw new Error("at least one verification mechanism is required: verifyPrompt or verifyChecks")
             }
 
             if (maxIterations === undefined && maxTimeMs === undefined) {
@@ -217,8 +194,7 @@ export function createLoopInspectTool(client: PaseoTransport, logger: Logger): T
 
 export function createLoopLogsTool(client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Read snapshot/cursor-based daemon-native loop logs for a specific loop by ID.",
+        description: "Read snapshot/cursor-based daemon-native loop logs for a specific loop by ID.",
         args: {
             id: tool.schema.string().describe("ID of the loop to read logs for"),
             afterSeq: tool.schema

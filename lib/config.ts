@@ -247,12 +247,7 @@ function getLayerLabel(isProject: boolean): string {
     return isProject ? "project config" : "config"
 }
 
-function showParseWarning(
-    ctx: PluginInput,
-    configPath: string,
-    isProject: boolean,
-    error: string,
-): void {
+function showParseWarning(ctx: PluginInput, configPath: string, isProject: boolean, error: string): void {
     queueConfigWarning(
         ctx,
         `Paseo: ${getLayerLabel(isProject)} warning`,
@@ -262,8 +257,7 @@ function showParseWarning(
 
 function formatIssuePath(path: ReadonlyArray<PropertyKey>): string {
     const normalizedPath = path.filter(
-        (segment): segment is string | number =>
-            typeof segment === "string" || typeof segment === "number",
+        (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
     )
 
     return normalizedPath.length > 0 ? normalizedPath.join(".") : "config"
@@ -281,17 +275,9 @@ function formatValidationErrors(error: z.ZodError): string[] {
     })
 }
 
-function showValidationWarning(
-    ctx: PluginInput,
-    configPath: string,
-    isProject: boolean,
-    error: z.ZodError,
-): void {
+function showValidationWarning(ctx: PluginInput, configPath: string, isProject: boolean, error: z.ZodError): void {
     const messages = formatValidationErrors(error)
-    const suffix =
-        error.issues.length > messages.length
-            ? `\n(+${error.issues.length - messages.length} more)`
-            : ""
+    const suffix = error.issues.length > messages.length ? `\n(+${error.issues.length - messages.length} more)` : ""
 
     queueConfigWarning(
         ctx,

@@ -41,31 +41,17 @@ function syncWorkerFromPayload(
 
     const merged: AgentSummary = {
         id: workerId,
-        provider:
-            (typeof agent?.provider === "string" && agent.provider) ||
-            current?.provider ||
-            "unknown",
+        provider: (typeof agent?.provider === "string" && agent.provider) || current?.provider || "unknown",
         cwd: (typeof agent?.cwd === "string" && agent.cwd) || current?.cwd || "",
         model: (typeof agent?.model === "string" && agent.model) || current?.model || null,
-        status:
-            typeof agent?.status === "string"
-                ? (agent.status as string)
-                : (current?.status ?? "unknown"),
+        status: typeof agent?.status === "string" ? (agent.status as string) : (current?.status ?? "unknown"),
         title: (typeof agent?.title === "string" && agent.title) || current?.title || null,
         labels: (agent?.labels as Record<string, string>) ?? current?.labels ?? {},
         pendingPermissions:
-            (agent?.pendingPermissions as Array<Record<string, unknown>>) ??
-            current?.pendingPermissions ??
-            [],
-        ...(typeof agent?.requiresAttention === "boolean"
-            ? { requiresAttention: agent.requiresAttention }
-            : {}),
-        ...(agent?.attentionReason !== undefined
-            ? { attentionReason: agent.attentionReason as string | null }
-            : {}),
-        ...(agent?.capabilities !== undefined
-            ? { capabilities: agent.capabilities as Record<string, unknown> }
-            : {}),
+            (agent?.pendingPermissions as Array<Record<string, unknown>>) ?? current?.pendingPermissions ?? [],
+        ...(typeof agent?.requiresAttention === "boolean" ? { requiresAttention: agent.requiresAttention } : {}),
+        ...(agent?.attentionReason !== undefined ? { attentionReason: agent.attentionReason as string | null } : {}),
+        ...(agent?.capabilities !== undefined ? { capabilities: agent.capabilities as Record<string, unknown> } : {}),
         ...(agent?.runtimeInfo !== undefined
             ? { runtimeInfo: agent.runtimeInfo as Record<string, unknown> }
             : current?.runtimeInfo !== null && current?.runtimeInfo !== undefined
@@ -74,15 +60,12 @@ function syncWorkerFromPayload(
         ...((typeof agent?.worktreePath === "string" && agent.worktreePath) || current?.worktreePath
             ? {
                   worktreePath:
-                      (typeof agent?.worktreePath === "string" && agent.worktreePath) ||
-                      current?.worktreePath,
+                      (typeof agent?.worktreePath === "string" && agent.worktreePath) || current?.worktreePath,
               }
             : {}),
         ...((typeof agent?.branchName === "string" && agent.branchName) || current?.branchName
             ? {
-                  branchName:
-                      (typeof agent?.branchName === "string" && agent.branchName) ||
-                      current?.branchName,
+                  branchName: (typeof agent?.branchName === "string" && agent.branchName) || current?.branchName,
               }
             : {}),
         ...(((agent?.createdAt as string | undefined) ?? current?.createdAt)
@@ -180,9 +163,7 @@ function handlePermissionResolved(state: PluginState, event: PermissionResolvedE
     }
 
     worker.pendingPermissionIds = worker.pendingPermissionIds.filter((id) => id !== permId)
-    worker.pendingPermissions = worker.pendingPermissions.filter(
-        (permission) => permission.id !== permId,
-    )
+    worker.pendingPermissions = worker.pendingPermissions.filter((permission) => permission.id !== permId)
 }
 
 export function createDaemonEventHandler(
@@ -207,10 +188,7 @@ export function createDaemonEventHandler(
             case "daemon.disconnected": {
                 setConnectionStatus(state, "error", "Daemon disconnected")
                 logger.warn("Daemon disconnected")
-                const summary = truncateSummary(
-                    "Daemon disconnected",
-                    config.output.maxSummaryLength,
-                )
+                const summary = truncateSummary("Daemon disconnected", config.output.maxSummaryLength)
                 inboxEvent = createInboxEvent(state, daemonEvent.type, "daemon", summary, undefined)
                 break
             }
@@ -227,11 +205,7 @@ export function createDaemonEventHandler(
             case "worker.failed":
             case "worker.blocked": {
                 if (daemonEvent.type !== "worker.stalled") {
-                    const worker = syncWorkerFromPayload(
-                        state,
-                        daemonEvent.type,
-                        daemonEvent.payload,
-                    )
+                    const worker = syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
                     onWorkerObserved?.(worker)
                 }
                 const resourceId = daemonEvent.payload.workerId
@@ -246,13 +220,7 @@ export function createDaemonEventHandler(
                               ...buildBlockingMetadata("worker.blocked", resourceId),
                           }
                         : daemonEvent.payload
-                inboxEvent = createInboxEvent(
-                    state,
-                    daemonEvent.type,
-                    resourceId,
-                    summary,
-                    metadata,
-                )
+                inboxEvent = createInboxEvent(state, daemonEvent.type, resourceId, summary, metadata)
                 break
             }
 
@@ -283,13 +251,7 @@ export function createDaemonEventHandler(
                     getWorkerEventSummary(daemonEvent.type, resourceId, daemonEvent.payload),
                     config.output.maxSummaryLength,
                 )
-                inboxEvent = createInboxEvent(
-                    state,
-                    daemonEvent.type,
-                    resourceId,
-                    summary,
-                    daemonEvent.payload,
-                )
+                inboxEvent = createInboxEvent(state, daemonEvent.type, resourceId, summary, daemonEvent.payload)
                 break
             }
 
@@ -315,11 +277,7 @@ export function createDaemonEventHandler(
         if (opencodeClient && shouldNudge(inboxEvent.kind, config.notifications)) {
             const sessionIds = findSessionsForResource(state, inboxEvent.resourceId)
             if (sessionIds.length > 0) {
-                const message = formatNudgeMessage(
-                    inboxEvent.kind,
-                    inboxEvent.resourceId,
-                    inboxEvent.summary,
-                )
+                const message = formatNudgeMessage(inboxEvent.kind, inboxEvent.resourceId, inboxEvent.summary)
                 sendNudge(opencodeClient, sessionIds, message, logger)
             }
         }

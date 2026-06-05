@@ -203,80 +203,77 @@ test("worker launch queue controller", async (t) => {
         assert.equal(promptMessages.length, 2)
     })
 
-    await t.test(
-        "continues to next launch after failure and binds successful worker to session state",
-        async () => {
-            const state = createPluginState()
-            const promptMessages: string[] = []
-            const first = createDeferred<never>()
-            const second = createDeferred<{
-                id: string
-                provider: string
-                cwd: string
-                model: string | null
-                status: "running"
-                title: null
-            }>()
-            let callIndex = 0
-            const client = createMockTransport({
-                createWorker: async () => {
-                    callIndex += 1
-                    return callIndex === 1 ? first.promise : second.promise
-                },
-            })
-            const controller = createWorkerLaunchQueueController(
-                state,
-                client,
-                createMockOpencodeClient(promptMessages),
-                logger,
-            )
+    await t.test("continues to next launch after failure and binds successful worker to session state", async () => {
+        const state = createPluginState()
+        const promptMessages: string[] = []
+        const first = createDeferred<never>()
+        const second = createDeferred<{
+            id: string
+            provider: string
+            cwd: string
+            model: string | null
+            status: "running"
+            title: null
+        }>()
+        let callIndex = 0
+        const client = createMockTransport({
+            createWorker: async () => {
+                callIndex += 1
+                return callIndex === 1 ? first.promise : second.promise
+            },
+        })
+        const controller = createWorkerLaunchQueueController(
+            state,
+            client,
+            createMockOpencodeClient(promptMessages),
+            logger,
+        )
 
-            const failedReceipt = controller.enqueueWorkerLaunch({
-                sessionId: "sess-1",
-                projectRoot: "/project",
-                profile: "build",
-                cwd: "/project",
-                provider: "opencode",
-                modeId: "build",
-            })
-            const successReceipt = controller.enqueueWorkerLaunch({
-                sessionId: "sess-1",
-                projectRoot: "/project",
-                profile: "review",
-                cwd: "/project",
-                provider: "opencode",
-                modeId: "review",
-            })
+        const failedReceipt = controller.enqueueWorkerLaunch({
+            sessionId: "sess-1",
+            projectRoot: "/project",
+            profile: "build",
+            cwd: "/project",
+            provider: "opencode",
+            modeId: "build",
+        })
+        const successReceipt = controller.enqueueWorkerLaunch({
+            sessionId: "sess-1",
+            projectRoot: "/project",
+            profile: "review",
+            cwd: "/project",
+            provider: "opencode",
+            modeId: "review",
+        })
 
-            const drainPromise = controller.drainWorkerLaunchQueue()
-            await flushAsyncWork()
-            first.reject(new Error("launch failed"))
-            await flushAsyncWork()
+        const drainPromise = controller.drainWorkerLaunchQueue()
+        await flushAsyncWork()
+        first.reject(new Error("launch failed"))
+        await flushAsyncWork()
 
-            second.resolve({
-                id: "w-success",
-                provider: "opencode",
-                cwd: "/project",
-                model: null,
-                status: "running",
-                title: null,
-            })
-            await drainPromise
+        second.resolve({
+            id: "w-success",
+            provider: "opencode",
+            cwd: "/project",
+            model: null,
+            status: "running",
+            title: null,
+        })
+        await drainPromise
 
-            const failedStatus = controller.getWorkerLaunchStatus(failedReceipt.launchId)
-            const successStatus = controller.getWorkerLaunchStatus(successReceipt.launchId)
-            assert.equal(failedStatus.status, "failed")
-            assert.match(failedStatus.error ?? "", /launch failed/)
-            assert.equal(successStatus.status, "created")
-            assert.equal(successStatus.workerId, "w-success")
-            assert.ok(state.workers.has("w-success"))
-            assert.ok(state.sessions.get("sess-1")?.createdWorkerIds.has("w-success"))
-            assert.deepEqual(state.workers.get("w-success")?.labels, [])
-            assert.equal(promptMessages.length, 2)
-            assert.match(promptMessages[0], new RegExp(failedReceipt.launchId))
-            assert.match(promptMessages[1], /w-success/)
-        },
-    )
+        const failedStatus = controller.getWorkerLaunchStatus(failedReceipt.launchId)
+        const successStatus = controller.getWorkerLaunchStatus(successReceipt.launchId)
+        assert.equal(failedStatus.status, "failed")
+        assert.match(failedStatus.error ?? "", /launch failed/)
+        assert.equal(successStatus.status, "created")
+        assert.equal(successStatus.workerId, "w-success")
+        assert.ok(state.workers.has("w-success"))
+        assert.ok(state.sessions.get("sess-1")?.createdWorkerIds.has("w-success"))
+        assert.deepEqual(state.workers.get("w-success")?.labels, [])
+        assert.equal(promptMessages.length, 2)
+        assert.match(promptMessages[0], new RegExp(failedReceipt.launchId))
+        assert.match(promptMessages[1], /w-success/)
+    })
 
     await t.test(
         "fetchWorker failure does not flip created launch to failed and success nudge includes launchId and workerId",

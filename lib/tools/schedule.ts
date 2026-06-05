@@ -2,12 +2,7 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState } from "../state/types.js"
 import type { PaseoTransport, ScheduleCadence, ScheduleTarget } from "../transport/types.js"
 import type { Logger } from "../logger.js"
-import {
-    listProfiles,
-    profileToWorkerFields,
-    resolveProfile,
-    type OpencodeClient,
-} from "../profile.js"
+import { listProfiles, profileToWorkerFields, resolveProfile, type OpencodeClient } from "../profile.js"
 
 async function resolveScheduleProfileConfig(
     opencodeClient: OpencodeClient,
@@ -94,11 +89,7 @@ async function resolveValidatedScheduleProfile(
 
 // ─── Schedule List Tool ──────────────────────────────────────────────────────
 
-export function createScheduleListTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createScheduleListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
         description:
             "List all Paseo schedules managed by the daemon. Returns schedule entries with their cadence, target, and status.",
@@ -116,14 +107,9 @@ export function createScheduleListTool(
 
 // ─── Schedule Inspect Tool ───────────────────────────────────────────────────
 
-export function createScheduleInspectTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createScheduleInspectTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Inspect a specific Paseo schedule by ID. Returns full schedule configuration and status.",
+        description: "Inspect a specific Paseo schedule by ID. Returns full schedule configuration and status.",
         args: {
             id: tool.schema.string().describe("ID of the schedule to inspect"),
         },
@@ -172,35 +158,22 @@ export function createScheduleCreateTool(
             targetType: tool.schema
                 .enum(["self", "agent", "new-agent"])
                 .describe("Target type: 'self', 'agent' (existing), or 'new-agent' (spawn new)"),
-            agentId: tool.schema
-                .string()
-                .optional()
-                .describe("Agent ID (required for 'self' or 'agent' target types)"),
+            agentId: tool.schema.string().optional().describe("Agent ID (required for 'self' or 'agent' target types)"),
             profile: tool.schema
                 .string()
                 .optional()
-                .describe(
-                    "OpenCode profile name for 'new-agent' target. Required for scheduled new-agent runs.",
-                ),
+                .describe("OpenCode profile name for 'new-agent' target. Required for scheduled new-agent runs."),
             cwd: tool.schema
                 .string()
                 .optional()
-                .describe(
-                    "Working directory (required for 'new-agent' target, defaults to session directory)",
-                ),
+                .describe("Working directory (required for 'new-agent' target, defaults to session directory)"),
             maxRuns: tool.schema
                 .number()
                 .int()
                 .optional()
                 .describe("Maximum number of executions before the schedule stops"),
-            expiresAt: tool.schema
-                .string()
-                .optional()
-                .describe("ISO 8601 timestamp after which the schedule stops"),
-            runOnCreate: tool.schema
-                .boolean()
-                .optional()
-                .describe("Whether to execute immediately upon creation"),
+            expiresAt: tool.schema.string().optional().describe("ISO 8601 timestamp after which the schedule stops"),
+            runOnCreate: tool.schema.boolean().optional().describe("Whether to execute immediately upon creation"),
         },
         async execute(args, context: ToolContext) {
             logger.info("Tool: paseo_schedule_create invoked", {
@@ -213,9 +186,7 @@ export function createScheduleCreateTool(
             const cadence = buildScheduleCadence({
                 cadenceType: args.cadenceType,
                 ...(args.everyMs !== undefined ? { everyMs: args.everyMs } : {}),
-                ...(args.cronExpression !== undefined
-                    ? { cronExpression: args.cronExpression }
-                    : {}),
+                ...(args.cronExpression !== undefined ? { cronExpression: args.cronExpression } : {}),
                 ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
             })
             if (!cadence) {
@@ -257,9 +228,7 @@ export function createScheduleCreateTool(
                         config: {
                             provider: resolvedProfile.provider,
                             cwd,
-                            ...(resolvedProfile.model !== undefined
-                                ? { model: resolvedProfile.model }
-                                : {}),
+                            ...(resolvedProfile.model !== undefined ? { model: resolvedProfile.model } : {}),
                             modeId: resolvedProfile.modeId,
                         },
                     }
@@ -309,40 +278,18 @@ export function createScheduleUpdateTool(
             id: tool.schema.string().describe("ID of the schedule to update"),
             name: tool.schema.string().optional().describe("New human-readable name"),
             prompt: tool.schema.string().optional().describe("New prompt for scheduled runs"),
-            cadenceType: tool.schema
-                .enum(["every", "cron"])
-                .optional()
-                .describe("New cadence type"),
+            cadenceType: tool.schema.enum(["every", "cron"]).optional().describe("New cadence type"),
             everyMs: tool.schema
                 .number()
                 .int()
                 .optional()
                 .describe("New interval in milliseconds (for 'every' cadence)"),
-            cronExpression: tool.schema
-                .string()
-                .optional()
-                .describe("New cron expression (for 'cron' cadence)"),
-            timezone: tool.schema
-                .string()
-                .optional()
-                .describe("New IANA timezone (for 'cron' cadence)"),
-            profile: tool.schema
-                .string()
-                .optional()
-                .describe("New OpenCode profile for new-agent schedules"),
-            cwd: tool.schema
-                .string()
-                .optional()
-                .describe("New working directory for new-agent schedules"),
-            maxRuns: tool.schema
-                .number()
-                .int()
-                .optional()
-                .describe("New maximum number of executions"),
-            expiresAt: tool.schema
-                .string()
-                .optional()
-                .describe("New ISO 8601 expiration timestamp"),
+            cronExpression: tool.schema.string().optional().describe("New cron expression (for 'cron' cadence)"),
+            timezone: tool.schema.string().optional().describe("New IANA timezone (for 'cron' cadence)"),
+            profile: tool.schema.string().optional().describe("New OpenCode profile for new-agent schedules"),
+            cwd: tool.schema.string().optional().describe("New working directory for new-agent schedules"),
+            maxRuns: tool.schema.number().int().optional().describe("New maximum number of executions"),
+            expiresAt: tool.schema.string().optional().describe("New ISO 8601 expiration timestamp"),
         },
         async execute(args, context: ToolContext) {
             logger.info("Tool: paseo_schedule_update invoked", { id: args.id })
@@ -350,9 +297,7 @@ export function createScheduleUpdateTool(
             const cadence = buildScheduleCadence({
                 ...(args.cadenceType !== undefined ? { cadenceType: args.cadenceType } : {}),
                 ...(args.everyMs !== undefined ? { everyMs: args.everyMs } : {}),
-                ...(args.cronExpression !== undefined
-                    ? { cronExpression: args.cronExpression }
-                    : {}),
+                ...(args.cronExpression !== undefined ? { cronExpression: args.cronExpression } : {}),
                 ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
             })
 
@@ -408,14 +353,9 @@ export function createScheduleUpdateTool(
 
 // ─── Schedule Pause Tool ─────────────────────────────────────────────────────
 
-export function createSchedulePauseTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createSchedulePauseTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Pause a running Paseo schedule. The schedule remains configured but stops executing.",
+        description: "Pause a running Paseo schedule. The schedule remains configured but stops executing.",
         args: {
             id: tool.schema.string().describe("ID of the schedule to pause"),
         },
@@ -432,14 +372,9 @@ export function createSchedulePauseTool(
 
 // ─── Schedule Resume Tool ────────────────────────────────────────────────────
 
-export function createScheduleResumeTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createScheduleResumeTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Resume a paused Paseo schedule. The schedule resumes executing on its configured cadence.",
+        description: "Resume a paused Paseo schedule. The schedule resumes executing on its configured cadence.",
         args: {
             id: tool.schema.string().describe("ID of the schedule to resume"),
         },
@@ -456,14 +391,9 @@ export function createScheduleResumeTool(
 
 // ─── Schedule Delete Tool ────────────────────────────────────────────────────
 
-export function createScheduleDeleteTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createScheduleDeleteTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Delete a Paseo schedule permanently. The schedule and its history are removed.",
+        description: "Delete a Paseo schedule permanently. The schedule and its history are removed.",
         args: {
             id: tool.schema.string().describe("ID of the schedule to delete"),
         },
@@ -480,11 +410,7 @@ export function createScheduleDeleteTool(
 
 // ─── Schedule Run Once Tool ──────────────────────────────────────────────────
 
-export function createScheduleRunOnceTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createScheduleRunOnceTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
         description:
             "Trigger a single immediate execution of a Paseo schedule. Does not affect the regular cadence. " +
@@ -505,14 +431,9 @@ export function createScheduleRunOnceTool(
 
 // ─── Schedule Logs Tool ──────────────────────────────────────────────────────
 
-export function createScheduleLogsTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createScheduleLogsTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Retrieve execution logs for a Paseo schedule. Returns recent run history and outcomes.",
+        description: "Retrieve execution logs for a Paseo schedule. Returns recent run history and outcomes.",
         args: {
             id: tool.schema.string().describe("ID of the schedule to retrieve logs for"),
         },

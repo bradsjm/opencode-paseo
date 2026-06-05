@@ -6,13 +6,9 @@ export function mapDaemonWorkerStatus(input: {
     attentionReason?: string | null
     pendingPermissions?: unknown[]
 }): WorkerStatus {
-    const hasPendingPermissions =
-        Array.isArray(input.pendingPermissions) && input.pendingPermissions.length > 0
+    const hasPendingPermissions = Array.isArray(input.pendingPermissions) && input.pendingPermissions.length > 0
 
-    if (
-        input.requiresAttention &&
-        (input.attentionReason === "permission" || hasPendingPermissions)
-    ) {
+    if (input.requiresAttention && (input.attentionReason === "permission" || hasPendingPermissions)) {
         return "blocked"
     }
 

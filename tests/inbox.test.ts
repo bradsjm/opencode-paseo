@@ -2,7 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createPluginState, insertInboxEvent } from "../lib/state/state.js"
 import { readInbox, getInboxStatus } from "../lib/inbox/inbox.js"
-import type { InboxEvent } from "../lib/state/types.js"
 
 function seedInbox(state: ReturnType<typeof createPluginState>, count: number): void {
     for (let i = 0; i < count; i++) {

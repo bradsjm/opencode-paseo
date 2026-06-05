@@ -2,7 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { shouldNudge, formatNudgeMessage } from "../lib/notifier.js"
 import type { NotificationsConfig } from "../lib/config.js"
-import type { InboxEventKind } from "../lib/state/types.js"
 
 // ─── shouldNudge ─────────────────────────────────────────────────────────────
 

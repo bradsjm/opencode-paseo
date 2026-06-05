@@ -1,11 +1,6 @@
 import { sendNudge } from "../notifier.js"
 import { RESERVED_CHAT_ROOM_LABEL } from "../chat/worker-room.js"
-import {
-    getOrCreateSession,
-    mapAgentToWorkerSummary,
-    recordCreatedWorker,
-    upsertWorker,
-} from "../state/state.js"
+import { getOrCreateSession, mapAgentToWorkerSummary, recordCreatedWorker, upsertWorker } from "../state/state.js"
 import type { PluginState, WorkerLaunchRecord, WorkerSummary } from "../state/types.js"
 import type { CreatedWorker, PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
@@ -74,10 +69,7 @@ function getQueuedPosition(state: PluginState, launchId: string): number {
     return index >= 0 ? index + 1 : 0
 }
 
-function buildLaunchLabels(
-    input: EnqueueWorkerLaunchInput,
-    launchId: string,
-): Record<string, string> {
+function buildLaunchLabels(input: EnqueueWorkerLaunchInput, launchId: string): Record<string, string> {
     const labels = { ...(input.labels ?? {}) }
     labels[RESERVED_LAUNCH_ID_LABEL] = launchId
     labels[RESERVED_SESSION_ID_LABEL] = input.sessionId
@@ -154,13 +146,9 @@ export function createWorkerLaunchQueueController(
                         provider: record.provider,
                         ...(record.model !== undefined ? { model: record.model } : {}),
                         modeId: record.modeId,
-                        ...(record.initialPrompt !== null
-                            ? { initialPrompt: record.initialPrompt }
-                            : {}),
+                        ...(record.initialPrompt !== null ? { initialPrompt: record.initialPrompt } : {}),
                         labels: record.labels,
-                        ...(record.worktreeName !== null
-                            ? { worktreeName: record.worktreeName }
-                            : {}),
+                        ...(record.worktreeName !== null ? { worktreeName: record.worktreeName } : {}),
                     })
 
                     record.status = "created"
@@ -184,8 +172,7 @@ export function createWorkerLaunchQueueController(
                         const enriched = await client.fetchWorker(created.id)
                         if (enriched?.agent) {
                             const mapped = mapAgentToWorkerSummary(enriched.agent)
-                            mapped.unreadEventCount =
-                                state.workers.get(created.id)?.unreadEventCount ?? 0
+                            mapped.unreadEventCount = state.workers.get(created.id)?.unreadEventCount ?? 0
                             upsertWorker(state, mapped)
                             onWorkerObserved?.(mapped)
                         }
@@ -211,12 +198,7 @@ export function createWorkerLaunchQueueController(
 
                     logger.warn("Worker launch failed", { launchId, error })
 
-                    sendNudge(
-                        opencodeClient,
-                        [record.sessionId],
-                        buildFailedNudgeMessage(launchId, error),
-                        logger,
-                    )
+                    sendNudge(opencodeClient, [record.sessionId], buildFailedNudgeMessage(launchId, error), logger)
                 } finally {
                     state.activeWorkerLaunchId = null
                 }
@@ -232,8 +214,7 @@ export function createWorkerLaunchQueueController(
     return {
         enqueueWorkerLaunch(input) {
             const launchId = generateLaunchId()
-            const position =
-                state.workerLaunchQueue.length + (state.activeWorkerLaunchId ? 1 : 0) + 1
+            const position = state.workerLaunchQueue.length + (state.activeWorkerLaunchId ? 1 : 0) + 1
             const record: WorkerLaunchRecord = {
                 launchId,
                 status: "queued",
@@ -289,9 +270,7 @@ export function createWorkerLaunchQueueController(
                 enqueuedAt: record.enqueuedAt,
                 startedAt: record.startedAt,
                 finishedAt: record.finishedAt,
-                ...(record.status === "queued"
-                    ? { position: getQueuedPosition(state, launchId) }
-                    : {}),
+                ...(record.status === "queued" ? { position: getQueuedPosition(state, launchId) } : {}),
                 ...(record.workerId ? { workerId: record.workerId } : {}),
                 ...(record.error ? { error: record.error } : {}),
             }

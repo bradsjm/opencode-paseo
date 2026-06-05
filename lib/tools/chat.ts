@@ -90,14 +90,8 @@ export function createChatPostTool(client: PaseoTransport, logger: Logger): Tool
         args: {
             room: tool.schema.string().describe("Name of the chat room to post into"),
             body: tool.schema.string().describe("Message body to post"),
-            authorAgentId: tool.schema
-                .string()
-                .optional()
-                .describe('Optional author agent ID. Defaults to "manual".'),
-            replyToMessageId: tool.schema
-                .string()
-                .optional()
-                .describe("Optional message ID to reply to"),
+            authorAgentId: tool.schema.string().optional().describe('Optional author agent ID. Defaults to "manual".'),
+            replyToMessageId: tool.schema.string().optional().describe("Optional message ID to reply to"),
         },
         async execute(args) {
             const room = requireChatRoom(args.room)
@@ -110,9 +104,7 @@ export function createChatPostTool(client: PaseoTransport, logger: Logger): Tool
                 room,
                 body: args.body,
                 authorAgentId: args.authorAgentId ?? "manual",
-                ...(args.replyToMessageId !== undefined
-                    ? { replyToMessageId: args.replyToMessageId }
-                    : {}),
+                ...(args.replyToMessageId !== undefined ? { replyToMessageId: args.replyToMessageId } : {}),
             })
             return {
                 title: `Chat Message Posted: ${room}`,
@@ -128,14 +120,8 @@ export function createChatReadTool(client: PaseoTransport, logger: Logger): Tool
         args: {
             room: tool.schema.string().describe("Name of the chat room to read"),
             limit: tool.schema.number().int().optional().describe("Maximum number of messages"),
-            since: tool.schema
-                .string()
-                .optional()
-                .describe("Only return messages created after this timestamp"),
-            authorAgentId: tool.schema
-                .string()
-                .optional()
-                .describe("Optional author agent ID filter"),
+            since: tool.schema.string().optional().describe("Only return messages created after this timestamp"),
+            authorAgentId: tool.schema.string().optional().describe("Optional author agent ID filter"),
         },
         async execute(args) {
             const room = requireChatRoom(args.room)
@@ -165,11 +151,7 @@ export function createChatWaitTool(client: PaseoTransport, logger: Logger): Tool
             "Wait for new chat messages in a Paseo room. Reads the latest message first and waits for anything newer.",
         args: {
             room: tool.schema.string().describe("Name of the chat room to wait on"),
-            timeoutMs: tool.schema
-                .number()
-                .int()
-                .optional()
-                .describe("Maximum time to wait in milliseconds"),
+            timeoutMs: tool.schema.number().int().optional().describe("Maximum time to wait in milliseconds"),
         },
         async execute(args) {
             const room = requireChatRoom(args.room)

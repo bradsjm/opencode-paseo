@@ -27,10 +27,7 @@ const NON_BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
 ])
 
 /** Event kinds that always produce nudges (when notifications enabled). */
-const BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
-    "worker.blocked",
-    "permission.requested",
-])
+const BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set(["worker.blocked", "permission.requested"])
 
 /**
  * Determine whether a given event kind should produce a session nudge.
@@ -47,11 +44,7 @@ export function shouldNudge(kind: InboxEventKind, config: NotificationsConfig): 
 /**
  * Build a concise nudge message for injection into the controller session.
  */
-export function formatNudgeMessage(
-    kind: InboxEventKind,
-    resourceId: string,
-    summary: string,
-): string {
+export function formatNudgeMessage(kind: InboxEventKind, resourceId: string, summary: string): string {
     const prefix = `[paseo:${kind}]`
     return `${prefix} ${summary} (resource: ${resourceId})`
 }
@@ -63,12 +56,7 @@ export function formatNudgeMessage(
  * Failures are logged but never thrown — nudges are fire-and-forget.
  * All prompts are fired concurrently without awaiting.
  */
-export function sendNudge(
-    client: OpencodeClient,
-    sessionIds: string[],
-    message: string,
-    logger: Logger,
-): void {
+export function sendNudge(client: OpencodeClient, sessionIds: string[], message: string, logger: Logger): void {
     for (const sessionId of sessionIds) {
         client.session
             .prompt({

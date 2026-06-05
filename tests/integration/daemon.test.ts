@@ -35,9 +35,7 @@ async function isDaemonReachable(): Promise<boolean> {
 test("real daemon integration", async (t) => {
     const reachable = await isDaemonReachable()
     if (!reachable) {
-        t.skip(
-            `Paseo daemon not reachable on ${DAEMON_HOST}:${DAEMON_PORT} — skipping integration tests`,
-        )
+        t.skip(`Paseo daemon not reachable on ${DAEMON_HOST}:${DAEMON_PORT} — skipping integration tests`)
         return
     }
 
@@ -50,10 +48,7 @@ test("real daemon integration", async (t) => {
             assert.ok(serverInfo, "getServerInfo() should return server info after connect")
             assert.ok(typeof serverInfo!.serverId === "string", "serverId should be a string")
             assert.ok(serverInfo!.serverId.length > 0, "serverId should not be empty")
-            assert.ok(
-                typeof serverInfo!.capabilities === "object",
-                "capabilities should be an object",
-            )
+            assert.ok(typeof serverInfo!.capabilities === "object", "capabilities should be an object")
 
             assert.ok(client.isConnected(), "client should report connected")
         } finally {
@@ -113,9 +108,7 @@ test("real daemon integration", async (t) => {
         try {
             await client.connect()
 
-            let eventReceived = false
             const unsubscribe = client.onEvent((event) => {
-                eventReceived = true
                 assert.ok(typeof event.type === "string", "event.type should be a string")
                 assert.ok(typeof event.payload === "object", "event.payload should be an object")
             })

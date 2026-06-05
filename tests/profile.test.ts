@@ -88,10 +88,7 @@ test("mapAgentToProfile", async (t) => {
 
 test("formatProfileModelLabel", async (t) => {
     await t.test("renders explicit provider/model", () => {
-        assert.equal(
-            formatProfileModelLabel({ providerID: "openai", modelID: "gpt-5.4" }),
-            "openai/gpt-5.4",
-        )
+        assert.equal(formatProfileModelLabel({ providerID: "openai", modelID: "gpt-5.4" }), "openai/gpt-5.4")
     })
 
     await t.test("renders inherited model label when model is not pinned", () => {

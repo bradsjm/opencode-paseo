@@ -29,11 +29,7 @@ export {
     createWorkerUpdateTool,
     createWorkerInspectTool,
 } from "./worker.js"
-export {
-    createWorktreeListTool,
-    createWorktreeCreateTool,
-    createWorktreeArchiveTool,
-} from "./worktree.js"
+export { createWorktreeListTool, createWorktreeCreateTool, createWorktreeArchiveTool } from "./worktree.js"
 export {
     createScheduleListTool,
     createScheduleInspectTool,

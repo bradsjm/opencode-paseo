@@ -184,10 +184,7 @@ test("paseo_terminal_send_input", async (t) => {
         })
 
         const toolDef = createTerminalSendInputTool(state, client, logger)
-        await assert.rejects(
-            () => toolDef.execute({ terminalId: "t1", input: "pwd\n" }, mockContext()),
-            /send failed/,
-        )
+        await assert.rejects(() => toolDef.execute({ terminalId: "t1", input: "pwd\n" }, mockContext()), /send failed/)
     })
 })
 

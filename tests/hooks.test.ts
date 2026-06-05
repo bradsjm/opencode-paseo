@@ -5,7 +5,6 @@ import {
     insertInboxEvent,
     getOrCreateSession,
     registerEphemeralWorkerRun,
-    recordCreatedWorker,
 } from "../lib/state/state.js"
 import { createDaemonEventHandler, createEventHandler } from "../lib/hooks.js"
 import { Logger } from "../lib/logger.js"

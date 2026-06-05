@@ -16,10 +16,7 @@ const TEST_CONFIG: PluginConfig = {
     agents: {},
 }
 
-function seedWorker(
-    state: ReturnType<typeof createPluginState>,
-    partial: Partial<WorkerSummary> = {},
-) {
+function seedWorker(state: ReturnType<typeof createPluginState>, partial: Partial<WorkerSummary> = {}) {
     const worker: WorkerSummary = {
         id: partial.id ?? "w1",
         title: partial.title ?? "Worker 1",
@@ -69,9 +66,7 @@ test("createWorkerStallMonitor", async (t) => {
         }) as typeof setInterval
         globalThis.clearInterval = (() => {}) as typeof clearInterval
 
-        const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) =>
-            emitted.push(event),
-        )
+        const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) => emitted.push(event))
         monitor.seedFromWorkers()
         monitor.start()
 
@@ -139,9 +134,7 @@ test("createWorkerStallMonitor", async (t) => {
         }) as typeof setInterval
         globalThis.clearInterval = (() => {}) as typeof clearInterval
 
-        const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) =>
-            emitted.push(event),
-        )
+        const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) => emitted.push(event))
         monitor.seedFromWorkers()
         monitor.start()
         sweep!()

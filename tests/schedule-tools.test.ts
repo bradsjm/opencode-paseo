@@ -315,54 +315,51 @@ test("paseo_schedule_update", async (t) => {
         assert.deepEqual(receivedOptions.newAgentConfig, { cwd: "/repo" })
     })
 
-    await t.test(
-        "resolves profile using provided cwd when profile and cwd are both set",
-        async () => {
-            const state = createPluginState()
-            let receivedOptions: any = null
-            let snapshotCwd: string | undefined
-            let profileDirectory: string | undefined
-            const client = createMockTransport({
-                getProvidersSnapshot: async (cwd) => {
-                    snapshotCwd = cwd
-                    return [{ id: "opencode", provider: "opencode" }]
+    await t.test("resolves profile using provided cwd when profile and cwd are both set", async () => {
+        const state = createPluginState()
+        let receivedOptions: any = null
+        let snapshotCwd: string | undefined
+        let profileDirectory: string | undefined
+        const client = createMockTransport({
+            getProvidersSnapshot: async (cwd) => {
+                snapshotCwd = cwd
+                return [{ id: "opencode", provider: "opencode" }]
+            },
+            scheduleUpdate: async (opts) => {
+                receivedOptions = opts
+                return { requestId: "req", schedule: null, error: null }
+            },
+        })
+        const opencode = {
+            app: {
+                agents: async ({ query }: { query?: { directory?: string } }) => {
+                    profileDirectory = query?.directory
+                    return {
+                        data: [
+                            {
+                                name: "build",
+                                description: "Build agent",
+                                mode: "primary",
+                                model: { providerID: "openai", modelID: "gpt-5.4" },
+                            },
+                        ],
+                    }
                 },
-                scheduleUpdate: async (opts) => {
-                    receivedOptions = opts
-                    return { requestId: "req", schedule: null, error: null }
-                },
-            })
-            const opencode = {
-                app: {
-                    agents: async ({ query }: { query?: { directory?: string } }) => {
-                        profileDirectory = query?.directory
-                        return {
-                            data: [
-                                {
-                                    name: "build",
-                                    description: "Build agent",
-                                    mode: "primary",
-                                    model: { providerID: "openai", modelID: "gpt-5.4" },
-                                },
-                            ],
-                        }
-                    },
-                },
-            } as unknown as OpencodeClient
+            },
+        } as unknown as OpencodeClient
 
-            const toolDef = createScheduleUpdateTool(state, client, opencode, logger)
-            await toolDef.execute({ id: "sched-2b", profile: "build", cwd: "/repo" }, mockContext())
+        const toolDef = createScheduleUpdateTool(state, client, opencode, logger)
+        await toolDef.execute({ id: "sched-2b", profile: "build", cwd: "/repo" }, mockContext())
 
-            assert.equal(profileDirectory, "/repo")
-            assert.equal(snapshotCwd, "/repo")
-            assert.deepEqual(receivedOptions.newAgentConfig, {
-                provider: "opencode",
-                model: "openai/gpt-5.4",
-                modeId: "build",
-                cwd: "/repo",
-            })
-        },
-    )
+        assert.equal(profileDirectory, "/repo")
+        assert.equal(snapshotCwd, "/repo")
+        assert.deepEqual(receivedOptions.newAgentConfig, {
+            provider: "opencode",
+            model: "openai/gpt-5.4",
+            modeId: "build",
+            cwd: "/repo",
+        })
+    })
 
     await t.test("rejects empty profile", async () => {
         const state = createPluginState()

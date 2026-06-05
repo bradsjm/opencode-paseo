@@ -1,11 +1,6 @@
 import type { OutputConfig } from "../config.js"
 import { getHydrationPermissionEventId } from "../inbox/ids.js"
-import type {
-    PluginState,
-    InboxEvent,
-    TerminalSessionSummary,
-    WorkerSummary,
-} from "../state/types.js"
+import type { PluginState, InboxEvent, TerminalSessionSummary, WorkerSummary } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { truncateSummary } from "../inbox/summary.js"
@@ -79,9 +74,7 @@ export async function hydrate(
                 const blockKind = hasPermissions ? "permission.requested" : "worker.blocked"
                 const permissionId = hasPermissions ? worker.pendingPermissionIds[0] : undefined
                 const event: InboxEvent = {
-                    id: permissionId
-                        ? getHydrationPermissionEventId(permissionId)
-                        : `hydration-worker-blocked-${a.id}`,
+                    id: permissionId ? getHydrationPermissionEventId(permissionId) : `hydration-worker-blocked-${a.id}`,
                     kind: blockKind,
                     resourceId: a.id,
                     blocking: true,

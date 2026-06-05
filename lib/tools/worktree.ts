@@ -6,23 +6,15 @@ import type { Logger } from "../logger.js"
 
 // ─── Worktree List Tool ──────────────────────────────────────────────────────
 
-export function createWorktreeListTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createWorktreeListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "List Paseo worktrees for a project. Requires explicit directory context via cwd or repoRoot.",
+        description: "List Paseo worktrees for a project. Requires explicit directory context via cwd or repoRoot.",
         args: {
             cwd: tool.schema
                 .string()
                 .optional()
                 .describe("Working directory of the project (defaults to session directory)"),
-            repoRoot: tool.schema
-                .string()
-                .optional()
-                .describe("Repository root path (alternative to cwd)"),
+            repoRoot: tool.schema.string().optional().describe("Repository root path (alternative to cwd)"),
         },
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
@@ -47,32 +39,18 @@ export function createWorktreeListTool(
 
 // ─── Worktree Create Tool ────────────────────────────────────────────────────
 
-export function createWorktreeCreateTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createWorktreeCreateTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Create a new Paseo worktree. Requires explicit directory context for the project.",
+        description: "Create a new Paseo worktree. Requires explicit directory context for the project.",
         args: {
             cwd: tool.schema
                 .string()
                 .optional()
                 .describe("Working directory of the project (defaults to session directory)"),
-            projectId: tool.schema
-                .string()
-                .optional()
-                .describe("Project ID to create the worktree under"),
+            projectId: tool.schema.string().optional().describe("Project ID to create the worktree under"),
             worktreeSlug: tool.schema.string().optional().describe("Slug/name for the worktree"),
-            refName: tool.schema
-                .string()
-                .optional()
-                .describe("Git ref (branch/tag/commit) to base the worktree on"),
-            action: tool.schema
-                .string()
-                .optional()
-                .describe("Action to perform on worktree creation"),
+            refName: tool.schema.string().optional().describe("Git ref (branch/tag/commit) to base the worktree on"),
+            action: tool.schema.string().optional().describe("Action to perform on worktree creation"),
             githubPrNumber: tool.schema
                 .number()
                 .int()
@@ -96,9 +74,7 @@ export function createWorktreeCreateTool(
                 ...(args.worktreeSlug !== undefined ? { worktreeSlug: args.worktreeSlug } : {}),
                 ...(args.refName !== undefined ? { refName: args.refName } : {}),
                 ...(args.action !== undefined ? { action: args.action } : {}),
-                ...(args.githubPrNumber !== undefined
-                    ? { githubPrNumber: args.githubPrNumber }
-                    : {}),
+                ...(args.githubPrNumber !== undefined ? { githubPrNumber: args.githubPrNumber } : {}),
             })
 
             return {
@@ -111,30 +87,17 @@ export function createWorktreeCreateTool(
 
 // ─── Worktree Archive Tool ───────────────────────────────────────────────────
 
-export function createWorktreeArchiveTool(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-): ToolDefinition {
+export function createWorktreeArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
     return tool({
-        description:
-            "Archive a Paseo worktree. Requires explicit directory context or worktree identification.",
+        description: "Archive a Paseo worktree. Requires explicit directory context or worktree identification.",
         args: {
-            worktreePath: tool.schema
-                .string()
-                .optional()
-                .describe("Path to the worktree to archive"),
+            worktreePath: tool.schema.string().optional().describe("Path to the worktree to archive"),
             repoRoot: tool.schema.string().optional().describe("Repository root path"),
-            branchName: tool.schema
-                .string()
-                .optional()
-                .describe("Branch name of the worktree to archive"),
+            branchName: tool.schema.string().optional().describe("Branch name of the worktree to archive"),
             cwd: tool.schema
                 .string()
                 .optional()
-                .describe(
-                    "Working directory (defaults to session directory, used as repoRoot fallback)",
-                ),
+                .describe("Working directory (defaults to session directory, used as repoRoot fallback)"),
         },
         async execute(args, context: ToolContext) {
             const cwd = args.cwd ?? context.directory
@@ -144,9 +107,7 @@ export function createWorktreeArchiveTool(
             })
 
             if (!args.worktreePath && !args.branchName && !args.repoRoot) {
-                throw new Error(
-                    "At least one of worktreePath, branchName, or repoRoot must be provided",
-                )
+                throw new Error("At least one of worktreePath, branchName, or repoRoot must be provided")
             }
 
             const result = await client.archiveWorktree({

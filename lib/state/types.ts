@@ -2,14 +2,7 @@
 
 export type TerminalStatus = "running" | "exited" | "killed" | "unknown"
 
-export type WorkerStatus =
-    | "running"
-    | "idle"
-    | "blocked"
-    | "failed"
-    | "finished"
-    | "canceled"
-    | "unknown"
+export type WorkerStatus = "running" | "idle" | "blocked" | "failed" | "finished" | "canceled" | "unknown"
 
 export type InboxEventKind =
     | "worker.started"

@@ -15,9 +15,7 @@ export function normalizeChatRoom(chatRoom: string | null | undefined): string |
     return normalized
 }
 
-export function getChatRoomFromAgentLabels(
-    labels: AgentSummary["labels"] | undefined,
-): string | undefined {
+export function getChatRoomFromAgentLabels(labels: AgentSummary["labels"] | undefined): string | undefined {
     if (!labels || Array.isArray(labels)) {
         return undefined
     }
@@ -31,10 +29,7 @@ export function getChatRoomFromAgentLabels(
     return normalized || undefined
 }
 
-export function appendChatRoomCoordinationPrompt(
-    initialPrompt: string | undefined,
-    chatRoom: string,
-): string {
+export function appendChatRoomCoordinationPrompt(initialPrompt: string | undefined, chatRoom: string): string {
     const block = [
         "Paseo chat coordination instructions:",
         `- Use the Paseo chat room "${chatRoom}" with \`paseo chat post\`, \`paseo chat read\`, and \`paseo chat wait\`.`,

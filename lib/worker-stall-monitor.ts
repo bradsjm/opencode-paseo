@@ -24,10 +24,7 @@ function parseTimestampMs(timestamp: string | undefined): number | null {
     return Number.isFinite(value) ? value : null
 }
 
-function pickSeedTimestamp(
-    worker: WorkerSummary,
-    nowMs: number,
-): { ms: number; iso: string | null } {
+function pickSeedTimestamp(worker: WorkerSummary, nowMs: number): { ms: number; iso: string | null } {
     const updatedMs = parseTimestampMs(worker.updatedAt)
     if (updatedMs !== null) return { ms: updatedMs, iso: worker.updatedAt ?? null }
 
@@ -64,10 +61,7 @@ export function createWorkerStallMonitor(
     emitEvent: (event: DaemonEvent) => void,
 ): WorkerStallMonitor {
     const entries = new Map<string, WorkerMonitorEntry>()
-    const sweepIntervalMs = Math.max(
-        10_000,
-        Math.min(30_000, config.notifications.stalledThresholdMs / 2),
-    )
+    const sweepIntervalMs = Math.max(10_000, Math.min(30_000, config.notifications.stalledThresholdMs / 2))
     let intervalHandle: ReturnType<typeof setInterval> | null = null
 
     const clearStall = (workerId: string, reason: string): void => {
@@ -84,9 +78,7 @@ export function createWorkerStallMonitor(
 
         const nowMs = Date.now()
         const knownWorker = worker ?? state.workers.get(workerId)
-        const seeded = knownWorker
-            ? pickSeedTimestamp(knownWorker, nowMs)
-            : { ms: nowMs, iso: null }
+        const seeded = knownWorker ? pickSeedTimestamp(knownWorker, nowMs) : { ms: nowMs, iso: null }
         const created: WorkerMonitorEntry = {
             lastActivityAtMs: seeded.ms,
             lastActivityAtIso: seeded.iso,
@@ -97,11 +89,7 @@ export function createWorkerStallMonitor(
         return created
     }
 
-    const recordActivity = (
-        workerId: string,
-        timestamp: string | undefined,
-        reason: string,
-    ): void => {
+    const recordActivity = (workerId: string, timestamp: string | undefined, reason: string): void => {
         const worker = state.workers.get(workerId)
         const entry = ensureEntry(workerId, worker)
         const parsedMs = parseTimestampMs(timestamp)

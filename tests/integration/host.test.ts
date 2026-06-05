@@ -1,15 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import {
-    existsSync,
-    mkdirSync,
-    mkdtempSync,
-    readFileSync,
-    readdirSync,
-    rmSync,
-    writeFileSync,
-} from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { pathToFileURL } from "url"
@@ -112,11 +104,7 @@ test("plugin loads in a real Opencode host and writes debug logs", async (t) => 
 
         // Graceful degrade: no Paseo tools registered when daemon is unreachable
         const paseoTools = (toolIDs.data ?? []).filter((id: string) => id.startsWith("paseo_"))
-        assert.equal(
-            paseoTools.length,
-            0,
-            `expected no Paseo tools but found: ${paseoTools.join(", ")}`,
-        )
+        assert.equal(paseoTools.length, 0, `expected no Paseo tools but found: ${paseoTools.join(", ")}`)
 
         assert.ok(existsSync(logDir), "expected debug log directory to be created")
 

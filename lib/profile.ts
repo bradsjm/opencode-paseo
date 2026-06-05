@@ -52,10 +52,7 @@ export function mapAgentToProfile(agent: AgentLike): ProfileSummary {
  * Fetch available OpenCode profiles for the given directory.
  * Returns an array of ProfileSummary objects.
  */
-export async function listProfiles(
-    client: OpencodeClient,
-    directory: string,
-): Promise<ProfileSummary[]> {
+export async function listProfiles(client: OpencodeClient, directory: string): Promise<ProfileSummary[]> {
     const result = await client.app.agents({ query: { directory } })
     const agents = (result.data ?? []) as Agent[]
     return agents.map(mapAgentToProfile)
@@ -80,9 +77,7 @@ function summarizeBashPermission(
     return values.every((value) => value === firstValue) ? firstValue : "mixed"
 }
 
-export function formatProfileModelLabel(
-    profile: Pick<ProfileSummary, "providerID" | "modelID">,
-): string {
+export function formatProfileModelLabel(profile: Pick<ProfileSummary, "providerID" | "modelID">): string {
     const providerID = profile.providerID?.trim()
     const modelID = profile.modelID?.trim()
     return providerID && modelID ? `${providerID}/${modelID}` : DEFAULT_MODEL_LABEL

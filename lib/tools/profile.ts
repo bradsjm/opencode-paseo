@@ -10,10 +10,7 @@ import {
 
 // ─── Profile List Tool ───────────────────────────────────────────────────────
 
-export function createProfileListTool(
-    opencodeClient: OpencodeClient,
-    logger: Logger,
-): ToolDefinition {
+export function createProfileListTool(opencodeClient: OpencodeClient, logger: Logger): ToolDefinition {
     return tool({
         description:
             "List available OpenCode agent profiles for the current workspace. " +

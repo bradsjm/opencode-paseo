@@ -66,10 +66,6 @@ export default tseslint.config(
         },
         rules: {
             "@typescript-eslint/no-floating-promises": "off",
-            "@typescript-eslint/no-misused-promises": "off",
-            "@typescript-eslint/await-thenable": "off",
-            "@typescript-eslint/consistent-type-imports": "off",
-            "@typescript-eslint/no-unused-vars": "off",
         },
     },
 )

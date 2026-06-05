@@ -39,10 +39,7 @@ export function insertInboxEvent(
     state.eventCounter++
 
     for (const session of state.sessions.values()) {
-        if (
-            session.createdWorkerIds.has(event.resourceId) ||
-            session.createdTerminalIds.has(event.resourceId)
-        ) {
+        if (session.createdWorkerIds.has(event.resourceId) || session.createdTerminalIds.has(event.resourceId)) {
             session.unreadEvents.set(event.id, event)
             if (event.blocking) {
                 session.pendingPermissions.set(event.id, event)
@@ -88,10 +85,7 @@ export function markUnreadStallEventsRead(state: PluginState, workerId: string):
 export function findSessionsForResource(state: PluginState, resourceId: string): string[] {
     const result: string[] = []
     for (const session of state.sessions.values()) {
-        if (
-            session.createdWorkerIds.has(resourceId) ||
-            session.createdTerminalIds.has(resourceId)
-        ) {
+        if (session.createdWorkerIds.has(resourceId) || session.createdTerminalIds.has(resourceId)) {
             result.push(session.opencodeSessionId)
         }
     }
@@ -123,10 +117,7 @@ export function buildBlockingMetadata(
     return extra ?? {}
 }
 
-export function getBlockingAction(w: {
-    status: WorkerStatus
-    pendingPermissionIds: string[]
-}): string | null {
+export function getBlockingAction(w: { status: WorkerStatus; pendingPermissionIds: string[] }): string | null {
     if (w.status === "blocked") {
         if (w.pendingPermissionIds.length > 0) {
             return "paseo_permission_respond"

@@ -37,11 +37,7 @@ import {
     createWorkerUpdateTool,
     createWorkerInspectTool,
 } from "./lib/tools/worker.js"
-import {
-    createWorktreeListTool,
-    createWorktreeCreateTool,
-    createWorktreeArchiveTool,
-} from "./lib/tools/worktree.js"
+import { createWorktreeListTool, createWorktreeCreateTool, createWorktreeArchiveTool } from "./lib/tools/worktree.js"
 import {
     createScheduleListTool,
     createScheduleInspectTool,
@@ -94,21 +90,13 @@ const server: Plugin = (async (ctx) => {
         chatWatcher.observeWorker(worker)
     }
 
-    const workerLaunchQueue = createWorkerLaunchQueueController(
-        state,
-        client,
-        ctx.client,
-        logger,
-        (worker) => chatWatcher.observeWorker(worker),
+    const workerLaunchQueue = createWorkerLaunchQueueController(state, client, ctx.client, logger, (worker) =>
+        chatWatcher.observeWorker(worker),
     )
 
     // Attach live event listener
-    const daemonEventHandler = createDaemonEventHandler(
-        state,
-        logger,
-        config,
-        ctx.client,
-        (worker) => chatWatcher.observeWorker(worker),
+    const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client, (worker) =>
+        chatWatcher.observeWorker(worker),
     )
     const stallMonitor = createWorkerStallMonitor(state, logger, config, daemonEventHandler)
     stallMonitor.seedFromWorkers()

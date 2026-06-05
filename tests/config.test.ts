@@ -4,8 +4,9 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync
 import { join } from "path"
 import { pathToFileURL } from "url"
 import { tmpdir } from "os"
+import type * as ConfigExports from "../lib/config.js"
 
-type ConfigModule = typeof import("../lib/config.js")
+type ConfigModule = typeof ConfigExports
 
 function loadConfigModule(cacheKey: string): Promise<ConfigModule> {
     const moduleUrl = pathToFileURL(join(process.cwd(), "lib", "config.ts"))
@@ -263,11 +264,7 @@ test("getConfig", async (t) => {
     await t.test("preserves non-local daemon hosts from config", () => {
         const configDir = join(tempDir, "config")
         mkdirSync(configDir, { recursive: true })
-        writeFileSync(
-            join(configDir, "paseo.jsonc"),
-            JSON.stringify({ daemon: { host: "192.168.1.10" } }),
-            "utf-8",
-        )
+        writeFileSync(join(configDir, "paseo.jsonc"), JSON.stringify({ daemon: { host: "192.168.1.10" } }), "utf-8")
 
         process.env.OPENCODE_CONFIG_DIR = configDir
         return loadConfigModule("non-local-host").then((mod) => {

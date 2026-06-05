@@ -23,10 +23,7 @@ export {
     markUnreadStallEventsRead,
 } from "./inbox-state.js"
 
-export function createSessionMapping(
-    opencodeSessionId: string,
-    projectRoot: string,
-): SessionMapping {
+export function createSessionMapping(opencodeSessionId: string, projectRoot: string): SessionMapping {
     const now = Date.now()
     return {
         opencodeSessionId,
@@ -74,11 +71,7 @@ export function resetPluginState(state: PluginState): void {
     state.eventCounter = 0
 }
 
-export function setConnectionStatus(
-    state: PluginState,
-    status: ConnectionStatus,
-    error?: string,
-): void {
+export function setConnectionStatus(state: PluginState, status: ConnectionStatus, error?: string): void {
     state.connectionStatus = status
     if (error !== undefined) {
         state.lastError = error
@@ -91,11 +84,7 @@ export function setCapabilities(state: PluginState, caps: CapabilitySnapshot): v
     state.capabilities = caps
 }
 
-export function getOrCreateSession(
-    state: PluginState,
-    sessionId: string,
-    projectRoot: string,
-): SessionMapping {
+export function getOrCreateSession(state: PluginState, sessionId: string, projectRoot: string): SessionMapping {
     let mapping = state.sessions.get(sessionId)
     if (!mapping) {
         mapping = createSessionMapping(sessionId, projectRoot)
@@ -130,11 +119,7 @@ export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
 // session's createdTerminalIds so that subsequent inbox events for this
 // terminal are routed to the correct session.
 
-export function recordCreatedTerminal(
-    state: PluginState,
-    sessionId: string,
-    terminal: TerminalSessionSummary,
-): void {
+export function recordCreatedTerminal(state: PluginState, sessionId: string, terminal: TerminalSessionSummary): void {
     state.terminals.set(terminal.id, terminal)
     const session = state.sessions.get(sessionId)
     if (session) {
@@ -148,11 +133,7 @@ export function recordCreatedTerminal(
 // session's createdWorkerIds so that subsequent inbox events for this
 // worker are routed to the correct session.
 
-export function recordCreatedWorker(
-    state: PluginState,
-    sessionId: string,
-    worker: WorkerSummary,
-): void {
+export function recordCreatedWorker(state: PluginState, sessionId: string, worker: WorkerSummary): void {
     upsertWorker(state, worker)
     const session = state.sessions.get(sessionId)
     if (session) {
@@ -175,10 +156,7 @@ export function registerEphemeralWorkerRun(
     })
 }
 
-export function removeEphemeralWorkerRun(
-    state: PluginState,
-    workerId: string,
-): EphemeralWorkerRunRecord | undefined {
+export function removeEphemeralWorkerRun(state: PluginState, workerId: string): EphemeralWorkerRunRecord | undefined {
     const record = state.ephemeralWorkerRuns.get(workerId)
     state.ephemeralWorkerRuns.delete(workerId)
     return record
@@ -270,9 +248,7 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
     const labels: string[] = Array.isArray(rawLabels)
         ? rawLabels.filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
         : rawLabels && typeof rawLabels === "object"
-          ? Object.keys(rawLabels).filter(
-                (label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX),
-            )
+          ? Object.keys(rawLabels).filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
           : []
 
     const pendingPermissions = agent.pendingPermissions ?? []
@@ -293,12 +269,8 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
             null,
         status: mapDaemonWorkerStatus({
             status: agent.status,
-            ...(agent.requiresAttention !== undefined
-                ? { requiresAttention: agent.requiresAttention }
-                : {}),
-            ...(agent.attentionReason !== undefined
-                ? { attentionReason: agent.attentionReason }
-                : {}),
+            ...(agent.requiresAttention !== undefined ? { requiresAttention: agent.requiresAttention } : {}),
+            ...(agent.attentionReason !== undefined ? { attentionReason: agent.attentionReason } : {}),
             pendingPermissions,
         }),
         ...(agent.status !== undefined ? { rawStatus: agent.status } : {}),

@@ -27,14 +27,7 @@ export interface InboxStatusResult {
 }
 
 export function readInbox(state: PluginState, options: InboxReadOptions = {}): InboxReadResult {
-    const {
-        unreadOnly = false,
-        kind,
-        resourceId,
-        cursor = 0,
-        limit = 50,
-        markRead = false,
-    } = options
+    const { unreadOnly = false, kind, resourceId, cursor = 0, limit = 50, markRead = false } = options
 
     // Collect and filter events
     let events = Array.from(state.inbox.values())
