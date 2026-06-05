@@ -61,6 +61,7 @@ import { resetPluginState } from "./lib/state/state.js"
 import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
 import { createWorkerStallMonitor } from "./lib/worker-stall-monitor.js"
 import { createChatWatcher } from "./lib/chat/watch.js"
+import { createStartupWarningNotifier } from "./lib/toast.js"
 
 const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
@@ -69,12 +70,17 @@ const server: Plugin = (async (ctx) => {
     const logger = new Logger(config.debug)
     const state = createPluginState()
     const client = new PaseoClient(config.daemon)
+    const notifyStartupWarning = createStartupWarningNotifier(ctx)
 
     // Attempt connection to Paseo daemon
     try {
         await client.connect()
     } catch (err: any) {
         logger.warn("Paseo plugin not loading because Paseo daemon was not found", err.message)
+        notifyStartupWarning(
+            "Paseo daemon unavailable",
+            `Could not connect to Paseo daemon at ${config.daemon.host}:${config.daemon.port}. Paseo tools were not loaded.`,
+        )
         return {}
     }
 

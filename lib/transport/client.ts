@@ -1,5 +1,6 @@
 import { DaemonClient } from "@getpaseo/client"
 import type { DaemonClientConfig, DaemonEvent as UpstreamDaemonEvent, ConnectionState } from "@getpaseo/client"
+import packageJson from "../../package.json" with { type: "json" }
 import type { DaemonConfig } from "../config.js"
 import type {
     AgentSummary,
@@ -79,7 +80,7 @@ import type {
 // that the rest of the plugin depends on. Translates upstream typed events into
 // the normalized DaemonEvent shape used by the inbox and state layer.
 
-const APP_VERSION = "0.1.89"
+const APP_VERSION = packageJson.version
 
 // ─── Exported Pure Functions (for testing) ────────────────────────────────────
 

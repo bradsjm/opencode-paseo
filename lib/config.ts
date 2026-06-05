@@ -4,10 +4,11 @@ import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "fs
 import { parse, printParseErrorCode, type ParseError } from "jsonc-parser"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { z } from "zod"
+import { queueWarningToast } from "./toast.js"
 
 const enabledSchema = z.boolean()
 const debugSchema = z.boolean()
-const daemonHostSchema = z.string()
+const daemonHostSchema = z.enum(["127.0.0.1", "localhost", "::1"])
 const daemonPortSchema = z.number().int().min(1).max(65535)
 const connectionTimeoutSchema = z.number().int().min(500).max(30000)
 const passwordSchema = z.string()
@@ -226,31 +227,27 @@ function mergeLayer(config: PluginConfig, data: ConfigLayer): PluginConfig {
     })
 }
 
+type ConfigLayerKind = "global" | "config-dir" | "project"
+
+function getLayerLabel(layer: ConfigLayerKind): string {
+    switch (layer) {
+        case "global":
+            return "global config"
+        case "config-dir":
+            return "config-dir config"
+        case "project":
+            return "project config"
+    }
+}
+
 function queueConfigWarning(ctx: PluginInput, title: string, message: string): void {
-    setTimeout(() => {
-        try {
-            void ctx.client.tui.showToast({
-                body: {
-                    title,
-                    message,
-                    variant: "warning",
-                    duration: 7000,
-                },
-            })
-        } catch {
-            return
-        }
-    }, CONFIG_WARNING_DELAY_MS)
+    queueWarningToast(ctx, { title, message, delayMs: CONFIG_WARNING_DELAY_MS })
 }
 
-function getLayerLabel(isProject: boolean): string {
-    return isProject ? "project config" : "config"
-}
-
-function showParseWarning(ctx: PluginInput, configPath: string, isProject: boolean, error: string): void {
+function showParseWarning(ctx: PluginInput, configPath: string, layer: ConfigLayerKind, error: string): void {
     queueConfigWarning(
         ctx,
-        `Paseo: ${getLayerLabel(isProject)} warning`,
+        `Paseo: ${getLayerLabel(layer)} warning`,
         `${configPath}\nFailed to parse config file: ${error}`,
     )
 }
@@ -275,15 +272,11 @@ function formatValidationErrors(error: z.ZodError): string[] {
     })
 }
 
-function showValidationWarning(ctx: PluginInput, configPath: string, isProject: boolean, error: z.ZodError): void {
+function showValidationWarning(ctx: PluginInput, configPath: string, layer: ConfigLayerKind, error: z.ZodError): void {
     const messages = formatValidationErrors(error)
     const suffix = error.issues.length > messages.length ? `\n(+${error.issues.length - messages.length} more)` : ""
 
-    queueConfigWarning(
-        ctx,
-        `Paseo: ${getLayerLabel(isProject)} warning`,
-        `${configPath}\n${messages.join("\n")}${suffix}`,
-    )
+    queueConfigWarning(ctx, `Paseo: ${getLayerLabel(layer)} warning`, `${configPath}\n${messages.join("\n")}${suffix}`)
 }
 
 export function validateConfigTypes(data: unknown): ValidationError[] {
@@ -319,6 +312,7 @@ function createDefaultConfig(): void {
     const configContent = `{
   "$schema": "https://raw.githubusercontent.com/bradsjm/opencode-paseo/refs/heads/main/paseo.schema.json",
   // Configure opencode-paseo here.
+  // Only localhost daemon hosts are supported: 127.0.0.1, localhost, or ::1.
   // See README.md for supported keys and defaults.
 }
 `
@@ -333,10 +327,10 @@ export function getConfig(ctx: PluginInput): PluginConfig {
         createDefaultConfig()
     }
 
-    const layers: Array<{ path: string | null; isProject: boolean }> = [
-        { path: configPaths.global, isProject: false },
-        { path: configPaths.configDir, isProject: true },
-        { path: configPaths.project, isProject: true },
+    const layers: Array<{ path: string | null; kind: ConfigLayerKind }> = [
+        { path: configPaths.global, kind: "global" },
+        { path: configPaths.configDir, kind: "config-dir" },
+        { path: configPaths.project, kind: "project" },
     ]
 
     for (const layer of layers) {
@@ -344,14 +338,14 @@ export function getConfig(ctx: PluginInput): PluginConfig {
 
         const result = loadConfigFile(layer.path)
         if (result.parseError) {
-            showParseWarning(ctx, layer.path, layer.isProject, result.parseError)
+            showParseWarning(ctx, layer.path, layer.kind, result.parseError)
             continue
         }
         if (!result.data) continue
 
         const parsedLayer = configLayerSchema.safeParse(result.data)
         if (!parsedLayer.success) {
-            showValidationWarning(ctx, layer.path, layer.isProject, parsedLayer.error)
+            showValidationWarning(ctx, layer.path, layer.kind, parsedLayer.error)
             continue
         }
 

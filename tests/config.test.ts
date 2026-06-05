@@ -235,6 +235,7 @@ test("getConfig", async (t) => {
 
         assert.equal(messages.length, 1)
         assert.match(messages[0], /Failed to parse config file/i)
+        assert.match(messages[0], /config-dir config warning/i)
     })
 
     await t.test("warns and skips invalid config layers", async () => {
@@ -259,9 +260,10 @@ test("getConfig", async (t) => {
 
         assert.equal(messages.length, 1)
         assert.match(messages[0], /daemon\.port/i)
+        assert.match(messages[0], /config-dir config warning/i)
     })
 
-    await t.test("preserves non-local daemon hosts from config", () => {
+    await t.test("rejects non-local daemon hosts from config", () => {
         const configDir = join(tempDir, "config")
         mkdirSync(configDir, { recursive: true })
         writeFileSync(join(configDir, "paseo.jsonc"), JSON.stringify({ daemon: { host: "192.168.1.10" } }), "utf-8")
@@ -271,11 +273,38 @@ test("getConfig", async (t) => {
             const { ctx, messages } = createToastCollector()
             ctx.directory = tempDir
 
-            const config = mod.getConfig(ctx as any)
+            return withImmediateTimers(() => {
+                const config = mod.getConfig(ctx as any)
 
-            assert.equal(config.daemon.host, "192.168.1.10")
-            assert.equal(messages.length, 0)
+                assert.equal(config.daemon.host, "127.0.0.1")
+                assert.equal(messages.length, 1)
+                assert.match(messages[0], /daemon\.host/i)
+            })
         })
+    })
+
+    await t.test("labels project config warnings separately from config-dir warnings", async () => {
+        const configDir = join(tempDir, "config")
+        const projectDir = join(tempDir, "project")
+        const opencodeDir = join(projectDir, ".opencode")
+        mkdirSync(configDir, { recursive: true })
+        mkdirSync(opencodeDir, { recursive: true })
+        writeFileSync(join(configDir, "paseo.jsonc"), '{"daemon": ', "utf-8")
+        writeFileSync(join(opencodeDir, "paseo.jsonc"), JSON.stringify({ daemon: { host: "bad-host" } }), "utf-8")
+
+        process.env.OPENCODE_CONFIG_DIR = configDir
+        const mod = await loadConfigModule("layer-labels")
+        const { ctx, messages } = createToastCollector()
+        ctx.directory = projectDir
+
+        await withImmediateTimers(() => {
+            const config = mod.getConfig(ctx as any)
+            assert.equal(config.daemon.host, "127.0.0.1")
+        })
+
+        assert.equal(messages.length, 2)
+        assert.match(messages[0], /config-dir config warning/i)
+        assert.match(messages[1], /project config warning/i)
     })
 
     await t.test("creates a commented JSONC stub with a schema path", async () => {
@@ -297,5 +326,6 @@ test("getConfig", async (t) => {
             /"\$schema": "https:\/\/raw\.githubusercontent\.com\/bradsjm\/opencode-paseo\/refs\/heads\/main\/paseo\.schema\.json"/,
         )
         assert.match(content, /Configure opencode-paseo here\./)
+        assert.match(content, /Only localhost daemon hosts are supported/i)
     })
 })

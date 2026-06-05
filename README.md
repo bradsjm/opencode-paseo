@@ -149,7 +149,7 @@ Example stub:
 | ---------------------------------- | --------- | ------------- | ------------------------------------------------------------------ |
 | `enabled`                          | `boolean` | `true`        | Enables or disables the plugin entirely.                           |
 | `debug`                            | `boolean` | `false`       | Enables plugin debug logging.                                      |
-| `daemon.host`                      | `string`  | `"127.0.0.1"` | Daemon host or IP address.                                         |
+| `daemon.host`                      | `string`  | `"127.0.0.1"` | Localhost-only daemon host: `127.0.0.1`, `localhost`, or `::1`.    |
 | `daemon.port`                      | `number`  | `6767`        | Daemon port.                                                       |
 | `daemon.password`                  | `string`  | unset         | Optional daemon authentication password.                           |
 | `daemon.connectionTimeoutMs`       | `number`  | `3000`        | WebSocket connection timeout.                                      |

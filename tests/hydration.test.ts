@@ -161,6 +161,7 @@ test("hydrate", async (t) => {
         const blockingEvents = Array.from(state.inbox.values()).filter((e) => e.blocking)
         assert.ok(blockingEvents.length >= 1)
         assert.equal(blockingEvents[0]?.kind, "worker.blocked")
+        assert.equal(blockingEvents[0]?.metadata?.suggestedTool, "paseo_worker_send")
     })
 
     await t.test("seeds permission.requested for permission-blocked workers", async () => {
@@ -188,6 +189,7 @@ test("hydrate", async (t) => {
         assert.ok(event)
         assert.equal(event.kind, "permission.requested")
         assert.equal(event.metadata?.permissionId, "perm-1")
+        assert.equal(event.metadata?.suggestedTool, "paseo_permission_respond")
         assert.ok(event.summary.length <= outputConfig.maxSummaryLength)
     })
 
@@ -240,10 +242,14 @@ test("hydrate", async (t) => {
 
         await hydrate(state, client, logger, outputConfig)
         const firstCount = state.inbox.size
+        const firstWorkerCount = state.workers.size
+        const firstTerminalCount = state.terminals.size
 
         // Re-hydrate with same data
         await hydrate(state, client, logger, outputConfig)
         assert.equal(state.inbox.size, firstCount) // dedup prevents duplicates
+        assert.equal(state.workers.size, firstWorkerCount)
+        assert.equal(state.terminals.size, firstTerminalCount)
     })
 
     await t.test("does not synthesize stall inbox events during hydration", async () => {

@@ -4,6 +4,20 @@ import { mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, mkdirSyn
 import { tmpdir } from "os"
 import { join } from "path"
 
+async function withImmediateTimers(run: () => Promise<void> | void) {
+    const originalSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: (...args: any[]) => void) => {
+        fn()
+        return 0 as unknown as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout
+
+    try {
+        await run()
+    } finally {
+        globalThis.setTimeout = originalSetTimeout
+    }
+}
+
 test("plugin startup graceful degrade", async (t) => {
     await t.test("returns empty hooks and logs single warn when daemon is unreachable", async () => {
         const tempRoot = mkdtempSync(join(tmpdir(), "opencode-paseo-startup-"))
@@ -15,6 +29,7 @@ test("plugin startup graceful degrade", async (t) => {
         mkdirSync(configDir, { recursive: true })
         mkdirSync(projectDir, { recursive: true })
         mkdirSync(xdgConfigHome, { recursive: true })
+        const toasts: Array<{ title: string; message: string }> = []
 
         // Write a paseo config pointing to an unreachable daemon
         writeFileSync(
@@ -43,7 +58,13 @@ test("plugin startup graceful degrade", async (t) => {
 
             // Construct minimal mock PluginInput
             const mockCtx = {
-                client: {} as any,
+                client: {
+                    tui: {
+                        showToast: ({ body }: { body: { title: string; message: string } }) => {
+                            toasts.push(body)
+                        },
+                    },
+                } as any,
                 project: {} as any,
                 directory: projectDir,
                 worktree: projectDir,
@@ -52,13 +73,21 @@ test("plugin startup graceful degrade", async (t) => {
                 $: {} as any,
             }
 
-            const result = await plugin(mockCtx, {})
+            let result: Awaited<ReturnType<typeof plugin>> | undefined
+            await withImmediateTimers(async () => {
+                result = await plugin(mockCtx, {})
+            })
 
             // Should return empty hooks — no tool, event, config, dispose
-            assert.equal(result.tool, undefined, "expected no tool property")
-            assert.equal(result.event, undefined, "expected no event property")
-            assert.equal(result.config, undefined, "expected no config property")
-            assert.equal(result.dispose, undefined, "expected no dispose property")
+            assert.equal(result?.tool, undefined, "expected no tool property")
+            assert.equal(result?.event, undefined, "expected no event property")
+            assert.equal(result?.config, undefined, "expected no config property")
+            assert.equal(result?.dispose, undefined, "expected no dispose property")
+
+            assert.equal(toasts.length, 1, "expected one startup warning toast")
+            assert.equal(toasts[0]?.title, "Paseo daemon unavailable")
+            assert.match(toasts[0]?.message ?? "", /127\.0\.0\.1:1/)
+            assert.match(toasts[0]?.message ?? "", /Paseo tools were not loaded/i)
 
             // Verify single warn log message
             const logFiles = readdirSync(logDir).filter((name) => name.endsWith(".log"))

@@ -9,6 +9,7 @@ import {
     translateUpstreamEvent,
 } from "../lib/transport/client.js"
 import type { DaemonConfig } from "../lib/config.js"
+import packageJson from "../package.json" with { type: "json" }
 
 // ─── Config Mapping ──────────────────────────────────────────────────────────
 
@@ -32,6 +33,11 @@ test("buildDaemonConfig maps DaemonConfig to DaemonClientConfig", async (t) => {
     await t.test("sets clientType to cli", () => {
         const result = buildDaemonConfig(baseConfig)
         assert.equal(result.clientType, "cli")
+    })
+
+    await t.test("uses the package version as appVersion", () => {
+        const result = buildDaemonConfig(baseConfig)
+        assert.equal(result.appVersion, packageJson.version)
     })
 
     await t.test("disables reconnect", () => {
