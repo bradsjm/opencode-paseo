@@ -111,7 +111,6 @@ type ConfigLayer = z.infer<typeof configLayerSchema>
 
 const defaultConfig = configRuntimeSchema.parse({})
 
-const LOCALHOST_HOSTS = new Set(["127.0.0.1", "localhost", "::1"])
 const CONFIG_WARNING_DELAY_MS = 7000
 
 const GLOBAL_CONFIG_DIR = process.env.XDG_CONFIG_HOME
@@ -324,45 +323,13 @@ export function validateConfigTypes(data: unknown): ValidationError[] {
     })
 }
 
-export function validateLocalhostOnly(host: string): ValidationError | null {
-    if (!LOCALHOST_HOSTS.has(host)) {
-        return {
-            key: "daemon.host",
-            expected: "localhost (127.0.0.1, localhost, ::1)",
-            actual: host,
-        }
-    }
-
-    return null
-}
-
-function enforceLocalhostOnly(ctx: PluginInput, config: PluginConfig): PluginConfig {
-    const localhostError = validateLocalhostOnly(config.daemon.host)
-    if (!localhostError) {
-        return config
-    }
-
-    queueConfigWarning(
-        ctx,
-        "Paseo: config warning",
-        `daemon.host must remain localhost-only; overriding ${config.daemon.host} to 127.0.0.1`,
-    )
-
-    return {
-        ...config,
-        daemon: {
-            ...config.daemon,
-            host: "127.0.0.1",
-        },
-    }
-}
-
 function createDefaultConfig(): void {
     if (!existsSync(GLOBAL_CONFIG_DIR)) {
         mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true })
     }
 
     const configContent = `{
+  "$schema": "https://raw.githubusercontent.com/bradsjm/opencode-paseo/refs/heads/main/paseo.schema.json",
   // Configure opencode-paseo here.
   // See README.md for supported keys and defaults.
 }
@@ -403,5 +370,5 @@ export function getConfig(ctx: PluginInput): PluginConfig {
         config = mergeLayer(config, parsedLayer.data)
     }
 
-    return enforceLocalhostOnly(ctx, config)
+    return config
 }

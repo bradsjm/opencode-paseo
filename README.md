@@ -29,7 +29,7 @@ Use the MCP server when you only need raw access to Paseo tools from OpenCode. U
 ## Prerequisites
 
 - [OpenCode](https://opencode.ai) with plugin support
-- A local Paseo daemon reachable on `127.0.0.1`, `localhost`, or `::1`
+- A reachable Paseo daemon
 
 ## Installation
 
@@ -128,13 +128,23 @@ The plugin loads `paseo.jsonc` or `paseo.json` from these layers, with later lay
 2. OpenCode config dir: `$OPENCODE_CONFIG_DIR/paseo.jsonc` or `$OPENCODE_CONFIG_DIR/paseo.json`
 3. Project: nearest `.opencode/paseo.jsonc` or `.opencode/paseo.json`
 
-If no global config exists, `getConfig()` auto-creates `~/.config/opencode/paseo.jsonc` as a commented JSONC stub.
+If no global config exists, `getConfig()` auto-creates `~/.config/opencode/paseo.jsonc` as a commented JSONC stub with a `$schema` attribute for editor validation.
+
+Example stub:
+
+```jsonc
+{
+    "$schema": "https://raw.githubusercontent.com/bradsjm/opencode-paseo/refs/heads/main/paseo.schema.json",
+    // Configure opencode-paseo here.
+    // See README.md for supported keys and defaults.
+}
+```
 
 | Key                                | Type      | Default       | Notes                                                              |
 | ---------------------------------- | --------- | ------------- | ------------------------------------------------------------------ |
 | `enabled`                          | `boolean` | `true`        | Enables or disables the plugin entirely.                           |
 | `debug`                            | `boolean` | `false`       | Enables plugin debug logging.                                      |
-| `daemon.host`                      | `string`  | `"127.0.0.1"` | Runtime is restricted to `127.0.0.1`, `localhost`, or `::1`.       |
+| `daemon.host`                      | `string`  | `"127.0.0.1"` | Daemon host or IP address.                                         |
 | `daemon.port`                      | `number`  | `6767`        | Daemon port.                                                       |
 | `daemon.password`                  | `string`  | unset         | Optional daemon authentication password.                           |
 | `daemon.connectionTimeoutMs`       | `number`  | `3000`        | WebSocket connection timeout.                                      |
@@ -146,7 +156,7 @@ If no global config exists, `getConfig()` auto-creates `~/.config/opencode/paseo
 | `agents.defaultAgent`              | `string`  | unset         | Optional default agent name.                                       |
 | `agents.defaultModel`              | `string`  | unset         | Optional default model name.                                       |
 
-Malformed config files or invalid values trigger a warning toast and that config layer is ignored. If `daemon.host` is outside the localhost allowlist, the plugin warns and enforces `127.0.0.1` at runtime.
+Malformed config files or invalid values trigger a warning toast and that config layer is ignored.
 
 ## Tool surface
 

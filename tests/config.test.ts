@@ -73,22 +73,6 @@ test("validateConfigTypes", async (t) => {
     })
 })
 
-test("validateLocalhostOnly", async (t) => {
-    const mod = await loadConfigModule("validate-localhost")
-
-    await t.test("accepts allowed localhost values", () => {
-        assert.equal(mod.validateLocalhostOnly("127.0.0.1"), null)
-        assert.equal(mod.validateLocalhostOnly("localhost"), null)
-        assert.equal(mod.validateLocalhostOnly("::1"), null)
-    })
-
-    await t.test("rejects external host", () => {
-        const result = mod.validateLocalhostOnly("192.168.1.1")
-        assert.notEqual(result, null)
-        assert.equal(result!.key, "daemon.host")
-    })
-})
-
 test("getConfig", async (t) => {
     let tempDir = ""
     let previousOpencodeConfigDir: string | undefined
@@ -276,7 +260,7 @@ test("getConfig", async (t) => {
         assert.match(messages[0], /daemon\.port/i)
     })
 
-    await t.test("warns before enforcing localhost-only daemon hosts", async () => {
+    await t.test("preserves non-local daemon hosts from config", () => {
         const configDir = join(tempDir, "config")
         mkdirSync(configDir, { recursive: true })
         writeFileSync(
@@ -286,21 +270,18 @@ test("getConfig", async (t) => {
         )
 
         process.env.OPENCODE_CONFIG_DIR = configDir
-        const mod = await loadConfigModule("localhost-warning")
-        const { ctx, messages } = createToastCollector()
-        ctx.directory = tempDir
+        return loadConfigModule("non-local-host").then((mod) => {
+            const { ctx, messages } = createToastCollector()
+            ctx.directory = tempDir
 
-        await withImmediateTimers(() => {
             const config = mod.getConfig(ctx as any)
-            assert.equal(config.daemon.host, "127.0.0.1")
-        })
 
-        assert.equal(messages.length, 1)
-        assert.match(messages[0], /localhost-only/i)
-        assert.match(messages[0], /192\.168\.1\.10/)
+            assert.equal(config.daemon.host, "192.168.1.10")
+            assert.equal(messages.length, 0)
+        })
     })
 
-    await t.test("creates an empty commented JSONC stub without a schema path", async () => {
+    await t.test("creates a commented JSONC stub with a schema path", async () => {
         const xdgConfigHome = join(tempDir, "xdg")
         process.env.XDG_CONFIG_HOME = xdgConfigHome
 
@@ -314,7 +295,10 @@ test("getConfig", async (t) => {
         assert.equal(existsSync(stubPath), true)
 
         const content = readFileSync(stubPath, "utf-8")
+        assert.match(
+            content,
+            /"\$schema": "https:\/\/raw\.githubusercontent\.com\/bradsjm\/opencode-paseo\/refs\/heads\/main\/paseo\.schema\.json"/,
+        )
         assert.match(content, /Configure opencode-paseo here\./)
-        assert.doesNotMatch(content, /\$schema/)
     })
 })
