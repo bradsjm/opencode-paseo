@@ -1,5 +1,5 @@
 {
-    "worktree": {
-        "setup": "pnpm -y install"
-    }
+  "worktree": {
+    "setup": "pnpm -y install"
+  }
 }

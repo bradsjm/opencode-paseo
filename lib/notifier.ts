@@ -12,18 +12,18 @@ import type { Logger } from "./logger.js"
 
 /** Event kinds that never produce nudges. */
 const NEVER_NUDGE: ReadonlySet<InboxEventKind> = new Set([
-    "worker.started",
-    "permission.resolved",
-    "daemon.connected",
-    "daemon.disconnected",
+  "worker.started",
+  "permission.resolved",
+  "daemon.connected",
+  "daemon.disconnected",
 ])
 
 /** Event kinds that are nudged only when blockingOnly is false. */
 const NON_BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set([
-    "worker.stalled",
-    "worker.finished",
-    "worker.failed",
-    "chat.mentioned",
+  "worker.stalled",
+  "worker.finished",
+  "worker.failed",
+  "chat.mentioned",
 ])
 
 /** Event kinds that always produce nudges (when notifications enabled). */
@@ -33,10 +33,10 @@ const BLOCKING_NUDGE: ReadonlySet<InboxEventKind> = new Set(["worker.blocked", "
  * Determine whether a given event kind should produce a session nudge.
  */
 export function shouldNudge(kind: InboxEventKind, config: NotificationsConfig): boolean {
-    if (!config.enabled) return false
-    if (NEVER_NUDGE.has(kind)) return false
-    if (config.blockingOnly) return BLOCKING_NUDGE.has(kind)
-    return BLOCKING_NUDGE.has(kind) || NON_BLOCKING_NUDGE.has(kind)
+  if (!config.enabled) return false
+  if (NEVER_NUDGE.has(kind)) return false
+  if (config.blockingOnly) return BLOCKING_NUDGE.has(kind)
+  return BLOCKING_NUDGE.has(kind) || NON_BLOCKING_NUDGE.has(kind)
 }
 
 // ─── Message Formatting ──────────────────────────────────────────────────────
@@ -45,8 +45,8 @@ export function shouldNudge(kind: InboxEventKind, config: NotificationsConfig): 
  * Build a concise nudge message for injection into the controller session.
  */
 export function formatNudgeMessage(kind: InboxEventKind, resourceId: string, summary: string): string {
-    const prefix = `[paseo:${kind}]`
-    return `${prefix} ${summary} (resource: ${resourceId})`
+  const prefix = `[paseo:${kind}]`
+  return `${prefix} ${summary} (resource: ${resourceId})`
 }
 
 // ─── Delivery ────────────────────────────────────────────────────────────────
@@ -57,23 +57,23 @@ export function formatNudgeMessage(kind: InboxEventKind, resourceId: string, sum
  * All prompts are fired concurrently without awaiting.
  */
 export function sendNudge(client: OpencodeClient, sessionIds: string[], message: string, logger: Logger): void {
-    for (const sessionId of sessionIds) {
-        client.session
-            .prompt({
-                path: { id: sessionId },
-                body: {
-                    noReply: true,
-                    parts: [{ type: "text", text: message, synthetic: true }],
-                },
-            })
-            .then(() => {
-                logger.debug("Nudge sent", { sessionId, messageLength: message.length })
-            })
-            .catch((err: any) => {
-                logger.warn("Nudge delivery failed", {
-                    sessionId,
-                    error: err.message ?? String(err),
-                })
-            })
-    }
+  for (const sessionId of sessionIds) {
+    client.session
+      .prompt({
+        path: { id: sessionId },
+        body: {
+          noReply: true,
+          parts: [{ type: "text", text: message, synthetic: true }],
+        },
+      })
+      .then(() => {
+        logger.debug("Nudge sent", { sessionId, messageLength: message.length })
+      })
+      .catch((err: any) => {
+        logger.warn("Nudge delivery failed", {
+          sessionId,
+          error: err.message ?? String(err),
+        })
+      })
+  }
 }

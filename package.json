@@ -1,76 +1,76 @@
 {
-    "$schema": "https://json.schemastore.org/package.json",
-    "name": "@bradsjm/opencode-paseo",
-    "version": "0.1.0",
-    "description": "OpenCode plugin for Paseo",
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "homepage": "https://github.com/bradsjm/opencode-paseo#readme",
-    "bugs": {
-        "url": "https://github.com/bradsjm/opencode-paseo/issues"
-    },
-    "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        }
-    },
-    "engines": {
-        "node": ">=18"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+ssh://git@github.com/bradsjm/opencode-paseo.git"
-    },
-    "publishConfig": {
-        "access": "public"
-    },
-    "files": [
-        "dist/",
-        "skills/",
-        "paseo.schema.json",
-        "README.md",
-        "LICENSE"
-    ],
-    "scripts": {
-        "clean": "rm -rf dist",
-        "build": "tsup && tsc --emitDeclarationOnly --declaration --outDir dist",
-        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
-        "test": "node --import tsx --test tests/*.test.ts",
-        "test:integration": "node --import tsx --test tests/integration/*.test.ts",
-        "dev": "tsup --watch",
-        "format": "prettier --write .",
-        "format:check": "prettier --check .",
-        "lint": "eslint . && prettier --check .",
-        "lint:fix": "eslint . --fix && prettier --write .",
-        "prepublishOnly": "pnpm clean && pnpm build"
-    },
-    "keywords": [
-        "opencode",
-        "paseo",
-        "plugin"
-    ],
-    "license": "MIT",
-    "peerDependencies": {
-        "@opencode-ai/plugin": ">=1.4.3"
-    },
-    "dependencies": {
-        "@getpaseo/client": "^0.1.89",
-        "@opencode-ai/sdk": "^1.15.13",
-        "jsonc-parser": "^3.3.1",
-        "zod": "^4.4.3"
-    },
-    "devDependencies": {
-        "@eslint/js": "^9.29.0",
-        "@opencode-ai/plugin": "^1.4.3",
-        "@types/node": "^22.15.0",
-        "eslint": "^9.29.0",
-        "globals": "^16.2.0",
-        "prettier": "^3.5.3",
-        "tsup": "^8.4.0",
-        "tsx": "^4.19.4",
-        "typescript": "^5.8.3",
-        "typescript-eslint": "^8.35.1"
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@bradsjm/opencode-paseo",
+  "version": "0.2.0",
+  "description": "OpenCode plugin for Paseo",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "homepage": "https://github.com/bradsjm/opencode-paseo#readme",
+  "bugs": {
+    "url": "https://github.com/bradsjm/opencode-paseo/issues"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/bradsjm/opencode-paseo.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "skills/",
+    "paseo.schema.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsup && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts",
+    "dev": "tsup --watch",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "prepublishOnly": "pnpm clean && pnpm build"
+  },
+  "keywords": [
+    "opencode",
+    "paseo",
+    "plugin"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.4.3"
+  },
+  "dependencies": {
+    "@getpaseo/client": "^0.1.89",
+    "@opencode-ai/sdk": "^1.15.13",
+    "jsonc-parser": "^3.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@opencode-ai/plugin": "^1.4.3",
+    "@types/node": "^22.15.0",
+    "eslint": "^9.29.0",
+    "globals": "^16.2.0",
+    "prettier": "^3.5.3",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.35.1"
+  }
 }

@@ -5,13 +5,13 @@ import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { truncateSummary } from "../inbox/summary.js"
 import {
-    setConnectionStatus,
-    setCapabilities,
-    upsertWorker,
-    upsertTerminal,
-    insertInboxEvent,
-    mapAgentToWorkerSummary,
-    buildBlockingMetadata,
+  setConnectionStatus,
+  setCapabilities,
+  upsertWorker,
+  upsertTerminal,
+  insertInboxEvent,
+  mapAgentToWorkerSummary,
+  buildBlockingMetadata,
 } from "../state/state.js"
 
 // ─── Startup Hydration ───────────────────────────────────────────────────────
@@ -21,106 +21,106 @@ import {
 // Does NOT replay full history or synthesize noisy notifications.
 
 export interface HydrationResult {
-    workers: number
-    terminals: number
-    chatRooms: number
-    inboxSeeded: number
+  workers: number
+  terminals: number
+  chatRooms: number
+  inboxSeeded: number
 }
 
 export async function hydrate(
-    state: PluginState,
-    client: PaseoTransport,
-    logger: Logger,
-    output: OutputConfig,
-    onWorkerObserved?: (worker: WorkerSummary) => void,
+  state: PluginState,
+  client: PaseoTransport,
+  logger: Logger,
+  output: OutputConfig,
+  onWorkerObserved?: (worker: WorkerSummary) => void,
 ): Promise<HydrationResult> {
-    let workers = 0
-    let terminals = 0
-    let chatRooms = 0
-    let inboxSeeded = 0
+  let workers = 0
+  let terminals = 0
+  let chatRooms = 0
+  let inboxSeeded = 0
 
-    // 1. Server info from handshake — set capabilities
-    const serverInfo = client.getServerInfo()
-    if (serverInfo) {
-        const features = Object.keys(serverInfo.features).filter((k) => serverInfo.features[k])
-        setCapabilities(state, {
-            ...(serverInfo.version !== undefined ? { version: serverInfo.version } : {}),
-            features,
-            fetchedAt: Date.now(),
-        })
-        logger.info("Server info from handshake", {
-            serverId: serverInfo.serverId,
-            version: serverInfo.version,
-            features,
-        })
-    } else {
-        logger.warn("No server info available from handshake")
-    }
+  // 1. Server info from handshake — set capabilities
+  const serverInfo = client.getServerInfo()
+  if (serverInfo) {
+    const features = Object.keys(serverInfo.features).filter((k) => serverInfo.features[k])
+    setCapabilities(state, {
+      ...(serverInfo.version !== undefined ? { version: serverInfo.version } : {}),
+      features,
+      fetchedAt: Date.now(),
+    })
+    logger.info("Server info from handshake", {
+      serverId: serverInfo.serverId,
+      version: serverInfo.version,
+      features,
+    })
+  } else {
+    logger.warn("No server info available from handshake")
+  }
 
-    // 2. Agents (workers)
-    try {
-        const agents = await client.fetchAgents({
-            subscribe: { subscriptionId: "opencode-paseo" },
-        })
-        for (const a of agents) {
-            const worker = mapAgentToWorkerSummary(a)
-            upsertWorker(state, worker)
-            onWorkerObserved?.(worker)
-            workers++
+  // 2. Agents (workers)
+  try {
+    const agents = await client.fetchAgents({
+      subscribe: { subscriptionId: "opencode-paseo" },
+    })
+    for (const a of agents) {
+      const worker = mapAgentToWorkerSummary(a)
+      upsertWorker(state, worker)
+      onWorkerObserved?.(worker)
+      workers++
 
-            if (worker.status === "blocked") {
-                // Determine if the block is a permission request or a general question
-                const hasPermissions = worker.pendingPermissionIds.length > 0
-                const blockKind = hasPermissions ? "permission.requested" : "worker.blocked"
-                const permissionId = hasPermissions ? worker.pendingPermissionIds[0] : undefined
-                const event: InboxEvent = {
-                    id: permissionId ? getHydrationPermissionEventId(permissionId) : `hydration-worker-blocked-${a.id}`,
-                    kind: blockKind,
-                    resourceId: a.id,
-                    blocking: true,
-                    summary: truncateSummary(
-                        a.attentionReason ?? `Worker "${a.title ?? a.id}" requires attention`,
-                        output.maxSummaryLength,
-                    ),
-                    read: false,
-                    timestamp: Date.now(),
-                    metadata: buildBlockingMetadata(blockKind, a.id, {
-                        permissionId,
-                    }),
-                }
-                if (insertInboxEvent(state, event, output.maxInboxItems)) {
-                    inboxSeeded++
-                }
-            }
+      if (worker.status === "blocked") {
+        // Determine if the block is a permission request or a general question
+        const hasPermissions = worker.pendingPermissionIds.length > 0
+        const blockKind = hasPermissions ? "permission.requested" : "worker.blocked"
+        const permissionId = hasPermissions ? worker.pendingPermissionIds[0] : undefined
+        const event: InboxEvent = {
+          id: permissionId ? getHydrationPermissionEventId(permissionId) : `hydration-worker-blocked-${a.id}`,
+          kind: blockKind,
+          resourceId: a.id,
+          blocking: true,
+          summary: truncateSummary(
+            a.attentionReason ?? `Worker "${a.title ?? a.id}" requires attention`,
+            output.maxSummaryLength,
+          ),
+          read: false,
+          timestamp: Date.now(),
+          metadata: buildBlockingMetadata(blockKind, a.id, {
+            permissionId,
+          }),
         }
-        logger.info("Hydrated agents", { count: workers })
-        chatRooms = state.chatRooms.size
-    } catch (err: any) {
-        logger.warn("Agent hydration failed", err.message)
-    }
-
-    // 3. Terminals
-    try {
-        const terminalList = await client.listTerminals()
-        for (const t of terminalList) {
-            const terminal: TerminalSessionSummary = {
-                id: t.id,
-                title: t.title ?? t.name ?? t.id,
-                cwd: "",
-                status: "unknown" as TerminalSessionSummary["status"],
-                lineCount: 0,
-                lastReadCursor: 0,
-            }
-            upsertTerminal(state, terminal)
-            terminals++
+        if (insertInboxEvent(state, event, output.maxInboxItems)) {
+          inboxSeeded++
         }
-        logger.info("Hydrated terminals", { count: terminals })
-    } catch (err: any) {
-        logger.warn("Terminal hydration failed", err.message)
+      }
     }
+    logger.info("Hydrated agents", { count: workers })
+    chatRooms = state.chatRooms.size
+  } catch (err: any) {
+    logger.warn("Agent hydration failed", err.message)
+  }
 
-    setConnectionStatus(state, "connected")
-    logger.info("Hydration complete", { workers, terminals, chatRooms, inboxSeeded })
+  // 3. Terminals
+  try {
+    const terminalList = await client.listTerminals()
+    for (const t of terminalList) {
+      const terminal: TerminalSessionSummary = {
+        id: t.id,
+        title: t.title ?? t.name ?? t.id,
+        cwd: "",
+        status: "unknown" as TerminalSessionSummary["status"],
+        lineCount: 0,
+        lastReadCursor: 0,
+      }
+      upsertTerminal(state, terminal)
+      terminals++
+    }
+    logger.info("Hydrated terminals", { count: terminals })
+  } catch (err: any) {
+    logger.warn("Terminal hydration failed", err.message)
+  }
 
-    return { workers, terminals, chatRooms, inboxSeeded }
+  setConnectionStatus(state, "connected")
+  logger.info("Hydration complete", { workers, terminals, chatRooms, inboxSeeded })
+
+  return { workers, terminals, chatRooms, inboxSeeded }
 }

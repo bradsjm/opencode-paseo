@@ -20,6 +20,7 @@ Like the MCP server, it exposes Paseo daemon capabilities as OpenCode tools. The
 - **Complementary worker model**: positions Paseo workers and loops for longer-running agentic work without trying to replace OpenCode's native subagents inside the current session.
 - **Better long-running terminal control**: exposes Paseo PTY-backed terminals for interactive and durable process management that OpenCode's built-in bash tool is not designed to handle as well.
 - **Launch ownership and lifecycle tracking**: tracks both durable FIFO queued worker launches and ephemeral `paseo_worker_run` sessions, including best-effort cleanup when the owning OpenCode session disappears.
+- **Conservative queued-launch rollback assessment**: when a queued worker launch with `worktreeName` fails, the plugin reports whether no cleanup was needed, an unambiguous launch-created worktree was archived automatically, or manual cleanup is still required.
 - **Synthetic stall detection**: emits `worker.stalled` when an owned worker goes quiet past the configured threshold, giving OpenCode a signal that does not come directly from the daemon.
 
 ## Why use this instead of Paseo's built-in MCP server?
@@ -42,7 +43,7 @@ Add the plugin to your OpenCode project config:
 
 ```jsonc
 {
-    "plugin": ["@bradsjm/opencode-paseo"],
+  "plugin": ["@bradsjm/opencode-paseo"],
 }
 ```
 
@@ -139,9 +140,9 @@ Example stub:
 
 ```jsonc
 {
-    "$schema": "https://raw.githubusercontent.com/bradsjm/opencode-paseo/refs/heads/main/paseo.schema.json",
-    // Configure opencode-paseo here.
-    // See README.md for supported keys and defaults.
+  "$schema": "https://raw.githubusercontent.com/bradsjm/opencode-paseo/refs/heads/main/paseo.schema.json",
+  // Configure opencode-paseo here.
+  // See README.md for supported keys and defaults.
 }
 ```
 
@@ -212,20 +213,28 @@ When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin wa
 
 ### Worker
 
-| Tool                         | Description                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `paseo_worker_list`          | Refresh and list known workers.                                               |
-| `paseo_worker_create`        | Queue a durable detached worker launch using an OpenCode profile.             |
-| `paseo_worker_launch_status` | Inspect a queued worker launch by `launchId`.                                 |
-| `paseo_worker_run`           | Run an ephemeral non-detached worker in foreground or background mode.        |
-| `paseo_worker_send`          | Send a message to an existing worker.                                         |
-| `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption. |
-| `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.            |
-| `paseo_worker_archive`       | Archive a worker from the active list.                                        |
-| `paseo_worker_update`        | Update worker metadata and runtime settings.                                  |
-| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                   |
+| Tool                         | Description                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `paseo_worker_list`          | Refresh and list known workers.                                                                                |
+| `paseo_worker_create`        | Queue a durable detached worker launch using an OpenCode profile.                                              |
+| `paseo_worker_launch_status` | Inspect a queued worker launch by `launchId`, including rollback metadata for failed worktree-backed launches. |
+| `paseo_worker_run`           | Run an ephemeral non-detached worker in foreground or background mode.                                         |
+| `paseo_worker_send`          | Send a message to an existing worker.                                                                          |
+| `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption.                                  |
+| `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.                                             |
+| `paseo_worker_archive`       | Archive a worker from the active list.                                                                         |
+| `paseo_worker_update`        | Update worker metadata and runtime settings.                                                                   |
+| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                                                    |
 
 `paseo_worker_create` and `paseo_worker_run` are intentionally different paths. `create` goes through the plugin-owned FIFO launch queue in `lib/worker-launch/queue.ts`, while `run` uses the non-detached transport path and tracks only in-memory ephemeral cleanup state.
+
+Queued launch status uses these final failure outcomes:
+
+- `failed`: the worker launch failed and no new worktree was detected, so no cleanup is needed.
+- `failed_rolled_back`: the worker launch failed after creating one unambiguous new worktree, and the plugin archived it automatically.
+- `failed_needs_cleanup`: the worker launch failed and the plugin could not safely prove ownership well enough to auto-archive, or the archive attempt failed.
+
+For failed worktree-backed launches, `paseo_worker_launch_status` returns a structured `rollback` object with `attempted`, `outcome`, `message`, optional `suggestedTool`, and optional `candidateWorktrees`. Automatic cleanup is intentionally conservative: it only runs when current daemon data shows exactly one newly appearing worktree whose `branchName` matches the queued `worktreeName`.
 
 ### Worktree
 

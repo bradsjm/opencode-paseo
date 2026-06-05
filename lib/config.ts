@@ -21,26 +21,26 @@ const defaultAgentSchema = z.string()
 const defaultModelSchema = z.string()
 
 const daemonShape = {
-    host: daemonHostSchema.default("127.0.0.1"),
-    port: daemonPortSchema.default(6767),
-    connectionTimeoutMs: connectionTimeoutSchema.default(3000),
-    password: passwordSchema.optional(),
+  host: daemonHostSchema.default("127.0.0.1"),
+  port: daemonPortSchema.default(6767),
+  connectionTimeoutMs: connectionTimeoutSchema.default(3000),
+  password: passwordSchema.optional(),
 } as const
 
 const outputShape = {
-    maxInboxItems: maxInboxItemsSchema.default(100),
-    maxSummaryLength: maxSummaryLengthSchema.default(500),
+  maxInboxItems: maxInboxItemsSchema.default(100),
+  maxSummaryLength: maxSummaryLengthSchema.default(500),
 } as const
 
 const notificationsShape = {
-    enabled: notificationsEnabledSchema.default(true),
-    blockingOnly: notificationsBlockingOnlySchema.default(false),
-    stalledThresholdMs: notificationsStalledThresholdSchema.default(120000),
+  enabled: notificationsEnabledSchema.default(true),
+  blockingOnly: notificationsBlockingOnlySchema.default(false),
+  stalledThresholdMs: notificationsStalledThresholdSchema.default(120000),
 } as const
 
 const agentsShape = {
-    defaultAgent: defaultAgentSchema.optional(),
-    defaultModel: defaultModelSchema.optional(),
+  defaultAgent: defaultAgentSchema.optional(),
+  defaultModel: defaultModelSchema.optional(),
 } as const
 
 const daemonRuntimeSchema = z.object(daemonShape).strict()
@@ -49,58 +49,58 @@ const notificationsRuntimeSchema = z.object(notificationsShape).strict()
 const agentsRuntimeSchema = z.object(agentsShape).strict()
 
 const daemonLayerSchema = z
-    .object({
-        host: daemonHostSchema.optional(),
-        port: daemonPortSchema.optional(),
-        connectionTimeoutMs: connectionTimeoutSchema.optional(),
-        password: passwordSchema.optional(),
-    })
-    .strict()
+  .object({
+    host: daemonHostSchema.optional(),
+    port: daemonPortSchema.optional(),
+    connectionTimeoutMs: connectionTimeoutSchema.optional(),
+    password: passwordSchema.optional(),
+  })
+  .strict()
 
 const outputLayerSchema = z
-    .object({
-        maxInboxItems: maxInboxItemsSchema.optional(),
-        maxSummaryLength: maxSummaryLengthSchema.optional(),
-    })
-    .strict()
+  .object({
+    maxInboxItems: maxInboxItemsSchema.optional(),
+    maxSummaryLength: maxSummaryLengthSchema.optional(),
+  })
+  .strict()
 
 const notificationsLayerSchema = z
-    .object({
-        enabled: notificationsEnabledSchema.optional(),
-        blockingOnly: notificationsBlockingOnlySchema.optional(),
-        stalledThresholdMs: notificationsStalledThresholdSchema.optional(),
-    })
-    .strict()
+  .object({
+    enabled: notificationsEnabledSchema.optional(),
+    blockingOnly: notificationsBlockingOnlySchema.optional(),
+    stalledThresholdMs: notificationsStalledThresholdSchema.optional(),
+  })
+  .strict()
 
 const agentsLayerSchema = z
-    .object({
-        defaultAgent: defaultAgentSchema.optional(),
-        defaultModel: defaultModelSchema.optional(),
-    })
-    .strict()
+  .object({
+    defaultAgent: defaultAgentSchema.optional(),
+    defaultModel: defaultModelSchema.optional(),
+  })
+  .strict()
 
 const configRuntimeSchema = z
-    .object({
-        enabled: enabledSchema.default(true),
-        debug: debugSchema.default(false),
-        daemon: z.preprocess((value) => value ?? {}, daemonRuntimeSchema),
-        output: z.preprocess((value) => value ?? {}, outputRuntimeSchema),
-        notifications: z.preprocess((value) => value ?? {}, notificationsRuntimeSchema),
-        agents: z.preprocess((value) => value ?? {}, agentsRuntimeSchema),
-    })
-    .strict()
+  .object({
+    enabled: enabledSchema.default(true),
+    debug: debugSchema.default(false),
+    daemon: z.preprocess((value) => value ?? {}, daemonRuntimeSchema),
+    output: z.preprocess((value) => value ?? {}, outputRuntimeSchema),
+    notifications: z.preprocess((value) => value ?? {}, notificationsRuntimeSchema),
+    agents: z.preprocess((value) => value ?? {}, agentsRuntimeSchema),
+  })
+  .strict()
 
 const configLayerSchema = z
-    .object({
-        $schema: z.string().optional(),
-        enabled: enabledSchema.optional(),
-        debug: debugSchema.optional(),
-        daemon: daemonLayerSchema.optional(),
-        output: outputLayerSchema.optional(),
-        notifications: notificationsLayerSchema.optional(),
-        agents: agentsLayerSchema.optional(),
-    })
-    .strict()
+  .object({
+    $schema: z.string().optional(),
+    enabled: enabledSchema.optional(),
+    debug: debugSchema.optional(),
+    daemon: daemonLayerSchema.optional(),
+    output: outputLayerSchema.optional(),
+    notifications: notificationsLayerSchema.optional(),
+    agents: agentsLayerSchema.optional(),
+  })
+  .strict()
 
 export type DaemonConfig = z.infer<typeof daemonRuntimeSchema>
 export type OutputConfig = z.infer<typeof outputRuntimeSchema>
@@ -115,242 +115,242 @@ const defaultConfig = configRuntimeSchema.parse({})
 const CONFIG_WARNING_DELAY_MS = 7000
 
 const GLOBAL_CONFIG_DIR = process.env.XDG_CONFIG_HOME
-    ? join(process.env.XDG_CONFIG_HOME, "opencode")
-    : join(homedir(), ".config", "opencode")
+  ? join(process.env.XDG_CONFIG_HOME, "opencode")
+  : join(homedir(), ".config", "opencode")
 const GLOBAL_CONFIG_PATH_JSONC = join(GLOBAL_CONFIG_DIR, "paseo.jsonc")
 const GLOBAL_CONFIG_PATH_JSON = join(GLOBAL_CONFIG_DIR, "paseo.json")
 
 interface ValidationError {
-    key: string
-    expected: string
-    actual: string
+  key: string
+  expected: string
+  actual: string
 }
 
 interface ConfigLoadResult {
-    data: unknown | null
-    parseError?: string
+  data: unknown | null
+  parseError?: string
 }
 
 function findOpencodeDir(startDir: string): string | null {
-    let current = startDir
-    while (current !== "/") {
-        const candidate = join(current, ".opencode")
-        if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-            return candidate
-        }
-        const parent = dirname(current)
-        if (parent === current) break
-        current = parent
+  let current = startDir
+  while (current !== "/") {
+    const candidate = join(current, ".opencode")
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+      return candidate
     }
-    return null
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  return null
 }
 
 function getConfigPaths(ctx?: PluginInput): {
-    global: string | null
-    configDir: string | null
-    project: string | null
+  global: string | null
+  configDir: string | null
+  project: string | null
 } {
-    const global = existsSync(GLOBAL_CONFIG_PATH_JSONC)
-        ? GLOBAL_CONFIG_PATH_JSONC
-        : existsSync(GLOBAL_CONFIG_PATH_JSON)
-          ? GLOBAL_CONFIG_PATH_JSON
-          : null
+  const global = existsSync(GLOBAL_CONFIG_PATH_JSONC)
+    ? GLOBAL_CONFIG_PATH_JSONC
+    : existsSync(GLOBAL_CONFIG_PATH_JSON)
+      ? GLOBAL_CONFIG_PATH_JSON
+      : null
 
-    let configDir: string | null = null
-    const opencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
-    if (opencodeConfigDir) {
-        const jsonc = join(opencodeConfigDir, "paseo.jsonc")
-        const json = join(opencodeConfigDir, "paseo.json")
-        configDir = existsSync(jsonc) ? jsonc : existsSync(json) ? json : null
+  let configDir: string | null = null
+  const opencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
+  if (opencodeConfigDir) {
+    const jsonc = join(opencodeConfigDir, "paseo.jsonc")
+    const json = join(opencodeConfigDir, "paseo.json")
+    configDir = existsSync(jsonc) ? jsonc : existsSync(json) ? json : null
+  }
+
+  let project: string | null = null
+  if (ctx?.directory) {
+    const opencodeDir = findOpencodeDir(ctx.directory)
+    if (opencodeDir) {
+      const jsonc = join(opencodeDir, "paseo.jsonc")
+      const json = join(opencodeDir, "paseo.json")
+      project = existsSync(jsonc) ? jsonc : existsSync(json) ? json : null
     }
+  }
 
-    let project: string | null = null
-    if (ctx?.directory) {
-        const opencodeDir = findOpencodeDir(ctx.directory)
-        if (opencodeDir) {
-            const jsonc = join(opencodeDir, "paseo.jsonc")
-            const json = join(opencodeDir, "paseo.json")
-            project = existsSync(jsonc) ? jsonc : existsSync(json) ? json : null
-        }
-    }
-
-    return { global, configDir, project }
+  return { global, configDir, project }
 }
 
 function formatParseErrors(errors: ParseError[]): string {
-    if (errors.length === 0) {
-        return "Invalid JSONC"
-    }
+  if (errors.length === 0) {
+    return "Invalid JSONC"
+  }
 
-    return errors
-        .slice(0, 2)
-        .map((error) => printParseErrorCode(error.error))
-        .join(", ")
+  return errors
+    .slice(0, 2)
+    .map((error) => printParseErrorCode(error.error))
+    .join(", ")
 }
 
 function loadConfigFile(configPath: string): ConfigLoadResult {
-    let fileContent = ""
-    try {
-        fileContent = readFileSync(configPath, "utf-8")
-    } catch {
-        return { data: null }
-    }
+  let fileContent = ""
+  try {
+    fileContent = readFileSync(configPath, "utf-8")
+  } catch {
+    return { data: null }
+  }
 
-    const parseErrors: ParseError[] = []
-    const parsed = parse(fileContent, parseErrors, { allowTrailingComma: true })
+  const parseErrors: ParseError[] = []
+  const parsed = parse(fileContent, parseErrors, { allowTrailingComma: true })
 
-    if (parseErrors.length > 0) {
-        return { data: null, parseError: formatParseErrors(parseErrors) }
-    }
+  if (parseErrors.length > 0) {
+    return { data: null, parseError: formatParseErrors(parseErrors) }
+  }
 
-    if (parsed === undefined || parsed === null) {
-        return { data: null, parseError: "Config file is empty or invalid" }
-    }
+  if (parsed === undefined || parsed === null) {
+    return { data: null, parseError: "Config file is empty or invalid" }
+  }
 
-    return { data: parsed }
+  return { data: parsed }
 }
 
 export function deepCloneConfig(config: PluginConfig): PluginConfig {
-    return structuredClone(config)
+  return structuredClone(config)
 }
 
 function mergeLayer(config: PluginConfig, data: ConfigLayer): PluginConfig {
-    const { $schema: _schema, ...configData } = data
+  const { $schema: _schema, ...configData } = data
 
-    return configRuntimeSchema.parse({
-        ...config,
-        ...configData,
-        daemon: { ...config.daemon, ...configData.daemon },
-        output: { ...config.output, ...configData.output },
-        notifications: { ...config.notifications, ...configData.notifications },
-        agents: { ...config.agents, ...configData.agents },
-    })
+  return configRuntimeSchema.parse({
+    ...config,
+    ...configData,
+    daemon: { ...config.daemon, ...configData.daemon },
+    output: { ...config.output, ...configData.output },
+    notifications: { ...config.notifications, ...configData.notifications },
+    agents: { ...config.agents, ...configData.agents },
+  })
 }
 
 type ConfigLayerKind = "global" | "config-dir" | "project"
 
 function getLayerLabel(layer: ConfigLayerKind): string {
-    switch (layer) {
-        case "global":
-            return "global config"
-        case "config-dir":
-            return "config-dir config"
-        case "project":
-            return "project config"
-    }
+  switch (layer) {
+    case "global":
+      return "global config"
+    case "config-dir":
+      return "config-dir config"
+    case "project":
+      return "project config"
+  }
 }
 
 function queueConfigWarning(ctx: PluginInput, title: string, message: string): void {
-    queueWarningToast(ctx, { title, message, delayMs: CONFIG_WARNING_DELAY_MS })
+  queueWarningToast(ctx, { title, message, delayMs: CONFIG_WARNING_DELAY_MS })
 }
 
 function showParseWarning(ctx: PluginInput, configPath: string, layer: ConfigLayerKind, error: string): void {
-    queueConfigWarning(
-        ctx,
-        `Paseo: ${getLayerLabel(layer)} warning`,
-        `${configPath}\nFailed to parse config file: ${error}`,
-    )
+  queueConfigWarning(
+    ctx,
+    `Paseo: ${getLayerLabel(layer)} warning`,
+    `${configPath}\nFailed to parse config file: ${error}`,
+  )
 }
 
 function formatIssuePath(path: ReadonlyArray<PropertyKey>): string {
-    const normalizedPath = path.filter(
-        (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
-    )
+  const normalizedPath = path.filter(
+    (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
+  )
 
-    return normalizedPath.length > 0 ? normalizedPath.join(".") : "config"
+  return normalizedPath.length > 0 ? normalizedPath.join(".") : "config"
 }
 
 function formatValidationErrors(error: z.ZodError): string[] {
-    return error.issues.slice(0, 3).map((issue) => {
-        const path = formatIssuePath(issue.path)
+  return error.issues.slice(0, 3).map((issue) => {
+    const path = formatIssuePath(issue.path)
 
-        if (issue.code === "unrecognized_keys") {
-            return `${path}: unknown keys ${issue.keys.join(", ")}`
-        }
+    if (issue.code === "unrecognized_keys") {
+      return `${path}: unknown keys ${issue.keys.join(", ")}`
+    }
 
-        return `${path}: ${issue.message}`
-    })
+    return `${path}: ${issue.message}`
+  })
 }
 
 function showValidationWarning(ctx: PluginInput, configPath: string, layer: ConfigLayerKind, error: z.ZodError): void {
-    const messages = formatValidationErrors(error)
-    const suffix = error.issues.length > messages.length ? `\n(+${error.issues.length - messages.length} more)` : ""
+  const messages = formatValidationErrors(error)
+  const suffix = error.issues.length > messages.length ? `\n(+${error.issues.length - messages.length} more)` : ""
 
-    queueConfigWarning(ctx, `Paseo: ${getLayerLabel(layer)} warning`, `${configPath}\n${messages.join("\n")}${suffix}`)
+  queueConfigWarning(ctx, `Paseo: ${getLayerLabel(layer)} warning`, `${configPath}\n${messages.join("\n")}${suffix}`)
 }
 
 export function validateConfigTypes(data: unknown): ValidationError[] {
-    const result = configLayerSchema.safeParse(data)
-    if (result.success) {
-        return []
+  const result = configLayerSchema.safeParse(data)
+  if (result.success) {
+    return []
+  }
+
+  return result.error.issues.map((issue) => {
+    const key = formatIssuePath(issue.path)
+
+    if (issue.code === "unrecognized_keys") {
+      return {
+        key,
+        expected: "known config keys",
+        actual: `unknown: ${issue.keys.join(", ")}`,
+      }
     }
 
-    return result.error.issues.map((issue) => {
-        const key = formatIssuePath(issue.path)
-
-        if (issue.code === "unrecognized_keys") {
-            return {
-                key,
-                expected: "known config keys",
-                actual: `unknown: ${issue.keys.join(", ")}`,
-            }
-        }
-
-        return {
-            key,
-            expected: "valid config value",
-            actual: issue.message,
-        }
-    })
+    return {
+      key,
+      expected: "valid config value",
+      actual: issue.message,
+    }
+  })
 }
 
 function createDefaultConfig(): void {
-    if (!existsSync(GLOBAL_CONFIG_DIR)) {
-        mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true })
-    }
+  if (!existsSync(GLOBAL_CONFIG_DIR)) {
+    mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true })
+  }
 
-    const configContent = `{
+  const configContent = `{
   "$schema": "https://raw.githubusercontent.com/bradsjm/opencode-paseo/refs/heads/main/paseo.schema.json",
   // Configure opencode-paseo here.
   // Only localhost daemon hosts are supported: 127.0.0.1, localhost, or ::1.
   // See README.md for supported keys and defaults.
 }
 `
-    writeFileSync(GLOBAL_CONFIG_PATH_JSONC, configContent, "utf-8")
+  writeFileSync(GLOBAL_CONFIG_PATH_JSONC, configContent, "utf-8")
 }
 
 export function getConfig(ctx: PluginInput): PluginConfig {
-    let config = deepCloneConfig(defaultConfig)
-    const configPaths = getConfigPaths(ctx)
+  let config = deepCloneConfig(defaultConfig)
+  const configPaths = getConfigPaths(ctx)
 
-    if (!configPaths.global) {
-        createDefaultConfig()
+  if (!configPaths.global) {
+    createDefaultConfig()
+  }
+
+  const layers: Array<{ path: string | null; kind: ConfigLayerKind }> = [
+    { path: configPaths.global, kind: "global" },
+    { path: configPaths.configDir, kind: "config-dir" },
+    { path: configPaths.project, kind: "project" },
+  ]
+
+  for (const layer of layers) {
+    if (!layer.path) continue
+
+    const result = loadConfigFile(layer.path)
+    if (result.parseError) {
+      showParseWarning(ctx, layer.path, layer.kind, result.parseError)
+      continue
+    }
+    if (!result.data) continue
+
+    const parsedLayer = configLayerSchema.safeParse(result.data)
+    if (!parsedLayer.success) {
+      showValidationWarning(ctx, layer.path, layer.kind, parsedLayer.error)
+      continue
     }
 
-    const layers: Array<{ path: string | null; kind: ConfigLayerKind }> = [
-        { path: configPaths.global, kind: "global" },
-        { path: configPaths.configDir, kind: "config-dir" },
-        { path: configPaths.project, kind: "project" },
-    ]
+    config = mergeLayer(config, parsedLayer.data)
+  }
 
-    for (const layer of layers) {
-        if (!layer.path) continue
-
-        const result = loadConfigFile(layer.path)
-        if (result.parseError) {
-            showParseWarning(ctx, layer.path, layer.kind, result.parseError)
-            continue
-        }
-        if (!result.data) continue
-
-        const parsedLayer = configLayerSchema.safeParse(result.data)
-        if (!parsedLayer.success) {
-            showValidationWarning(ctx, layer.path, layer.kind, parsedLayer.error)
-            continue
-        }
-
-        config = mergeLayer(config, parsedLayer.data)
-    }
-
-    return config
+  return config
 }

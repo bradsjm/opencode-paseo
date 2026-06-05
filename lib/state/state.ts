@@ -1,11 +1,11 @@
 import type {
-    PluginState,
-    SessionMapping,
-    ConnectionStatus,
-    CapabilitySnapshot,
-    TerminalSessionSummary,
-    EphemeralWorkerRunRecord,
-    WorkerSummary,
+  PluginState,
+  SessionMapping,
+  ConnectionStatus,
+  CapabilitySnapshot,
+  TerminalSessionSummary,
+  EphemeralWorkerRunRecord,
+  WorkerSummary,
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
 import { getChatRoomFromAgentLabels } from "../chat/worker-room.js"
@@ -14,104 +14,104 @@ import { mapDaemonWorkerStatus } from "./status.js"
 const INTERNAL_WORKER_LABEL_PREFIX = "opencodePaseo."
 
 export {
-    insertInboxEvent,
-    markEventRead,
-    markAllRead,
-    findSessionsForResource,
-    buildBlockingMetadata,
-    getBlockingAction,
-    markUnreadStallEventsRead,
+  insertInboxEvent,
+  markEventRead,
+  markAllRead,
+  findSessionsForResource,
+  buildBlockingMetadata,
+  getBlockingAction,
+  markUnreadStallEventsRead,
 } from "./inbox-state.js"
 
 export function createSessionMapping(opencodeSessionId: string, projectRoot: string): SessionMapping {
-    const now = Date.now()
-    return {
-        opencodeSessionId,
-        projectRoot,
-        createdTerminalIds: new Set(),
-        createdWorkerIds: new Set(),
-        unreadEvents: new Map(),
-        pendingPermissions: new Map(),
-        createdAt: now,
-        updatedAt: now,
-    }
+  const now = Date.now()
+  return {
+    opencodeSessionId,
+    projectRoot,
+    createdTerminalIds: new Set(),
+    createdWorkerIds: new Set(),
+    unreadEvents: new Map(),
+    pendingPermissions: new Map(),
+    createdAt: now,
+    updatedAt: now,
+  }
 }
 
 export function createPluginState(): PluginState {
-    return {
-        connectionStatus: "disconnected",
-        lastError: undefined,
-        capabilities: null,
-        sessions: new Map(),
-        terminals: new Map(),
-        workers: new Map(),
-        chatRooms: new Map(),
-        inbox: new Map(),
-        workerLaunches: new Map(),
-        ephemeralWorkerRuns: new Map(),
-        workerLaunchQueue: [],
-        activeWorkerLaunchId: null,
-        eventCounter: 0,
-    }
+  return {
+    connectionStatus: "disconnected",
+    lastError: undefined,
+    capabilities: null,
+    sessions: new Map(),
+    terminals: new Map(),
+    workers: new Map(),
+    chatRooms: new Map(),
+    inbox: new Map(),
+    workerLaunches: new Map(),
+    ephemeralWorkerRuns: new Map(),
+    workerLaunchQueue: [],
+    activeWorkerLaunchId: null,
+    eventCounter: 0,
+  }
 }
 
 export function resetPluginState(state: PluginState): void {
-    state.connectionStatus = "disconnected"
-    state.lastError = undefined
-    state.capabilities = null
-    state.sessions.clear()
-    state.terminals.clear()
-    state.workers.clear()
-    state.chatRooms.clear()
-    state.inbox.clear()
-    state.workerLaunches.clear()
-    state.ephemeralWorkerRuns.clear()
-    state.workerLaunchQueue = []
-    state.activeWorkerLaunchId = null
-    state.eventCounter = 0
+  state.connectionStatus = "disconnected"
+  state.lastError = undefined
+  state.capabilities = null
+  state.sessions.clear()
+  state.terminals.clear()
+  state.workers.clear()
+  state.chatRooms.clear()
+  state.inbox.clear()
+  state.workerLaunches.clear()
+  state.ephemeralWorkerRuns.clear()
+  state.workerLaunchQueue = []
+  state.activeWorkerLaunchId = null
+  state.eventCounter = 0
 }
 
 export function setConnectionStatus(state: PluginState, status: ConnectionStatus, error?: string): void {
-    state.connectionStatus = status
-    if (error !== undefined) {
-        state.lastError = error
-    } else if (status === "connected") {
-        state.lastError = undefined
-    }
+  state.connectionStatus = status
+  if (error !== undefined) {
+    state.lastError = error
+  } else if (status === "connected") {
+    state.lastError = undefined
+  }
 }
 
 export function setCapabilities(state: PluginState, caps: CapabilitySnapshot): void {
-    state.capabilities = caps
+  state.capabilities = caps
 }
 
 export function getOrCreateSession(state: PluginState, sessionId: string, projectRoot: string): SessionMapping {
-    let mapping = state.sessions.get(sessionId)
-    if (!mapping) {
-        mapping = createSessionMapping(sessionId, projectRoot)
-        state.sessions.set(sessionId, mapping)
-    }
-    return mapping
+  let mapping = state.sessions.get(sessionId)
+  if (!mapping) {
+    mapping = createSessionMapping(sessionId, projectRoot)
+    state.sessions.set(sessionId, mapping)
+  }
+  return mapping
 }
 
 // ─── Terminal / Worker Updates ───────────────────────────────────────────────
 
 export function upsertTerminal(state: PluginState, terminal: TerminalSessionSummary): void {
-    state.terminals.set(terminal.id, terminal)
+  state.terminals.set(terminal.id, terminal)
 }
 
 export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
-    state.workers.set(worker.id, worker)
-    if (worker.chatRoom) {
-        const existing = state.chatRooms.get(worker.chatRoom)
-        if (!existing) {
-            state.chatRooms.set(worker.chatRoom, {
-                name: worker.chatRoom,
-                lastMessageId: null,
-                seededAt: null,
-                watching: false,
-            })
-        }
+  state.workers.set(worker.id, worker)
+  if (worker.chatRoom) {
+    const existing = state.chatRooms.get(worker.chatRoom)
+    if (!existing) {
+      state.chatRooms.set(worker.chatRoom, {
+        name: worker.chatRoom,
+        lastMessageId: null,
+        seededAt: null,
+        watching: false,
+      })
     }
+  }
 }
 
 // ─── Session-Terminal Binding ────────────────────────────────────────────────
@@ -120,12 +120,12 @@ export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
 // terminal are routed to the correct session.
 
 export function recordCreatedTerminal(state: PluginState, sessionId: string, terminal: TerminalSessionSummary): void {
-    state.terminals.set(terminal.id, terminal)
-    const session = state.sessions.get(sessionId)
-    if (session) {
-        session.createdTerminalIds.add(terminal.id)
-        session.updatedAt = Date.now()
-    }
+  state.terminals.set(terminal.id, terminal)
+  const session = state.sessions.get(sessionId)
+  if (session) {
+    session.createdTerminalIds.add(terminal.id)
+    session.updatedAt = Date.now()
+  }
 }
 
 // ─── Session-Worker Binding ─────────────────────────────────────────────────────
@@ -134,42 +134,42 @@ export function recordCreatedTerminal(state: PluginState, sessionId: string, ter
 // worker are routed to the correct session.
 
 export function recordCreatedWorker(state: PluginState, sessionId: string, worker: WorkerSummary): void {
-    upsertWorker(state, worker)
-    const session = state.sessions.get(sessionId)
-    if (session) {
-        session.createdWorkerIds.add(worker.id)
-        session.updatedAt = Date.now()
-    }
+  upsertWorker(state, worker)
+  const session = state.sessions.get(sessionId)
+  if (session) {
+    session.createdWorkerIds.add(worker.id)
+    session.updatedAt = Date.now()
+  }
 }
 
 export function registerEphemeralWorkerRun(
-    state: PluginState,
-    sessionId: string,
-    workerId: string,
-    options: { background: boolean; createdAt?: number },
+  state: PluginState,
+  sessionId: string,
+  workerId: string,
+  options: { background: boolean; createdAt?: number },
 ): void {
-    state.ephemeralWorkerRuns.set(workerId, {
-        workerId,
-        sessionId,
-        background: options.background,
-        createdAt: options.createdAt ?? Date.now(),
-    })
+  state.ephemeralWorkerRuns.set(workerId, {
+    workerId,
+    sessionId,
+    background: options.background,
+    createdAt: options.createdAt ?? Date.now(),
+  })
 }
 
 export function removeEphemeralWorkerRun(state: PluginState, workerId: string): EphemeralWorkerRunRecord | undefined {
-    const record = state.ephemeralWorkerRuns.get(workerId)
-    state.ephemeralWorkerRuns.delete(workerId)
-    return record
+  const record = state.ephemeralWorkerRuns.get(workerId)
+  state.ephemeralWorkerRuns.delete(workerId)
+  return record
 }
 
 export function listEphemeralWorkerIdsForSession(state: PluginState, sessionId: string): string[] {
-    const workerIds: string[] = []
-    for (const run of state.ephemeralWorkerRuns.values()) {
-        if (run.sessionId === sessionId) {
-            workerIds.push(run.workerId)
-        }
+  const workerIds: string[] = []
+  for (const run of state.ephemeralWorkerRuns.values()) {
+    if (run.sessionId === sessionId) {
+      workerIds.push(run.workerId)
     }
-    return workerIds
+  }
+  return workerIds
 }
 
 // ─── Session Lifecycle Helpers ───────────────────────────────────────────────
@@ -180,17 +180,17 @@ export function listEphemeralWorkerIdsForSession(state: PluginState, sessionId: 
  * It does NOT delete global worker/terminal entries — only session bindings.
  */
 export function removeSession(state: PluginState, sessionId: string): boolean {
-    const session = state.sessions.get(sessionId)
-    if (!session) return false
+  const session = state.sessions.get(sessionId)
+  if (!session) return false
 
-    // Clear session-scoped unread and pending maps
-    session.unreadEvents.clear()
-    session.pendingPermissions.clear()
-    session.createdTerminalIds.clear()
-    session.createdWorkerIds.clear()
+  // Clear session-scoped unread and pending maps
+  session.unreadEvents.clear()
+  session.pendingPermissions.clear()
+  session.createdTerminalIds.clear()
+  session.createdWorkerIds.clear()
 
-    state.sessions.delete(sessionId)
-    return true
+  state.sessions.delete(sessionId)
+  return true
 }
 
 /**
@@ -199,9 +199,9 @@ export function removeSession(state: PluginState, sessionId: string): boolean {
  * Does NOT delete the worker from state.workers — caller handles that.
  */
 export function unbindWorkerFromSessions(state: PluginState, workerId: string): void {
-    for (const session of state.sessions.values()) {
-        session.createdWorkerIds.delete(workerId)
-    }
+  for (const session of state.sessions.values()) {
+    session.createdWorkerIds.delete(workerId)
+  }
 }
 
 /**
@@ -209,23 +209,23 @@ export function unbindWorkerFromSessions(state: PluginState, workerId: string): 
  * actionable references for that worker. Global inbox history is preserved.
  */
 export function removeWorkerFromState(state: PluginState, workerId: string): void {
-    state.workers.delete(workerId)
+  state.workers.delete(workerId)
 
-    for (const session of state.sessions.values()) {
-        session.createdWorkerIds.delete(workerId)
+  for (const session of state.sessions.values()) {
+    session.createdWorkerIds.delete(workerId)
 
-        for (const [eventId, event] of session.unreadEvents.entries()) {
-            if (event.resourceId === workerId) {
-                session.unreadEvents.delete(eventId)
-            }
-        }
-
-        for (const [eventId, event] of session.pendingPermissions.entries()) {
-            if (event.resourceId === workerId) {
-                session.pendingPermissions.delete(eventId)
-            }
-        }
+    for (const [eventId, event] of session.unreadEvents.entries()) {
+      if (event.resourceId === workerId) {
+        session.unreadEvents.delete(eventId)
+      }
     }
+
+    for (const [eventId, event] of session.pendingPermissions.entries()) {
+      if (event.resourceId === workerId) {
+        session.pendingPermissions.delete(eventId)
+      }
+    }
+  }
 }
 
 /**
@@ -234,9 +234,9 @@ export function removeWorkerFromState(state: PluginState, workerId: string): voi
  * Does NOT delete the terminal from state.terminals — caller handles that.
  */
 export function unbindTerminalFromSessions(state: PluginState, terminalId: string): void {
-    for (const session of state.sessions.values()) {
-        session.createdTerminalIds.delete(terminalId)
-    }
+  for (const session of state.sessions.values()) {
+    session.createdTerminalIds.delete(terminalId)
+  }
 }
 
 // ─── Agent → WorkerSummary Mapper ────────────────────────────────────────────
@@ -244,49 +244,49 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
 // produce a consistent WorkerSummary from a transport-level AgentSummary.
 
 export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
-    const rawLabels = agent.labels
-    const labels: string[] = Array.isArray(rawLabels)
-        ? rawLabels.filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
-        : rawLabels && typeof rawLabels === "object"
-          ? Object.keys(rawLabels).filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
-          : []
+  const rawLabels = agent.labels
+  const labels: string[] = Array.isArray(rawLabels)
+    ? rawLabels.filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
+    : rawLabels && typeof rawLabels === "object"
+      ? Object.keys(rawLabels).filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
+      : []
 
-    const pendingPermissions = agent.pendingPermissions ?? []
-    const pendingPermissionIds = pendingPermissions
-        .map((p) => p?.id as string | undefined)
-        .filter((id): id is string => typeof id === "string")
-    const chatRoom = getChatRoomFromAgentLabels(rawLabels)
+  const pendingPermissions = agent.pendingPermissions ?? []
+  const pendingPermissionIds = pendingPermissions
+    .map((p) => p?.id as string | undefined)
+    .filter((id): id is string => typeof id === "string")
+  const chatRoom = getChatRoomFromAgentLabels(rawLabels)
 
-    return {
-        id: agent.id,
-        title: agent.title ?? agent.model ?? agent.id,
-        agent: agent.provider ?? "unknown",
-        provider: agent.provider ?? "unknown",
-        model: agent.model ?? null,
-        currentModeId:
-            (agent.runtimeInfo?.currentModeId as string | undefined) ??
-            (agent.capabilities?.currentModeId as string | undefined) ??
-            null,
-        status: mapDaemonWorkerStatus({
-            status: agent.status,
-            ...(agent.requiresAttention !== undefined ? { requiresAttention: agent.requiresAttention } : {}),
-            ...(agent.attentionReason !== undefined ? { attentionReason: agent.attentionReason } : {}),
-            pendingPermissions,
-        }),
-        ...(agent.status !== undefined ? { rawStatus: agent.status } : {}),
-        cwd: agent.cwd ?? "",
-        labels,
-        ...(chatRoom !== undefined ? { chatRoom } : {}),
-        ...(agent.worktreePath !== undefined ? { worktreePath: agent.worktreePath } : {}),
-        ...(agent.branchName !== undefined ? { branchName: agent.branchName } : {}),
-        pendingPermissions,
-        pendingPermissionIds,
-        requiresAttention: Boolean(agent.requiresAttention),
-        attentionReason: agent.attentionReason ?? null,
-        runtimeInfo: agent.runtimeInfo ?? null,
-        persistence: (agent.capabilities?.persistence as Record<string, unknown>) ?? null,
-        unreadEventCount: 0,
-        ...(agent.createdAt !== undefined ? { createdAt: agent.createdAt } : {}),
-        ...(agent.updatedAt !== undefined ? { updatedAt: agent.updatedAt } : {}),
-    }
+  return {
+    id: agent.id,
+    title: agent.title ?? agent.model ?? agent.id,
+    agent: agent.provider ?? "unknown",
+    provider: agent.provider ?? "unknown",
+    model: agent.model ?? null,
+    currentModeId:
+      (agent.runtimeInfo?.currentModeId as string | undefined) ??
+      (agent.capabilities?.currentModeId as string | undefined) ??
+      null,
+    status: mapDaemonWorkerStatus({
+      status: agent.status,
+      ...(agent.requiresAttention !== undefined ? { requiresAttention: agent.requiresAttention } : {}),
+      ...(agent.attentionReason !== undefined ? { attentionReason: agent.attentionReason } : {}),
+      pendingPermissions,
+    }),
+    ...(agent.status !== undefined ? { rawStatus: agent.status } : {}),
+    cwd: agent.cwd ?? "",
+    labels,
+    ...(chatRoom !== undefined ? { chatRoom } : {}),
+    ...(agent.worktreePath !== undefined ? { worktreePath: agent.worktreePath } : {}),
+    ...(agent.branchName !== undefined ? { branchName: agent.branchName } : {}),
+    pendingPermissions,
+    pendingPermissionIds,
+    requiresAttention: Boolean(agent.requiresAttention),
+    attentionReason: agent.attentionReason ?? null,
+    runtimeInfo: agent.runtimeInfo ?? null,
+    persistence: (agent.capabilities?.persistence as Record<string, unknown>) ?? null,
+    unreadEventCount: 0,
+    ...(agent.createdAt !== undefined ? { createdAt: agent.createdAt } : {}),
+    ...(agent.updatedAt !== undefined ? { updatedAt: agent.updatedAt } : {}),
+  }
 }

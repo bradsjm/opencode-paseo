@@ -1,4 +1,4 @@
 interface:
-    display_name: "Paseo"
-    short_description: "Coordinate opencode-paseo workers, loops, schedules, terminals, and worktrees"
-    default_prompt: "Use the project Paseo skill to choose the smallest opencode-paseo orchestration pattern, brief workers clearly, monitor inbox/permissions, and verify results before cleanup."
+  display_name: "Paseo"
+  short_description: "Coordinate opencode-paseo workers, loops, schedules, terminals, and worktrees"
+  default_prompt: "Use the project Paseo skill to choose the smallest opencode-paseo orchestration pattern, brief workers clearly, monitor inbox/permissions, and verify results before cleanup."

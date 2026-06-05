@@ -25,4 +25,5 @@ OpenCode tool definitions for the plugin.
 ## Notes
 
 - The worker tool surface intentionally separates queued detached launches (`paseo_worker_create`) from ephemeral non-detached runs (`paseo_worker_run`).
+- `paseo_worker_launch_status` is the main follow-up path for queued launches and now includes rollback metadata for failed worktree-backed launches.
 - The loop tool surface intentionally requires verification and stop bounds before calling the daemon.
