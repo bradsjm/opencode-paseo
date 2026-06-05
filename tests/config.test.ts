@@ -32,6 +32,12 @@ function createToastCollector() {
   }
 }
 
+function getMessage(messages: string[], index: number): string {
+  const message = messages[index]
+  assert.notEqual(message, undefined)
+  return message
+}
+
 async function withImmediateTimers(run: () => Promise<void> | void) {
   const originalSetTimeout = globalThis.setTimeout
   globalThis.setTimeout = ((fn: (...args: any[]) => void) => {
@@ -215,7 +221,7 @@ test("getConfig", async (t) => {
     })
 
     assert.equal(messages.length, 1)
-    assert.match(messages[0], /notifications\.stalledThresholdMs/i)
+    assert.match(getMessage(messages, 0), /notifications\.stalledThresholdMs/i)
   })
 
   await t.test("warns on malformed config files instead of silently dropping them", async () => {
@@ -234,8 +240,8 @@ test("getConfig", async (t) => {
     })
 
     assert.equal(messages.length, 1)
-    assert.match(messages[0], /Failed to parse config file/i)
-    assert.match(messages[0], /config-dir config warning/i)
+    assert.match(getMessage(messages, 0), /Failed to parse config file/i)
+    assert.match(getMessage(messages, 0), /config-dir config warning/i)
   })
 
   await t.test("warns and skips invalid config layers", async () => {
@@ -259,8 +265,8 @@ test("getConfig", async (t) => {
     })
 
     assert.equal(messages.length, 1)
-    assert.match(messages[0], /daemon\.port/i)
-    assert.match(messages[0], /config-dir config warning/i)
+    assert.match(getMessage(messages, 0), /daemon\.port/i)
+    assert.match(getMessage(messages, 0), /config-dir config warning/i)
   })
 
   await t.test("rejects non-local daemon hosts from config", () => {
@@ -278,7 +284,7 @@ test("getConfig", async (t) => {
 
         assert.equal(config.daemon.host, "127.0.0.1")
         assert.equal(messages.length, 1)
-        assert.match(messages[0], /daemon\.host/i)
+        assert.match(getMessage(messages, 0), /daemon\.host/i)
       })
     })
   })
@@ -303,8 +309,8 @@ test("getConfig", async (t) => {
     })
 
     assert.equal(messages.length, 2)
-    assert.match(messages[0], /config-dir config warning/i)
-    assert.match(messages[1], /project config warning/i)
+    assert.match(getMessage(messages, 0), /config-dir config warning/i)
+    assert.match(getMessage(messages, 1), /project config warning/i)
   })
 
   await t.test("creates a commented JSONC stub with a schema path", async () => {

@@ -8,6 +8,9 @@ import type { PluginConfig } from "../lib/config.js"
 import type { PaseoTransport, ChatMessage } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 
+type MockPromptPart = { type: "text"; text: string } | { type: string; text?: string }
+type MockPromptInput = { body: { parts: MockPromptPart[] } }
+
 const TEST_CONFIG: PluginConfig = {
   enabled: true,
   debug: false,
@@ -102,7 +105,7 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
 function createMockOpencodeClient(messages: string[]): OpencodeClient {
   return {
     session: {
-      prompt: async ({ body }) => {
+      prompt: async ({ body }: MockPromptInput) => {
         const text = body.parts.map((part) => (part.type === "text" ? part.text : "")).join("")
         messages.push(text)
         return { data: null }
