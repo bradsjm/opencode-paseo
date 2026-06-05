@@ -59,7 +59,7 @@ test("paseo_profile_list", async (t) => {
           ],
         }),
       },
-    } as OpencodeClient
+    } as unknown as OpencodeClient
 
     const toolDef = createProfileListTool(opencodeClient, logger)
     const result = await toolDef.execute({}, mockContext())

@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createPluginState, insertInboxEvent, markEventRead } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
+import type { RunWorkerOptions } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 import { Logger } from "../lib/logger.js"
 import {
@@ -105,6 +106,11 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
     createWorktree: async () => ({ requestId: "req", workspace: null, error: null }),
     archiveWorktree: async () => ({ requestId: "req", success: true, error: null }),
+    loopRun: async () => ({ requestId: "req", loop: null, error: null }),
+    loopList: async () => ({ requestId: "req", loops: [], error: null }),
+    loopInspect: async () => ({ requestId: "req", loop: null, error: null }),
+    loopLogs: async () => ({ requestId: "req", loop: null, entries: [], nextCursor: null, error: null }),
+    loopStop: async () => ({ requestId: "req", loop: null, error: null }),
     scheduleList: async () => ({ requestId: "req", schedules: [], error: null }),
     scheduleInspect: async () => ({ requestId: "req", schedule: null, error: null }),
     scheduleCreate: async () => ({ requestId: "req", schedule: null, error: null }),
@@ -744,7 +750,7 @@ test("paseo_worker_list", async (t) => {
           model: null,
           status: "running",
           title: "Live Worker",
-          labels: {},
+          labels: {} as Record<string, string>,
           pendingPermissions: [],
         },
         {
@@ -901,10 +907,10 @@ test("paseo_worker_update", async (t) => {
     await t.test("foreground run waits for completion and clears ephemeral tracking", async () => {
       const state = createPluginState()
       const opencode = mockOpencodeClient()
-      let runOptions: Record<string, unknown> | null = null
+      const runOptions: RunWorkerOptions[] = []
       const client = createMockTransport({
         runWorker: async (opts) => {
-          runOptions = opts as Record<string, unknown>
+          runOptions.push(opts)
           return {
             id: "w-run-1",
             provider: "opencode",
@@ -935,11 +941,11 @@ test("paseo_worker_update", async (t) => {
       const result = await toolDef.execute({ prompt: "Solve it" }, mockContext())
       const output = JSON.parse((result as { output: string }).output)
 
-      assert.equal(runOptions?.modeId, "build")
-      assert.equal(runOptions?.provider, "opencode")
-      assert.equal(runOptions?.model, "openai/gpt-5.4")
-      assert.equal(runOptions?.initialPrompt, "Solve it")
-      assert.equal(runOptions?.background, false)
+      assert.equal(runOptions[0]?.modeId, "build")
+      assert.equal(runOptions[0]?.provider, "opencode")
+      assert.equal(runOptions[0]?.model, "openai/gpt-5.4")
+      assert.equal(runOptions[0]?.initialPrompt, "Solve it")
+      assert.equal(runOptions[0]?.background, false)
       assert.equal(output.workerId, "w-run-1")
       assert.equal(output.status, "completed")
       assert.equal(output.detached, false)

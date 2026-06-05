@@ -34,7 +34,9 @@ function createToastCollector() {
 
 function getMessage(messages: string[], index: number): string {
   const message = messages[index]
-  assert.notEqual(message, undefined)
+  if (message === undefined) {
+    throw new Error(`Expected message at index ${index}`)
+  }
   return message
 }
 

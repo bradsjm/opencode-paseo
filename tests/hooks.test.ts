@@ -11,7 +11,7 @@ import { Logger } from "../lib/logger.js"
 import type { PluginConfig } from "../lib/config.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import type { OpencodeClient } from "../lib/profile.js"
-import type { WorkerSummary } from "../lib/state/types.js"
+import type { InboxEvent, WorkerSummary } from "../lib/state/types.js"
 
 const mockConfig: PluginConfig = {
   enabled: true,
@@ -20,6 +20,22 @@ const mockConfig: PluginConfig = {
   output: { maxInboxItems: 100, maxSummaryLength: 500 },
   notifications: { enabled: true, blockingOnly: false, stalledThresholdMs: 120000 },
   agents: {},
+}
+
+function firstInboxEvent(state: ReturnType<typeof createPluginState>): InboxEvent {
+  const event = Array.from(state.inbox.values())[0]
+  if (event === undefined) {
+    throw new Error("Expected at least one inbox event")
+  }
+  return event
+}
+
+function firstCall(calls: Array<{ sessionId: string; text: string }>): { sessionId: string; text: string } {
+  const call = calls[0]
+  if (call === undefined) {
+    throw new Error("Expected at least one nudge call")
+  }
+  return call
 }
 
 // ─── Daemon Event Handler Tests ──────────────────────────────────────────────
@@ -37,7 +53,7 @@ test("createDaemonEventHandler", async (t) => {
     })
 
     assert.equal(state.inbox.size, 1)
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.kind, "worker.started")
     assert.equal(event.resourceId, "w1")
     assert.equal(event.blocking, false)
@@ -52,7 +68,7 @@ test("createDaemonEventHandler", async (t) => {
       payload: { workerId: "w1", summary: "Worker w1 appears stalled" },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.kind, "worker.stalled")
     assert.equal(event.blocking, false)
   })
@@ -66,7 +82,7 @@ test("createDaemonEventHandler", async (t) => {
       payload: { workerId: "w1", summary: "Worker 1 blocked on permission" },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.blocking, true)
   })
 
@@ -111,7 +127,7 @@ test("createDaemonEventHandler", async (t) => {
       },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.kind, "permission.requested")
     assert.equal(event.blocking, true)
   })
@@ -122,7 +138,7 @@ test("createDaemonEventHandler", async (t) => {
 
     handler({ type: "daemon.connected", payload: {} })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(state.connectionStatus, "connected")
     assert.equal(event.kind, "daemon.connected")
     assert.equal(event.resourceId, "daemon")
@@ -152,7 +168,7 @@ test("createDaemonEventHandler", async (t) => {
 
     handler({ type: "daemon.disconnected", payload: {} })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(state.connectionStatus, "error")
     assert.equal(state.lastError, "Daemon disconnected")
     assert.equal(event.kind, "daemon.disconnected")
@@ -241,7 +257,7 @@ test("createDaemonEventHandler", async (t) => {
     assert.ok(worker)
     assert.ok(worker.pendingPermissionIds.includes("perm-1"))
     assert.equal(worker.pendingPermissions.length, 1)
-    assert.equal(worker.pendingPermissions[0].id, "perm-1")
+    assert.equal(worker.pendingPermissions[0]?.id, "perm-1")
   })
 
   await t.test("cleans up rich pendingPermissions on permission.resolved", () => {
@@ -290,7 +306,7 @@ test("createEventHandler", async (t) => {
   const logger = new Logger(false)
   const mockTransport = {
     cancelWorker: async () => {},
-  } as PaseoTransport
+  } as unknown as PaseoTransport
 
   await t.test("handles session.deleted by removing session", async () => {
     const state = createPluginState()
@@ -444,7 +460,7 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
       },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.blocking, true)
     assert.equal(event.metadata?.actionKind, "permission")
     assert.equal(event.metadata?.workerId, "w1")
@@ -461,7 +477,7 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
       payload: { workerId: "w1", summary: "Worker blocked on question" },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.blocking, true)
     assert.equal(event.metadata?.actionKind, "worker-question")
     assert.equal(event.metadata?.workerId, "w1")
@@ -477,7 +493,7 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
       payload: { workerId: "w1", summary: "started" },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.blocking, false)
     assert.equal(event.metadata?.actionKind, undefined)
   })
@@ -494,7 +510,7 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
       payload: { workerId: "w1", summary: "123456789012345" },
     })
 
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.summary, "123456789…")
   })
 
@@ -509,7 +525,7 @@ test("createDaemonEventHandler blocking metadata", async (t) => {
     handler({ type: "worker.finished", payload: { workerId: "w2", summary: "second" } })
 
     assert.equal(state.inbox.size, 1)
-    const event = Array.from(state.inbox.values())[0]
+    const event = firstInboxEvent(state)
     assert.equal(event.resourceId, "w2")
   })
 })
@@ -549,6 +565,8 @@ function seedWorker(state: ReturnType<typeof createPluginState>, id: string): Wo
     labels: [],
     pendingPermissions: [],
     pendingPermissionIds: [],
+    requiresAttention: false,
+    attentionReason: null,
     runtimeInfo: null,
     persistence: null,
     unreadEventCount: 0,
@@ -575,9 +593,10 @@ test("nudge delivery", async (t) => {
     })
 
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].sessionId, "sess-1")
-    assert.ok(calls[0].text.includes("[paseo:worker.blocked]"))
-    assert.ok(calls[0].text.includes("w1"))
+    const call = firstCall(calls)
+    assert.equal(call.sessionId, "sess-1")
+    assert.ok(call.text.includes("[paseo:worker.blocked]"))
+    assert.ok(call.text.includes("w1"))
   })
 
   await t.test("sends nudge for non-blocking event when blockingOnly is false", () => {
@@ -595,7 +614,7 @@ test("nudge delivery", async (t) => {
     })
 
     assert.equal(calls.length, 1)
-    assert.ok(calls[0].text.includes("[paseo:worker.finished]"))
+    assert.ok(firstCall(calls).text.includes("[paseo:worker.finished]"))
   })
 
   await t.test("does not send nudge when notifications disabled", () => {

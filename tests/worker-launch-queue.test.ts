@@ -20,6 +20,14 @@ async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve))
 }
 
+function at<T>(items: T[], index: number): T {
+  const item = items[index]
+  if (item === undefined) {
+    throw new Error(`Expected item at index ${index}`)
+  }
+  return item
+}
+
 function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTransport {
   return {
     isConnected: () => true,
@@ -45,8 +53,23 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
       permissionId: opts.permissionId,
       behavior: opts.behavior,
     }),
+    createChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+    listChatRooms: async () => ({ requestId: "req", rooms: [], error: null }),
+    inspectChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+    deleteChatRoom: async () => ({ requestId: "req", room: null, error: null }),
+    postChatMessage: async () => ({ requestId: "req", message: null, error: null }),
+    readChatMessages: async () => ({ requestId: "req", messages: [], error: null }),
+    waitForChatMessages: async () => ({ requestId: "req", messages: [], timedOut: true, error: null }),
     createWorker: async () => ({
       id: "w",
+      provider: "opencode",
+      cwd: "/tmp",
+      model: null,
+      status: "running" as const,
+      title: null,
+    }),
+    runWorker: async () => ({
+      id: "w-run",
       provider: "opencode",
       cwd: "/tmp",
       model: null,
@@ -76,6 +99,11 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
     createWorktree: async () => ({ requestId: "req", workspace: null, error: null }),
     archiveWorktree: async () => ({ requestId: "req", success: true, error: null }),
+    loopRun: async () => ({ requestId: "req", loop: null, error: null }),
+    loopList: async () => ({ requestId: "req", loops: [], error: null }),
+    loopInspect: async () => ({ requestId: "req", loop: null, error: null }),
+    loopLogs: async () => ({ requestId: "req", loop: null, entries: [], nextCursor: null, error: null }),
+    loopStop: async () => ({ requestId: "req", loop: null, error: null }),
     scheduleList: async () => ({ requestId: "req", schedules: [], error: null }),
     scheduleInspect: async () => ({ requestId: "req", schedule: null, error: null }),
     scheduleCreate: async () => ({ requestId: "req", schedule: null, error: null }),
@@ -133,7 +161,7 @@ test("worker launch queue controller", async (t) => {
         callOrder.push(opts.labels?.["opencodePaseo.launchId"] ?? "missing")
         activeCreates += 1
         maxActiveCreates = Math.max(maxActiveCreates, activeCreates)
-        const result = await completions[callIndex].promise
+        const result = await at(completions, callIndex).promise
         activeCreates -= 1
         return result
       },
@@ -173,7 +201,7 @@ test("worker launch queue controller", async (t) => {
     assert.equal(callOrder[0], first.launchId)
     assert.equal(state.activeWorkerLaunchId, first.launchId)
 
-    completions[0].resolve({
+    at(completions, 0).resolve({
       id: "w1",
       provider: "opencode",
       cwd: "/project",
@@ -187,7 +215,7 @@ test("worker launch queue controller", async (t) => {
     assert.equal(callOrder[1], second.launchId)
     assert.equal(state.activeWorkerLaunchId, second.launchId)
 
-    completions[1].resolve({
+    at(completions, 1).resolve({
       id: "w2",
       provider: "opencode",
       cwd: "/project",
@@ -271,8 +299,8 @@ test("worker launch queue controller", async (t) => {
     assert.ok(state.sessions.get("sess-1")?.createdWorkerIds.has("w-success"))
     assert.deepEqual(state.workers.get("w-success")?.labels, [])
     assert.equal(promptMessages.length, 2)
-    assert.match(promptMessages[0], new RegExp(failedReceipt.launchId))
-    assert.match(promptMessages[1], /w-success/)
+    assert.match(at(promptMessages, 0), new RegExp(failedReceipt.launchId))
+    assert.match(at(promptMessages, 1), /w-success/)
   })
 
   await t.test(
@@ -316,8 +344,8 @@ test("worker launch queue controller", async (t) => {
       assert.equal(status.status, "created")
       assert.equal(status.workerId, "w-enriched")
       assert.equal(promptMessages.length, 1)
-      assert.match(promptMessages[0], new RegExp(receipt.launchId))
-      assert.match(promptMessages[0], /w-enriched/)
+      assert.match(at(promptMessages, 0), new RegExp(receipt.launchId))
+      assert.match(at(promptMessages, 0), /w-enriched/)
     },
   )
 
@@ -351,8 +379,8 @@ test("worker launch queue controller", async (t) => {
     const status = controller.getWorkerLaunchStatus(receipt.launchId)
     assert.equal(status.status, "failed")
     assert.equal(promptMessages.length, 1)
-    assert.match(promptMessages[0], new RegExp(receipt.launchId))
-    assert.match(promptMessages[0], /daemon unavailable/)
+    assert.match(at(promptMessages, 0), new RegExp(receipt.launchId))
+    assert.match(at(promptMessages, 0), /daemon unavailable/)
   })
 
   await t.test("worktree launch failure with no new worktree stays failed and reports no cleanup needed", async () => {
@@ -414,8 +442,8 @@ test("worker launch queue controller", async (t) => {
     assert.equal(listCalls.length, 2)
     assert.equal(archiveCalls.length, 0)
     assert.equal(promptMessages.length, 1)
-    assert.match(promptMessages[0], /\[paseo:worker-launch\.failed\]/)
-    assert.match(promptMessages[0], /No cleanup needed\./)
+    assert.match(at(promptMessages, 0), /\[paseo:worker-launch\.failed\]/)
+    assert.match(at(promptMessages, 0), /No cleanup needed\./)
   })
 
   await t.test("worktree launch failure with one matching new worktree rolls back automatically", async () => {
@@ -488,14 +516,14 @@ test("worker launch queue controller", async (t) => {
       { worktreePath: "/project/feature-test", branchName: "feature/test" },
     ])
     assert.equal(archiveCalls.length, 1)
-    assert.deepEqual(archiveCalls[0], {
+    assert.deepEqual(at(archiveCalls, 0), {
       worktreePath: "/project/feature-test",
       repoRoot: "/project",
       branchName: "feature/test",
     })
     assert.equal(promptMessages.length, 1)
-    assert.match(promptMessages[0], /\[paseo:worker-launch\.failed_rolled_back\]/)
-    assert.match(promptMessages[0], /archived automatically/)
+    assert.match(at(promptMessages, 0), /\[paseo:worker-launch\.failed_rolled_back\]/)
+    assert.match(at(promptMessages, 0), /archived automatically/)
   })
 
   await t.test(
@@ -564,8 +592,8 @@ test("worker launch queue controller", async (t) => {
       assert.equal(status.rollback?.candidateWorktrees?.length, 2)
       assert.equal(archiveCallCount, 0)
       assert.equal(promptMessages.length, 1)
-      assert.match(promptMessages[0], /\[paseo:worker-launch\.failed_needs_cleanup\]/)
-      assert.match(promptMessages[0], /consider paseo_worktree_archive/)
+      assert.match(at(promptMessages, 0), /\[paseo:worker-launch\.failed_needs_cleanup\]/)
+      assert.match(at(promptMessages, 0), /consider paseo_worktree_archive/)
     },
   )
 
@@ -624,7 +652,7 @@ test("worker launch queue controller", async (t) => {
     assert.equal(status.rollback?.attempted, true)
     assert.equal(status.rollback?.candidateWorktrees?.[0]?.archiveError, "archive failed")
     assert.equal(promptMessages.length, 1)
-    assert.match(promptMessages[0], /\[paseo:worker-launch\.failed_needs_cleanup\]/)
+    assert.match(at(promptMessages, 0), /\[paseo:worker-launch\.failed_needs_cleanup\]/)
   })
 
   await t.test("baseline list failure remains safe and skips auto-archive", async () => {
@@ -674,7 +702,7 @@ test("worker launch queue controller", async (t) => {
     assert.equal(archiveCallCount, 0)
     assert.equal(listCallCount, 1)
     assert.equal(promptMessages.length, 1)
-    assert.match(promptMessages[0], /\[paseo:worker-launch\.failed_needs_cleanup\]/)
+    assert.match(at(promptMessages, 0), /\[paseo:worker-launch\.failed_needs_cleanup\]/)
   })
 
   await t.test("launches without worktreeName skip worktree assessment calls", async () => {

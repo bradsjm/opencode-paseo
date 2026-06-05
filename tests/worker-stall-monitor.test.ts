@@ -7,6 +7,8 @@ import type { PluginConfig } from "../lib/config.js"
 import type { DaemonEvent } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 
+type IntervalCallback = () => void
+
 const TEST_CONFIG: PluginConfig = {
   enabled: true,
   debug: false,
@@ -60,8 +62,8 @@ test("createWorkerStallMonitor", async (t) => {
     seedWorker(state)
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
-    globalThis.setInterval = ((fn: TimerHandler) => {
-      sweep = fn as () => void
+    globalThis.setInterval = ((fn: IntervalCallback) => {
+      sweep = fn
       return 1 as unknown as ReturnType<typeof setInterval>
     }) as typeof setInterval
     globalThis.clearInterval = (() => {}) as typeof clearInterval
@@ -84,8 +86,8 @@ test("createWorkerStallMonitor", async (t) => {
     const worker = seedWorker(state)
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
-    globalThis.setInterval = ((fn: TimerHandler) => {
-      sweep = fn as () => void
+    globalThis.setInterval = ((fn: IntervalCallback) => {
+      sweep = fn
       return 1 as unknown as ReturnType<typeof setInterval>
     }) as typeof setInterval
     globalThis.clearInterval = (() => {}) as typeof clearInterval
@@ -128,8 +130,8 @@ test("createWorkerStallMonitor", async (t) => {
     seedWorker(state, { rawStatus: "idle" })
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
-    globalThis.setInterval = ((fn: TimerHandler) => {
-      sweep = fn as () => void
+    globalThis.setInterval = ((fn: IntervalCallback) => {
+      sweep = fn
       return 1 as unknown as ReturnType<typeof setInterval>
     }) as typeof setInterval
     globalThis.clearInterval = (() => {}) as typeof clearInterval
