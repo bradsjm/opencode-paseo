@@ -6,12 +6,13 @@ import {
   getOrCreateSession,
   registerEphemeralWorkerRun,
 } from "../lib/state/state.js"
-import { createDaemonEventHandler, createEventHandler } from "../lib/hooks.js"
+import { createDaemonEventHandler, createEventHandler, createToolDefinitionHandler } from "../lib/hooks.js"
 import { Logger } from "../lib/logger.js"
 import type { PluginConfig } from "../lib/config.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import type { OpencodeClient } from "../lib/profile.js"
 import type { InboxEvent, WorkerSummary } from "../lib/state/types.js"
+import { tool } from "@opencode-ai/plugin/tool"
 
 const mockConfig: PluginConfig = {
   enabled: true,
@@ -324,6 +325,68 @@ test("createDaemonEventHandler", async (t) => {
     assert.ok(worker)
     assert.ok(!worker.pendingPermissionIds.includes("perm-1"))
     assert.equal(worker.pendingPermissions.length, 0)
+  })
+})
+
+test("createToolDefinitionHandler", async (t) => {
+  const logger = new Logger(false)
+  const handler = createToolDefinitionHandler(
+    {
+      paseo_terminal_capture: tool({
+        description: "capture",
+        args: {
+          terminalId: tool.schema.string(),
+          start: tool.schema.number().int().optional(),
+          end: tool.schema.number().int().optional(),
+          scrollback: tool.schema.boolean().optional(),
+          stripAnsi: tool.schema.boolean().optional(),
+        },
+        async execute() {
+          return "ok"
+        },
+      }),
+    },
+    logger,
+  )
+
+  await t.test("adds jsonSchema for a registered Paseo tool", async () => {
+    const output: { description: string; parameters: unknown; jsonSchema?: Record<string, unknown> } = {
+      description: "capture",
+      parameters: {},
+    }
+
+    await handler({ toolID: "paseo_terminal_capture" }, output)
+
+    assert.equal(output.jsonSchema?.type, "object")
+    assert.deepEqual(output.jsonSchema?.required, ["terminalId"])
+    const properties = output.jsonSchema?.properties as Record<string, unknown>
+    assert.ok(properties.terminalId)
+    assert.ok(properties.start)
+    assert.ok(properties.end)
+    assert.ok(properties.scrollback)
+    assert.ok(properties.stripAnsi)
+  })
+
+  await t.test("leaves unknown Paseo tools unchanged", async () => {
+    const output: { description: string; parameters: unknown; jsonSchema?: Record<string, unknown> } = {
+      description: "unknown",
+      parameters: {},
+    }
+
+    await handler({ toolID: "paseo_missing" }, output)
+
+    assert.equal(output.jsonSchema, undefined)
+  })
+
+  await t.test("leaves non-Paseo tools unchanged", async () => {
+    const output: { description: string; parameters: unknown; jsonSchema?: Record<string, unknown> } = {
+      description: "other",
+      parameters: {},
+    }
+
+    await handler({ toolID: "external_tool" }, output)
+
+    assert.equal(output.jsonSchema, undefined)
   })
 })
 

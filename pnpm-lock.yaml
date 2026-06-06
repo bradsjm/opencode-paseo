@@ -24,7 +24,7 @@ importers:
         specifier: ^9.29.0
         version: 9.39.4
       "@opencode-ai/plugin":
-        specifier: ^1.4.3
+        specifier: ^1.15.13
         version: 1.15.13
       "@types/node":
         specifier: ^22.15.0
