@@ -1,7 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import type { ToolDefinition } from "@opencode-ai/plugin/tool"
 import { getConfig } from "./lib/config.js"
 import { Logger } from "./lib/logger.js"
-import { createPluginState } from "./lib/state/state.js"
+import { createPluginState, findTaskRunByWorkerId, resetPluginState } from "./lib/state/state.js"
+import type { WorkerSummary } from "./lib/state/types.js"
 import { PaseoClient } from "./lib/transport/client.js"
 import { hydrate } from "./lib/hydration/hydrate.js"
 import { createStatusTool } from "./lib/tools/status.js"
@@ -28,7 +30,6 @@ import { createProfileListTool } from "./lib/tools/profile.js"
 import {
   createWorkerListTool,
   createWorkerCreateTool,
-  createWorkerRunTool,
   createWorkerLaunchStatusTool,
   createWorkerSendTool,
   createWorkerWaitTool,
@@ -37,6 +38,7 @@ import {
   createWorkerUpdateTool,
   createWorkerInspectTool,
 } from "./lib/tools/worker.js"
+import { createTaskTool, watchBackgroundTaskCompletion } from "./lib/tools/task.js"
 import { createWorktreeListTool, createWorktreeCreateTool, createWorktreeArchiveTool } from "./lib/tools/worktree.js"
 import {
   createScheduleListTool,
@@ -56,9 +58,12 @@ import {
   createLoopLogsTool,
   createLoopStopTool,
 } from "./lib/tools/loop.js"
-import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
-import { resetPluginState } from "./lib/state/state.js"
-import type { WorkerSummary } from "./lib/state/types.js"
+import {
+  createEventHandler,
+  createDaemonEventHandler,
+  createConfigHandler,
+  createToolDefinitionHandler,
+} from "./lib/hooks.js"
 import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
 import { createWorkerStallMonitor } from "./lib/worker-stall-monitor.js"
 import { createChatWatcher } from "./lib/chat/watch.js"
@@ -90,7 +95,11 @@ const server: Plugin = (async (ctx) => {
   logger.info("Connected to Paseo daemon")
 
   // Hydrate state from daemon
-  const hydration = await hydrate(state, client, logger, config.output)
+  const hydration = await hydrate(state, client, logger, config.output, undefined, (worker) => {
+    if (config.task.enabled && shouldWatchTaskWorker(worker, { allowIdleRecovery: true })) {
+      watchBackgroundTaskCompletion(state, client, ctx.client, logger, worker.id)
+    }
+  })
   logger.info("Hydration complete", hydration)
 
   const chatWatcher = createChatWatcher(state, client, ctx.client, logger, config)
@@ -107,7 +116,18 @@ const server: Plugin = (async (ctx) => {
   }
 
   // Attach live event listener
-  const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client, observeWorker)
+  const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client, observeWorker, (worker) => {
+    if (config.task.enabled && shouldWatchTaskWorker(worker)) {
+      watchBackgroundTaskCompletion(state, client, ctx.client, logger, worker.id)
+    }
+  })
+
+  function shouldWatchTaskWorker(worker: WorkerSummary, options: { allowIdleRecovery?: boolean } = {}): boolean {
+    const taskRun = findTaskRunByWorkerId(state, worker.id)
+    if (!taskRun?.background || taskRun.completionInjected) return false
+    if (worker.status === "idle" || worker.status === "failed") return options.allowIdleRecovery === true
+    return worker.status !== "finished" && worker.status !== "canceled"
+  }
   const stallMonitor = createWorkerStallMonitor(state, logger, config, daemonEventHandler)
   stallMonitor.seedFromWorkers()
   client.onEvent((event) => {
@@ -117,7 +137,7 @@ const server: Plugin = (async (ctx) => {
   stallMonitor.start()
   logger.info("Live event subscription active")
 
-  const tools = {
+  const tools: Record<string, ToolDefinition> = {
     paseo_status: createStatusTool(state, client, logger),
     paseo_chat_create: createChatCreateTool(client, logger),
     paseo_chat_list: createChatListTool(client, logger),
@@ -138,7 +158,6 @@ const server: Plugin = (async (ctx) => {
     paseo_profile_list: createProfileListTool(ctx.client, logger),
     paseo_worker_list: createWorkerListTool(state, client, logger, observeWorker),
     paseo_worker_create: createWorkerCreateTool(ctx.client, workerLaunchQueue, logger),
-    paseo_worker_run: createWorkerRunTool(state, client, ctx.client, logger),
     paseo_worker_launch_status: createWorkerLaunchStatusTool(workerLaunchQueue, logger),
     paseo_worker_send: createWorkerSendTool(state, client, logger),
     paseo_worker_wait: createWorkerWaitTool(state, client, config, logger),
@@ -164,6 +183,9 @@ const server: Plugin = (async (ctx) => {
     paseo_schedule_run_once: createScheduleRunOnceTool(state, client, logger),
     paseo_schedule_logs: createScheduleLogsTool(state, client, logger),
   }
+  if (config.task.enabled) {
+    tools.task = createTaskTool(state, client, ctx.client, logger)
+  }
 
   return {
     dispose: async () => {
@@ -180,6 +202,7 @@ const server: Plugin = (async (ctx) => {
     },
     event: createEventHandler(state, client, logger, config),
     config: createConfigHandler(config, logger),
+    "tool.definition": createToolDefinitionHandler(config),
     tool: tools,
   }
 }) satisfies Plugin

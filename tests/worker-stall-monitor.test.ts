@@ -16,6 +16,7 @@ const TEST_CONFIG: PluginConfig = {
   output: { maxInboxItems: 100, maxSummaryLength: 500 },
   notifications: { enabled: true, blockingOnly: false, stalledThresholdMs: 10000 },
   agents: {},
+  task: { enabled: false },
 }
 
 function makeWorkerSummary(overrides: Partial<WorkerSummary> = {}): WorkerSummary {

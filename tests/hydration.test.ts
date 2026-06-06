@@ -4,6 +4,7 @@ import { createPluginState } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
 import { hydrate } from "../lib/hydration/hydrate.js"
+import { TASK_PARENT_SESSION_LABEL, TASK_SESSION_LABEL, TASK_SUBAGENT_LABEL } from "../lib/task-labels.js"
 
 const outputConfig = { maxInboxItems: 100, maxSummaryLength: 32 }
 
@@ -203,6 +204,34 @@ test("hydrate", async (t) => {
     assert.equal(event.metadata?.permissionId, "perm-1")
     assert.equal(event.metadata?.suggestedTool, "paseo_permission_respond")
     assert.ok(event.summary.length <= outputConfig.maxSummaryLength)
+  })
+
+  await t.test("restores task worker bindings from labels", async () => {
+    const state = createPluginState()
+    const client = createMockTransport({
+      fetchAgents: async () => [
+        {
+          id: "w-task",
+          title: "Task worker",
+          provider: "opencode",
+          status: "running",
+          cwd: "/tmp",
+          model: null,
+          labels: {
+            [TASK_SESSION_LABEL]: "task-session",
+            [TASK_PARENT_SESSION_LABEL]: "parent-session",
+            [TASK_SUBAGENT_LABEL]: "general",
+          },
+          requiresAttention: false,
+        },
+      ],
+    })
+
+    await hydrate(state, client, logger, outputConfig)
+
+    assert.equal(state.taskRuns.get("task-session")?.workerId, "w-task")
+    assert.equal(state.sessions.get("task-session")?.createdWorkerIds.has("w-task"), true)
+    assert.equal(state.sessions.get("parent-session")?.createdWorkerIds.has("w-task"), true)
   })
 
   await t.test("handles missing server info gracefully", async () => {

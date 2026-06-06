@@ -80,6 +80,18 @@ export interface EphemeralWorkerRunRecord {
   createdAt: number
 }
 
+export interface TaskRunRecord {
+  taskSessionId: string
+  parentSessionId: string
+  workerId: string
+  description: string
+  subagentType: string
+  background: boolean
+  completionInjected?: boolean
+  labels?: Record<string, string>
+  createdAt: number
+}
+
 export type WorkerLaunchStatus =
   | "queued"
   | "starting"
@@ -179,6 +191,12 @@ export interface PluginState {
 
   /** Ephemeral non-detached worker runs keyed by worker ID */
   ephemeralWorkerRuns: Map<string, EphemeralWorkerRunRecord>
+
+  /** Paseo-backed task runs keyed by visible OpenCode child task session ID */
+  taskRuns: Map<string, TaskRunRecord>
+
+  /** Worker IDs currently watched for task completion injection */
+  taskCompletionWatchers: Set<string>
 
   /** FIFO queue of pending worker launch IDs */
   workerLaunchQueue: string[]

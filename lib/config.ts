@@ -19,6 +19,7 @@ const notificationsBlockingOnlySchema = z.boolean()
 const notificationsStalledThresholdSchema = z.number().int().min(10000).max(3600000)
 const defaultAgentSchema = z.string()
 const defaultModelSchema = z.string()
+const taskEnabledSchema = z.boolean()
 
 const daemonShape = {
   host: daemonHostSchema.default("127.0.0.1"),
@@ -43,10 +44,15 @@ const agentsShape = {
   defaultModel: defaultModelSchema.optional(),
 } as const
 
+const taskShape = {
+  enabled: taskEnabledSchema.default(false),
+} as const
+
 const daemonRuntimeSchema = z.object(daemonShape).strict()
 const outputRuntimeSchema = z.object(outputShape).strict()
 const notificationsRuntimeSchema = z.object(notificationsShape).strict()
 const agentsRuntimeSchema = z.object(agentsShape).strict()
+const taskRuntimeSchema = z.object(taskShape).strict()
 
 const daemonLayerSchema = z
   .object({
@@ -79,6 +85,12 @@ const agentsLayerSchema = z
   })
   .strict()
 
+const taskLayerSchema = z
+  .object({
+    enabled: taskEnabledSchema.optional(),
+  })
+  .strict()
+
 const configRuntimeSchema = z
   .object({
     enabled: enabledSchema.default(true),
@@ -87,6 +99,7 @@ const configRuntimeSchema = z
     output: z.preprocess((value) => value ?? {}, outputRuntimeSchema),
     notifications: z.preprocess((value) => value ?? {}, notificationsRuntimeSchema),
     agents: z.preprocess((value) => value ?? {}, agentsRuntimeSchema),
+    task: z.preprocess((value) => value ?? {}, taskRuntimeSchema),
   })
   .strict()
 
@@ -99,6 +112,7 @@ const configLayerSchema = z
     output: outputLayerSchema.optional(),
     notifications: notificationsLayerSchema.optional(),
     agents: agentsLayerSchema.optional(),
+    task: taskLayerSchema.optional(),
   })
   .strict()
 
@@ -106,6 +120,7 @@ export type DaemonConfig = z.infer<typeof daemonRuntimeSchema>
 export type OutputConfig = z.infer<typeof outputRuntimeSchema>
 export type NotificationsConfig = z.infer<typeof notificationsRuntimeSchema>
 export type AgentsConfig = z.infer<typeof agentsRuntimeSchema>
+export type TaskConfig = z.infer<typeof taskRuntimeSchema>
 export type PluginConfig = z.infer<typeof configRuntimeSchema>
 
 type ConfigLayer = z.infer<typeof configLayerSchema>
@@ -218,6 +233,7 @@ function mergeLayer(config: PluginConfig, data: ConfigLayer): PluginConfig {
     output: { ...config.output, ...configData.output },
     notifications: { ...config.notifications, ...configData.notifications },
     agents: { ...config.agents, ...configData.agents },
+    task: { ...config.task, ...configData.task },
   })
 }
 

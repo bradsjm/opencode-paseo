@@ -109,6 +109,18 @@
           "description": "Default model for new workers"
         }
       }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "OpenCode task tool override settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Register a Paseo-backed task tool that overrides OpenCode's builtin task tool"
+        }
+      }
     }
   }
 }

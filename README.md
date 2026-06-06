@@ -20,7 +20,7 @@ Like the MCP server, it exposes Paseo daemon capabilities as OpenCode tools. The
 - **Active nudges for the owning session**: nudges the relevant OpenCode session for blocking events and worker chat mentions, which is the main practical advantage over a plain MCP tool surface.
 - **Complementary worker model**: positions Paseo workers and loops for longer-running agentic work without trying to replace OpenCode's native subagents inside the current session.
 - **Better long-running terminal control**: exposes Paseo PTY-backed terminals for interactive and durable process management that OpenCode's built-in bash tool is not designed to handle as well.
-- **Launch ownership and lifecycle tracking**: tracks both durable FIFO queued worker launches and ephemeral `paseo_worker_run` sessions, including best-effort cleanup when the owning OpenCode session disappears.
+- **Launch ownership and lifecycle tracking**: tracks durable FIFO queued worker launches and opt-in Paseo-backed `task` sessions, including best-effort cleanup when the owning OpenCode session disappears.
 - **Conservative queued-launch rollback assessment**: when a queued worker launch with `worktreeName` fails, the plugin reports whether no cleanup was needed, an unambiguous launch-created worktree was archived automatically, or manual cleanup is still required.
 - **Synthetic stall detection**: emits `worker.stalled` when an owned worker goes quiet past the configured threshold, giving OpenCode a signal that does not come directly from the daemon.
 
@@ -125,7 +125,7 @@ Why it matters:
 3. `lib/hydration/hydrate.ts` seeds workers, terminals, chat rooms, capabilities, and any blocking inbox items from current daemon state.
 4. `lib/hooks/daemon-events.ts` translates live daemon events into state updates, inbox events, and nudges.
 5. `lib/chat/watch.ts` watches worker chat rooms and creates `chat.mentioned` inbox events when known workers are mentioned.
-6. On `session.deleted`, the plugin unbinds session ownership and best-effort cancels tracked ephemeral workers created by `paseo_worker_run`.
+6. On `session.deleted`, the plugin unbinds session ownership and best-effort cancels tracked task-backed workers.
 
 ## Configuration
 
@@ -162,6 +162,7 @@ Example stub:
 | `notifications.stalledThresholdMs` | `number`  | `120000`      | Quiet-period threshold before emitting synthetic `worker.stalled`. |
 | `agents.defaultAgent`              | `string`  | unset         | Optional default agent name.                                       |
 | `agents.defaultModel`              | `string`  | unset         | Optional default model name.                                       |
+| `task.enabled`                     | `boolean` | `false`       | Registers a Paseo-backed `task` override for OpenCode subagents.   |
 
 Malformed config files or invalid values trigger a warning toast and that config layer is ignored.
 
@@ -219,7 +220,6 @@ When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin wa
 | `paseo_worker_list`          | Refresh and list known workers.                                                                                |
 | `paseo_worker_create`        | Queue a durable detached worker launch using an OpenCode profile.                                              |
 | `paseo_worker_launch_status` | Inspect a queued worker launch by `launchId`, including rollback metadata for failed worktree-backed launches. |
-| `paseo_worker_run`           | Run an ephemeral non-detached worker in foreground or background mode.                                         |
 | `paseo_worker_send`          | Send a message to an existing worker.                                                                          |
 | `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption.                                  |
 | `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.                                             |
@@ -227,9 +227,9 @@ When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin wa
 | `paseo_worker_update`        | Update worker metadata and runtime settings.                                                                   |
 | `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                                                    |
 
-`paseo_worker_create` and `paseo_worker_run` are intentionally different paths. `create` goes through the plugin-owned FIFO launch queue in `lib/worker-launch/queue.ts`, while `run` uses the non-detached transport path and tracks only in-memory ephemeral cleanup state.
+When `task.enabled` is true, the plugin registers a tool named `task` that overrides OpenCode's builtin task tool. It accepts the same task parameters (`description`, `prompt`, `subagent_type`, optional `task_id`, `command`, and `background`) but executes through a non-detached Paseo worker. The returned `task_id` is an OpenCode child session ID; the backing Paseo worker ID is tracked internally and exposed in tool metadata for diagnostics.
 
-`paseo_worker_create` and `paseo_worker_run` both create Paseo agents. When the plugin itself is running inside a Paseo agent environment and `PASEO_AGENT_ID` is present, those two supported creation paths automatically set the reserved label `paseo.parent-agent-id=<PASEO_AGENT_ID>`. That label is what Paseo's own UI uses to derive parent/child linkage for its `SubagentsTrack`. In this ACP usage, OpenCode has no UI for that track; the relevant UI is Paseo's UI.
+`paseo_worker_create` and the opt-in `task` override both create Paseo agents. When the plugin itself is running inside a Paseo agent environment and `PASEO_AGENT_ID` is present, those supported creation paths automatically set the reserved label `paseo.parent-agent-id=<PASEO_AGENT_ID>`. That label is what Paseo's own UI uses to derive parent/child linkage for its `SubagentsTrack`. In this ACP usage, OpenCode has no UI for that track; the relevant UI is Paseo's UI.
 
 When `PASEO_AGENT_ID` is unset or blank, the plugin sends no parent label. When it is set, the plugin treats `paseo.parent-agent-id` as a reserved relationship label and overrides any user-supplied value for that key. Parent-linked detached children then follow Paseo's current archive/cascade behavior model.
 
@@ -295,7 +295,7 @@ For `new-agent` schedule targets, the plugin resolves the requested OpenCode pro
 ### Verification and troubleshooting
 
 - Check `printenv | sort` (or equivalent) in the plugin/agent environment if you expect parent-linked workers; `PASEO_AGENT_ID` must be present and non-empty.
-- If `paseo_worker_create` or `paseo_worker_run` launched from a Paseo-managed agent does not appear under Paseo's `SubagentsTrack`, inspect the created agent labels and confirm `paseo.parent-agent-id` was set.
+- If `paseo_worker_create` or the opt-in `task` override launched from a Paseo-managed agent does not appear under Paseo's `SubagentsTrack`, inspect the created agent labels and confirm `paseo.parent-agent-id` was set.
 - `paseo_schedule_run_once` warnings should be followed with `paseo_schedule_logs`, not treated as final failure on their own.
 - Loop validation is intentionally strict: empty strings are rejected for provided optional string fields, verification requires `verifyPrompt` or non-empty `verifyChecks`, and at least one positive stop bound is required. For prompt-based verification, include concrete evidence to verify rather than only asking whether the worker completed.
 - Archived workers leave the plugin's active list immediately, but daemon-backed historical records may still be inspectable with `paseo_worker_inspect`.

@@ -29,6 +29,7 @@ const TEST_CONFIG: PluginConfig = {
     stalledThresholdMs: 120000,
   },
   agents: {},
+  task: { enabled: false },
 }
 
 function createDeferred<T>() {

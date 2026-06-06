@@ -19,16 +19,16 @@ Use this project skill as the single coordinator playbook for agentic work throu
 
 ## Capability Chooser
 
-| Need                                      | Use                                                                          | Notes                                                                                  |
-| ----------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| One bounded helper task                   | `paseo_worker_run`                                                           | Foreground blocks by default; use background only when you can track the worker later. |
-| Durable async worker                      | `paseo_worker_create` -> `paseo_worker_launch_status` -> `paseo_worker_wait` | Queued launch returns `launchId` first; poll until `workerId` exists.                  |
-| Second opinion or adversarial review      | One or two independent scoped workers                                        | Coordinator synthesizes; workers do not edit unless explicitly asked.                  |
-| Large phased project                      | Serial phases first: research -> plan -> implement -> verify                 | Parallelize only independent chunks, reviews, checks, or bake-offs.                    |
-| Parallel implementation or model bake-off | Isolated worktrees                                                           | Advanced mode; read `references/parallel-worktrees.md` first.                          |
-| Keep trying until checks pass             | `paseo_loop_run`                                                             | Require verification (`verifyPrompt` or `verifyChecks`) and stop bounds.               |
-| Recurring automation                      | `paseo_schedule_create`                                                      | Use profile-backed `new-agent` runs when spawning agents.                              |
-| Interactive or long-running command       | `paseo_terminal_*`                                                           | Capture before kill; prefer send-lines for complete commands.                          |
+| Need                                      | Use                                                                          | Notes                                                                             |
+| ----------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| One bounded helper task                   | OpenCode `task` when `task.enabled` is configured                            | Paseo-backed override returns a reusable task ID; background returns immediately. |
+| Durable async worker                      | `paseo_worker_create` -> `paseo_worker_launch_status` -> `paseo_worker_wait` | Queued launch returns `launchId` first; poll until `workerId` exists.             |
+| Second opinion or adversarial review      | One or two independent scoped workers                                        | Coordinator synthesizes; workers do not edit unless explicitly asked.             |
+| Large phased project                      | Serial phases first: research -> plan -> implement -> verify                 | Parallelize only independent chunks, reviews, checks, or bake-offs.               |
+| Parallel implementation or model bake-off | Isolated worktrees                                                           | Advanced mode; read `references/parallel-worktrees.md` first.                     |
+| Keep trying until checks pass             | `paseo_loop_run`                                                             | Require verification (`verifyPrompt` or `verifyChecks`) and stop bounds.          |
+| Recurring automation                      | `paseo_schedule_create`                                                      | Use profile-backed `new-agent` runs when spawning agents.                         |
+| Interactive or long-running command       | `paseo_terminal_*`                                                           | Capture before kill; prefer send-lines for complete commands.                     |
 
 ## Coordinator Defaults
 

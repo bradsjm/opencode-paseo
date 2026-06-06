@@ -22,6 +22,11 @@ import {
   recordCreatedTerminal,
   findSessionsForResource,
   markUnreadStallEventsRead,
+  recordTaskRun,
+  getTaskRun,
+  findTaskRunByWorkerId,
+  listTaskRunsForSession,
+  removeTaskRun,
 } from "../lib/state/state.js"
 import type { InboxEvent, TerminalSessionSummary, WorkerSummary } from "../lib/state/types.js"
 import type { AgentSummary } from "../lib/transport/types.js"
@@ -39,6 +44,8 @@ test("createPluginState", async (t) => {
     assert.equal(state.inbox.size, 0)
     assert.equal(state.workerLaunches.size, 0)
     assert.equal(state.ephemeralWorkerRuns.size, 0)
+    assert.equal(state.taskRuns.size, 0)
+    assert.equal(state.taskCompletionWatchers.size, 0)
     assert.deepEqual(state.workerLaunchQueue, [])
     assert.equal(state.activeWorkerLaunchId, null)
     assert.equal(state.eventCounter, 0)
@@ -86,11 +93,23 @@ test("resetPluginState", async (t) => {
       background: true,
       createdAt: Date.now(),
     })
+    state.taskRuns.set("task-1", {
+      taskSessionId: "task-1",
+      parentSessionId: "sess-1",
+      workerId: "w-task",
+      description: "task",
+      subagentType: "general",
+      background: true,
+      createdAt: Date.now(),
+    })
+    state.taskCompletionWatchers.add("w-task")
     resetPluginState(state)
     assert.equal(state.connectionStatus, "disconnected")
     assert.equal(state.inbox.size, 0)
     assert.equal(state.workerLaunches.size, 0)
     assert.equal(state.ephemeralWorkerRuns.size, 0)
+    assert.equal(state.taskRuns.size, 0)
+    assert.equal(state.taskCompletionWatchers.size, 0)
     assert.deepEqual(state.workerLaunchQueue, [])
     assert.equal(state.activeWorkerLaunchId, null)
   })
@@ -605,6 +624,34 @@ test("ephemeral worker run helpers", async (t) => {
     const removed = removeEphemeralWorkerRun(state, "w2")
     assert.equal(removed?.sessionId, "sess-1")
     assert.deepEqual(listEphemeralWorkerIdsForSession(state, "sess-1"), ["w1"])
+  })
+})
+
+test("task run helpers", async (t) => {
+  await t.test("record/find/list/remove task runs", () => {
+    const state = createPluginState()
+    recordTaskRun(state, {
+      taskSessionId: "task-1",
+      parentSessionId: "parent-1",
+      workerId: "worker-1",
+      description: "inspect bug",
+      subagentType: "general",
+      background: true,
+      createdAt: 1,
+    })
+
+    assert.equal(getTaskRun(state, "task-1")?.workerId, "worker-1")
+    assert.equal(findTaskRunByWorkerId(state, "worker-1")?.taskSessionId, "task-1")
+    assert.deepEqual(
+      listTaskRunsForSession(state, "parent-1").map((run) => run.taskSessionId),
+      ["task-1"],
+    )
+    assert.deepEqual(
+      listTaskRunsForSession(state, "task-1").map((run) => run.workerId),
+      ["worker-1"],
+    )
+    assert.equal(removeTaskRun(state, "task-1")?.workerId, "worker-1")
+    assert.equal(getTaskRun(state, "task-1"), undefined)
   })
 })
 

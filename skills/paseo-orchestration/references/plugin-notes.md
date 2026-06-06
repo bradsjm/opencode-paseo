@@ -10,9 +10,9 @@ Keep this file as the quick contract reference for current `opencode-paseo` tool
 
 ## Workers
 
-- `paseo_worker_run({ prompt, cwd?, profile?, background?, worktreeName?, chatRoom?, labels?, timeout? })` creates an ephemeral non-detached worker. Foreground blocks by default; background returns immediately. Runs are best-effort canceled on tool abort/session cleanup.
+- When `task.enabled` is configured, OpenCode `task({ description, prompt, subagent_type, task_id?, command?, background? })` is backed by a non-detached Paseo worker. It returns a reusable OpenCode child-session task ID while tracking the backing Paseo worker internally.
 - `paseo_worker_create({ cwd?, profile?, initialPrompt?, labels?, worktreeName?, chatRoom? })` queues a durable detached launch and returns a receipt immediately.
-- When `PASEO_AGENT_ID` is present and non-empty, both of those supported worker-creation paths automatically set `labels["paseo.parent-agent-id"]` for Paseo-side parent/child tracking. If the caller supplied that label manually, the plugin-owned env-derived value wins.
+- When `PASEO_AGENT_ID` is present and non-empty, supported worker-creation paths automatically set `labels["paseo.parent-agent-id"]` for Paseo-side parent/child tracking. If the caller supplied that label manually, the plugin-owned env-derived value wins.
 - Paseo's UI, not OpenCode, renders the resulting `SubagentsTrack` in this ACP usage.
 - Schedule `new-agent` targets and daemon-native loops do not currently receive that parent linkage because the upstream payloads used by those paths expose no labels field.
 - Poll `paseo_worker_launch_status({ launchId })`; do not assume `paseo_worker_create` returned a worker ID.
@@ -24,7 +24,7 @@ Keep this file as the quick contract reference for current `opencode-paseo` tool
 
 ## Chat
 
-- Passing `chatRoom` to worker creation/run augments the worker prompt with room coordination instructions.
+- Passing `chatRoom` to worker creation augments the worker prompt with room coordination instructions.
 - Exact `@<worker-id>` mentions are plugin-native nudges for known owned workers; room titles, custom tokens, and self-mentions are not a substitute.
 - Chat watchers do not replay old history when first attached; they seed from the latest message.
 - Use chat for status/blockers/completion and exact attention pings, not as the main artifact store.

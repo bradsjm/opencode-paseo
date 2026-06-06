@@ -1,6 +1,6 @@
 import type { OutputConfig } from "../config.js"
 import { getHydrationPermissionEventId } from "../inbox/ids.js"
-import type { PluginState, InboxEvent, TerminalSessionSummary, WorkerSummary } from "../state/types.js"
+import type { PluginState, InboxEvent, TaskRunRecord, TerminalSessionSummary, WorkerSummary } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { truncateSummary } from "../inbox/summary.js"
@@ -11,8 +11,13 @@ import {
   upsertTerminal,
   insertInboxEvent,
   mapAgentToWorkerSummary,
+  getOrCreateSession,
+  getTaskRun,
+  recordCreatedWorker,
+  recordTaskRun,
   buildBlockingMetadata,
 } from "../state/state.js"
+import { getTaskLabelInfo } from "../task-labels.js"
 
 // ─── Startup Hydration ───────────────────────────────────────────────────────
 // Fetches current agents (workers) and terminals from the daemon,
@@ -37,9 +42,17 @@ export async function hydrate(
   logger: Logger,
   output: OutputConfig,
   onWorkerObserved?: (worker: WorkerSummary) => void,
+  onTaskWorkerRestored?: (worker: WorkerSummary) => void,
 ): Promise<HydrationResult> {
   hydrateCapabilities(state, client, logger)
-  const { workers, inboxSeeded } = await hydrateWorkers(state, client, logger, output, onWorkerObserved)
+  const { workers, inboxSeeded } = await hydrateWorkers(
+    state,
+    client,
+    logger,
+    output,
+    onWorkerObserved,
+    onTaskWorkerRestored,
+  )
   const chatRooms = state.chatRooms.size
   const terminals = await hydrateTerminals(state, client, logger)
 
@@ -70,6 +83,7 @@ async function hydrateWorkers(
   logger: Logger,
   output: OutputConfig,
   onWorkerObserved?: (worker: WorkerSummary) => void,
+  onTaskWorkerRestored?: (worker: WorkerSummary) => void,
 ): Promise<Pick<HydrationResult, "workers" | "inboxSeeded">> {
   let workers = 0
   let inboxSeeded = 0
@@ -78,6 +92,7 @@ async function hydrateWorkers(
     for (const agent of agents) {
       const worker = mapAgentToWorkerSummary(agent)
       upsertWorker(state, worker)
+      restoreTaskWorkerBinding(state, worker, agent, onTaskWorkerRestored)
       onWorkerObserved?.(worker)
       workers++
       inboxSeeded += seedBlockedWorkerInboxEvent(state, worker, agent, output)
@@ -87,6 +102,58 @@ async function hydrateWorkers(
     logger.warn("Agent hydration failed", getErrorMessage(err))
   }
   return { workers, inboxSeeded }
+}
+
+function restoreTaskWorkerBinding(
+  state: PluginState,
+  worker: WorkerSummary,
+  agent: Parameters<typeof mapAgentToWorkerSummary>[0],
+  onTaskWorkerRestored?: (worker: WorkerSummary) => void,
+): void {
+  const taskInfo = getTaskLabelInfo(agent.labels)
+  if (!taskInfo) return
+  getOrCreateSession(state, taskInfo.taskSessionId, worker.cwd)
+  getOrCreateSession(state, taskInfo.parentSessionId, worker.cwd)
+  recordCreatedWorker(state, taskInfo.taskSessionId, worker)
+  recordCreatedWorker(state, taskInfo.parentSessionId, worker)
+  const existing = getTaskRun(state, taskInfo.taskSessionId)
+  recordTaskRun(state, hydratedTaskRunRecord(worker, agent.labels, taskInfo, existing))
+  onTaskWorkerRestored?.(worker)
+}
+
+function hydratedTaskRunRecord(
+  worker: WorkerSummary,
+  labels: Record<string, string>,
+  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
+  existing: TaskRunRecord | undefined,
+): TaskRunRecord {
+  const completionInjected = taskCompletionInjected(existing, taskInfo)
+  return {
+    taskSessionId: taskInfo.taskSessionId,
+    parentSessionId: taskInfo.parentSessionId,
+    workerId: worker.id,
+    description: taskInfo.description ?? worker.title,
+    subagentType: taskInfo.subagentType ?? worker.currentModeId ?? worker.provider,
+    background: taskBackground(existing, taskInfo, completionInjected),
+    completionInjected,
+    labels,
+    createdAt: existing?.createdAt ?? Date.now(),
+  }
+}
+
+function taskCompletionInjected(
+  existing: TaskRunRecord | undefined,
+  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
+): boolean | undefined {
+  return existing?.completionInjected ?? taskInfo.completionInjected
+}
+
+function taskBackground(
+  existing: TaskRunRecord | undefined,
+  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
+  completionInjected: boolean | undefined,
+): boolean {
+  return existing?.background ?? (taskInfo.deferred === true && completionInjected !== true)
 }
 
 function seedBlockedWorkerInboxEvent(

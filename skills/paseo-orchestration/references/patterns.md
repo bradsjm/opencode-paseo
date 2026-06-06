@@ -4,7 +4,7 @@ Use the smallest pattern that gives the coordinator useful context separation, d
 
 ## Single Helper
 
-Use `paseo_worker_run` for a bounded task where the coordinator can consume one final result.
+Use OpenCode `task` for a bounded helper task when the Paseo-backed task override is enabled.
 
 - Foreground is best when the result is needed now.
 - Background is acceptable when the task may outlive the turn and labels make it trackable.

@@ -24,7 +24,7 @@ OpenCode tool definitions for the plugin.
 
 ## Notes
 
-- The worker tool surface intentionally separates queued detached launches (`paseo_worker_create`) from ephemeral non-detached runs (`paseo_worker_run`).
+- The worker tool surface intentionally keeps queued detached launches (`paseo_worker_create`) separate from the opt-in Paseo-backed OpenCode `task` override.
 - Ordinary optional tool inputs accept `null` at the schema boundary as a local plugin workaround, then collapse to omission before validation/transport shaping. Nested worker-update clear fields keep their explicit `null` semantics.
 - When `PASEO_AGENT_ID` is present, those two worker-creation paths also set the reserved `paseo.parent-agent-id` label automatically. Schedule `new-agent` and loop paths do not currently support that linkage because their upstream payloads expose no labels field.
 - `paseo_worker_launch_status` is the main follow-up path for queued launches and now includes rollback metadata for failed worktree-backed launches.

@@ -137,6 +137,9 @@ test("getConfig", async (t) => {
         stalledThresholdMs: 120000,
       },
       agents: {},
+      task: {
+        enabled: false,
+      },
     })
   })
 
@@ -183,6 +186,26 @@ test("getConfig", async (t) => {
     assert.equal(config.notifications.stalledThresholdMs, 120000)
     assert.equal(config.agents.defaultAgent, "worker-a")
     assert.equal(config.agents.defaultModel, undefined)
+    assert.equal(config.task.enabled, false)
+  })
+
+  await t.test("accepts task.enabled override", async () => {
+    const configDir = join(tempDir, "config")
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(join(configDir, "paseo.jsonc"), JSON.stringify({ task: { enabled: true } }), "utf-8")
+
+    process.env.OPENCODE_CONFIG_DIR = configDir
+    const mod = await loadConfigModule("task-enabled")
+    const { ctx } = createToastCollector()
+    ctx.directory = tempDir
+
+    const config = mod.getConfig(ctx as any)
+    assert.equal(config.task.enabled, true)
+  })
+
+  await t.test("rejects unknown task keys", async () => {
+    const errors = (await loadConfigModule("task-unknown")).validateConfigTypes({ task: { unknown: true } })
+    assert.ok(errors.some((error) => error.key === "task"))
   })
 
   await t.test("accepts notifications.stalledThresholdMs overrides", async () => {

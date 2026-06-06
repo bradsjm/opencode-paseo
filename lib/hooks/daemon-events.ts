@@ -7,13 +7,17 @@ import {
   buildBlockingMetadata,
   findSessionsForResource,
   getUnreadEventCountForResource,
+  getOrCreateSession,
+  getTaskRun,
   insertInboxEvent,
   markEventRead,
   mapAgentToWorkerSummary,
+  recordCreatedWorker,
+  recordTaskRun,
   setConnectionStatus,
   upsertWorker,
 } from "../state/state.js"
-import type { InboxEvent, PluginState, WorkerSummary } from "../state/types.js"
+import type { InboxEvent, PluginState, TaskRunRecord, WorkerSummary } from "../state/types.js"
 import type {
   AgentSummary,
   DaemonEvent,
@@ -27,6 +31,7 @@ import type {
 } from "../transport/types.js"
 import type { OpencodeClient } from "../profile.js"
 import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
+import { getTaskLabelInfo } from "../task-labels.js"
 
 function syncWorkerFromPayload(
   state: PluginState,
@@ -265,9 +270,10 @@ export function createDaemonEventHandler(
   config: PluginConfig,
   opencodeClient?: OpencodeClient,
   onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
+  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
 ) {
   return (daemonEvent: DaemonEvent) => {
-    const inboxEvent = handleDaemonEvent(state, logger, config, daemonEvent, onWorkerObserved)
+    const inboxEvent = handleDaemonEvent(state, logger, config, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
     insertAndNotifyInboxEvent(state, logger, config, opencodeClient, inboxEvent)
   }
 }
@@ -278,9 +284,10 @@ function handleDaemonEvent(
   config: PluginConfig,
   daemonEvent: DaemonEvent,
   onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
+  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
 ): InboxEvent | null {
   if (isWorkerLifecycleEvent(daemonEvent))
-    return handleWorkerLifecycleEvent(state, config, daemonEvent, onWorkerObserved)
+    return handleWorkerLifecycleEvent(state, config, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
   if (daemonEvent.type === "permission.requested") return handlePermissionRequestedEvent(state, config, daemonEvent)
   if (daemonEvent.type === "permission.resolved") return handlePermissionResolvedEvent(state, config, daemonEvent)
   switch (daemonEvent.type) {
@@ -369,8 +376,10 @@ function handleWorkerLifecycleEvent(
     | WorkerFailedEvent
     | WorkerBlockedEvent,
   onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
+  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
 ): InboxEvent {
-  if (daemonEvent.type !== "worker.stalled") observeWorkerLifecyclePayload(state, daemonEvent, onWorkerObserved)
+  if (daemonEvent.type !== "worker.stalled")
+    observeWorkerLifecyclePayload(state, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
   const resourceId = daemonEvent.payload.workerId
   const summary = summarizeDaemonEvent(config, daemonEvent.type, resourceId, daemonEvent.payload)
   return createInboxEvent(state, daemonEvent.type, resourceId, summary, workerLifecycleMetadata(daemonEvent))
@@ -380,12 +389,64 @@ function observeWorkerLifecyclePayload(
   state: PluginState,
   daemonEvent: WorkerStartedEvent | WorkerFinishedEvent | WorkerFailedEvent | WorkerBlockedEvent,
   onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
+  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
 ): void {
   const worker = syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
+  const taskBound = bindTaskWorkerFromPayload(state, worker, daemonEvent.payload)
+  if (taskBound) onTaskWorkerObserved?.(worker)
   const observedLaunchId = getWorkerLaunchIdFromLabels(
     (daemonEvent.payload.agent as Record<string, unknown> | undefined)?.labels,
   )
   onWorkerObserved?.(worker, observedLaunchId)
+}
+
+function bindTaskWorkerFromPayload(state: PluginState, worker: WorkerSummary, payload: WorkerEventPayload): boolean {
+  const labels =
+    ((payload.agent as Record<string, unknown> | undefined)?.labels as Record<string, string> | undefined) ?? {}
+  const taskInfo = getTaskLabelInfo(labels)
+  if (!taskInfo) return false
+  getOrCreateSession(state, taskInfo.taskSessionId, worker.cwd)
+  getOrCreateSession(state, taskInfo.parentSessionId, worker.cwd)
+  recordCreatedWorker(state, taskInfo.taskSessionId, worker)
+  recordCreatedWorker(state, taskInfo.parentSessionId, worker)
+  const existing = getTaskRun(state, taskInfo.taskSessionId)
+  recordTaskRun(state, taskRunRecordFromWorkerPayload(worker, labels, taskInfo, existing))
+  return true
+}
+
+function taskRunRecordFromWorkerPayload(
+  worker: WorkerSummary,
+  labels: Record<string, string>,
+  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
+  existing: TaskRunRecord | undefined,
+): TaskRunRecord {
+  const completionInjected = taskCompletionInjected(existing, taskInfo)
+  return {
+    taskSessionId: taskInfo.taskSessionId,
+    parentSessionId: taskInfo.parentSessionId,
+    workerId: worker.id,
+    description: taskInfo.description ?? worker.title,
+    subagentType: taskInfo.subagentType ?? worker.currentModeId ?? worker.provider,
+    background: taskBackground(existing, taskInfo, completionInjected),
+    completionInjected,
+    labels,
+    createdAt: existing?.createdAt ?? Date.now(),
+  }
+}
+
+function taskCompletionInjected(
+  existing: TaskRunRecord | undefined,
+  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
+): boolean | undefined {
+  return existing?.completionInjected ?? taskInfo.completionInjected
+}
+
+function taskBackground(
+  existing: TaskRunRecord | undefined,
+  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
+  completionInjected: boolean | undefined,
+): boolean {
+  return existing?.background ?? (taskInfo.deferred === true && completionInjected !== true)
 }
 
 function workerLifecycleMetadata(

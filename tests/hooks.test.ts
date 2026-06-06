@@ -20,6 +20,7 @@ const mockConfig: PluginConfig = {
   output: { maxInboxItems: 100, maxSummaryLength: 500 },
   notifications: { enabled: true, blockingOnly: false, stalledThresholdMs: 120000 },
   agents: {},
+  task: { enabled: false },
 }
 
 function firstInboxEvent(state: ReturnType<typeof createPluginState>): InboxEvent {

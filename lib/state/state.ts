@@ -5,6 +5,7 @@ import type {
   CapabilitySnapshot,
   TerminalSessionSummary,
   EphemeralWorkerRunRecord,
+  TaskRunRecord,
   WorkerSummary,
 } from "./types.js"
 import type { AgentSummary } from "../transport/types.js"
@@ -51,6 +52,8 @@ export function createPluginState(): PluginState {
     inbox: new Map(),
     workerLaunches: new Map(),
     ephemeralWorkerRuns: new Map(),
+    taskRuns: new Map(),
+    taskCompletionWatchers: new Set(),
     workerLaunchQueue: [],
     activeWorkerLaunchId: null,
     eventCounter: 0,
@@ -68,6 +71,8 @@ export function resetPluginState(state: PluginState): void {
   state.inbox.clear()
   state.workerLaunches.clear()
   state.ephemeralWorkerRuns.clear()
+  state.taskRuns.clear()
+  state.taskCompletionWatchers.clear()
   state.workerLaunchQueue = []
   state.activeWorkerLaunchId = null
   state.eventCounter = 0
@@ -162,6 +167,33 @@ export function removeEphemeralWorkerRun(state: PluginState, workerId: string): 
   const record = state.ephemeralWorkerRuns.get(workerId)
   state.ephemeralWorkerRuns.delete(workerId)
   return record
+}
+
+export function recordTaskRun(state: PluginState, record: TaskRunRecord): void {
+  state.taskRuns.set(record.taskSessionId, record)
+}
+
+export function getTaskRun(state: PluginState, taskSessionId: string): TaskRunRecord | undefined {
+  return state.taskRuns.get(taskSessionId)
+}
+
+export function removeTaskRun(state: PluginState, taskSessionId: string): TaskRunRecord | undefined {
+  const record = state.taskRuns.get(taskSessionId)
+  state.taskRuns.delete(taskSessionId)
+  return record
+}
+
+export function findTaskRunByWorkerId(state: PluginState, workerId: string): TaskRunRecord | undefined {
+  for (const taskRun of state.taskRuns.values()) {
+    if (taskRun.workerId === workerId) return taskRun
+  }
+  return undefined
+}
+
+export function listTaskRunsForSession(state: PluginState, sessionId: string): TaskRunRecord[] {
+  return Array.from(state.taskRuns.values()).filter(
+    (taskRun) => taskRun.taskSessionId === sessionId || taskRun.parentSessionId === sessionId,
+  )
 }
 
 export function listEphemeralWorkerIdsForSession(state: PluginState, sessionId: string): string[] {
