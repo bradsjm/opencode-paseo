@@ -61,9 +61,9 @@ test("real daemon integration", async (t) => {
 
       const serverInfo = client.getServerInfo()
       assert.ok(serverInfo, "getServerInfo() should return server info after connect")
-      assert.ok(typeof serverInfo!.serverId === "string", "serverId should be a string")
-      assert.ok(serverInfo!.serverId.length > 0, "serverId should not be empty")
-      assert.ok(typeof serverInfo!.capabilities === "object", "capabilities should be an object")
+      assert.ok(typeof serverInfo.serverId === "string", "serverId should be a string")
+      assert.ok(serverInfo.serverId.length > 0, "serverId should not be empty")
+      assert.ok(typeof serverInfo.capabilities === "object", "capabilities should be an object")
 
       assert.ok(client.isConnected(), "client should report connected")
     } finally {

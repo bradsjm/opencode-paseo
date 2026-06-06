@@ -167,7 +167,7 @@ export function buildBlockingMetadata(
       ...extra,
       actionKind: "permission",
       workerId: resourceId,
-      permissionId: extra?.permissionId as string | undefined,
+      permissionId: extra?.permissionId,
       suggestedTool: "paseo_permission_respond",
     }
   }

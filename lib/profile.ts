@@ -54,7 +54,7 @@ export function mapAgentToProfile(agent: AgentLike): ProfileSummary {
  */
 export async function listProfiles(client: OpencodeClient, directory: string): Promise<ProfileSummary[]> {
   const result = await client.app.agents({ query: { directory } })
-  const agents = (result.data ?? []) as Agent[]
+  const agents = result.data ?? []
   return agents.map(mapAgentToProfile)
 }
 

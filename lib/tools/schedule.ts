@@ -85,11 +85,12 @@ async function resolveValidatedScheduleProfile(
         `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
       )
     }
-  } catch (err: any) {
-    if (err.message?.includes("not found in daemon provider snapshot")) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes("not found in daemon provider snapshot")) {
       throw err
     }
-    logger.warn("Provider validation skipped due to snapshot fetch failure", err.message)
+    logger.warn("Provider validation skipped due to snapshot fetch failure", message)
   }
 
   return resolvedProfile

@@ -40,6 +40,7 @@ export default tseslint.config(
   },
   {
     files: ["index.ts", "lib/**/*.ts", "tsup.config.ts"],
+    extends: [...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {
         project: ["./tsconfig.json"],

@@ -94,8 +94,8 @@ export function createWorkerListTool(
             removeWorkerFromState(state, workerId)
           }
         }
-      } catch (err: any) {
-        logger.warn("Worker list refresh failed", err.message)
+      } catch (err: unknown) {
+        logger.warn("Worker list refresh failed", err instanceof Error ? err.message : String(err))
       }
 
       const workers = Array.from(state.workers.values()).map((w) => ({

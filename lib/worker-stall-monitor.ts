@@ -2,7 +2,7 @@ import type { PluginConfig } from "./config.js"
 import type { Logger } from "./logger.js"
 import { markUnreadStallEventsRead } from "./state/state.js"
 import type { PluginState, WorkerSummary } from "./state/types.js"
-import type { DaemonEvent, WorkerActivityEvent, WorkerEventPayload } from "./transport/types.js"
+import type { DaemonEvent, WorkerEventPayload } from "./transport/types.js"
 
 interface WorkerMonitorEntry {
   lastActivityAtMs: number
@@ -179,7 +179,7 @@ export function createWorkerStallMonitor(
     observeEvent(event) {
       switch (event.type) {
         case "worker.activity": {
-          const payload = event.payload as WorkerActivityEvent["payload"]
+          const payload = event.payload
           recordActivity(payload.workerId, payload.timestamp, "activity")
           break
         }

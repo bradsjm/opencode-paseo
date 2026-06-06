@@ -20,6 +20,10 @@ import {
 // Server info (version, features) is already available from the hello handshake.
 // Does NOT replay full history or synthesize noisy notifications.
 
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export interface HydrationResult {
   workers: number
   terminals: number
@@ -95,8 +99,8 @@ export async function hydrate(
     }
     logger.info("Hydrated agents", { count: workers })
     chatRooms = state.chatRooms.size
-  } catch (err: any) {
-    logger.warn("Agent hydration failed", err.message)
+  } catch (err: unknown) {
+    logger.warn("Agent hydration failed", getErrorMessage(err))
   }
 
   // 3. Terminals
@@ -107,7 +111,7 @@ export async function hydrate(
         id: t.id,
         title: t.title ?? t.name ?? t.id,
         cwd: "",
-        status: "unknown" as TerminalSessionSummary["status"],
+        status: "unknown",
         lineCount: 0,
         lastReadCursor: 0,
       }
@@ -115,8 +119,8 @@ export async function hydrate(
       terminals++
     }
     logger.info("Hydrated terminals", { count: terminals })
-  } catch (err: any) {
-    logger.warn("Terminal hydration failed", err.message)
+  } catch (err: unknown) {
+    logger.warn("Terminal hydration failed", getErrorMessage(err))
   }
 
   setConnectionStatus(state, "connected")

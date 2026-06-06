@@ -384,25 +384,31 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerm
         payload: { terminalId: event.payload.terminalId },
       }
 
-    case "agent_permission_request":
+    case "agent_permission_request": {
+      const permissionRequest = asRecord(event.request) ?? {}
+
       return {
         type: "permission.requested",
         payload: {
           workerId: event.agentId,
-          permissionId: event.request?.id,
-          request: event.request as unknown as Record<string, unknown>,
+          ...(typeof permissionRequest.id === "string" ? { permissionId: permissionRequest.id } : {}),
+          request: permissionRequest,
         },
       }
+    }
 
-    case "agent_permission_resolved":
+    case "agent_permission_resolved": {
+      const permissionResolution = asRecord(event.resolution) ?? {}
+
       return {
         type: "permission.resolved",
         payload: {
           workerId: event.agentId,
           permissionId: event.requestId,
-          resolution: event.resolution as unknown as Record<string, unknown>,
+          resolution: permissionResolution,
         },
       }
+    }
 
     case "error":
       return {
@@ -781,7 +787,7 @@ export class PaseoClient implements PaseoTransport {
   // ─── Data Fetching ───────────────────────────────────────────────────
 
   async fetchAgents(options?: FetchAgentsOptions): Promise<AgentSummary[]> {
-    const result = await this.daemon.fetchAgents(options as Record<string, unknown>)
+    const result = await this.daemon.fetchAgents(options)
     return (result.entries ?? []).map((entry) => mapAgentSnapshot(entry.agent as unknown as Record<string, unknown>))
   }
 
@@ -796,12 +802,12 @@ export class PaseoClient implements PaseoTransport {
 
   async getStatus(): Promise<Record<string, unknown>> {
     const result = await this.daemon.getDaemonStatus()
-    return result as unknown as Record<string, unknown>
+    return result
   }
 
   async getProvidersSnapshot(cwd?: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.daemon.getProvidersSnapshot({ cwd })
-    return (result.entries ?? []) as Array<Record<string, unknown>>
+    return result.entries ?? []
   }
 
   // ─── Terminal Operations ─────────────────────────────────────────────
@@ -874,37 +880,37 @@ export class PaseoClient implements PaseoTransport {
 
   async createChatRoom(options: CreateChatRoomOptions): Promise<ChatRoomMutationResult> {
     const result = await this.daemon.createChatRoom(options)
-    return mapChatRoomMutationResult(result as unknown as Record<string, unknown>)
+    return mapChatRoomMutationResult(result)
   }
 
   async listChatRooms(): Promise<ChatRoomListResult> {
     const result = await this.daemon.listChatRooms()
-    return mapChatRoomListResult(result as unknown as Record<string, unknown>)
+    return mapChatRoomListResult(result)
   }
 
   async inspectChatRoom(options: InspectChatRoomOptions): Promise<ChatRoomMutationResult> {
     const result = await this.daemon.inspectChatRoom(options)
-    return mapChatRoomMutationResult(result as unknown as Record<string, unknown>)
+    return mapChatRoomMutationResult(result)
   }
 
   async deleteChatRoom(options: DeleteChatRoomOptions): Promise<ChatRoomMutationResult> {
     const result = await this.daemon.deleteChatRoom(options)
-    return mapChatRoomMutationResult(result as unknown as Record<string, unknown>)
+    return mapChatRoomMutationResult(result)
   }
 
   async postChatMessage(options: PostChatMessageOptions): Promise<ChatMessageMutationResult> {
     const result = await this.daemon.postChatMessage(options)
-    return mapChatMessageMutationResult(result as unknown as Record<string, unknown>)
+    return mapChatMessageMutationResult(result)
   }
 
   async readChatMessages(options: ReadChatMessagesOptions): Promise<ChatReadResult> {
     const result = await this.daemon.readChatMessages(options)
-    return mapChatReadResult(result as unknown as Record<string, unknown>)
+    return mapChatReadResult(result)
   }
 
   async waitForChatMessages(options: WaitForChatMessagesOptions): Promise<ChatWaitResult> {
     const result = await this.daemon.waitForChatMessages(options)
-    return mapChatWaitResult(result as unknown as Record<string, unknown>)
+    return mapChatWaitResult(result)
   }
 
   // ─── Worker Operations ───────────────────────────────────────────────
@@ -914,11 +920,11 @@ export class PaseoClient implements PaseoTransport {
     lifecycle: { background: boolean; detached: boolean },
   ): Record<string, unknown> {
     const payload: Record<string, unknown> = {
-      provider: options.provider as Record<string, unknown> | undefined,
+      provider: options.provider,
       cwd: options.cwd,
       initialPrompt: options.initialPrompt,
       labels: options.labels,
-      worktree: options.worktree as Record<string, unknown> | undefined,
+      worktree: options.worktree,
       worktreeName: options.worktreeName,
       background: lifecycle.background,
       detached: lifecycle.detached,
@@ -947,7 +953,7 @@ export class PaseoClient implements PaseoTransport {
     })
 
     const snapshot = await this.daemon.createAgent(payload)
-    const mapped = mapAgentSnapshot(snapshot as unknown as Record<string, unknown>)
+    const mapped = mapAgentSnapshot(snapshot)
     return {
       id: mapped.id,
       provider: mapped.provider,
@@ -965,7 +971,7 @@ export class PaseoClient implements PaseoTransport {
     })
 
     const snapshot = await this.daemon.createAgent(payload)
-    const mapped = mapAgentSnapshot(snapshot as unknown as Record<string, unknown>)
+    const mapped = mapAgentSnapshot(snapshot)
     return {
       id: mapped.id,
       provider: mapped.provider,
@@ -987,7 +993,7 @@ export class PaseoClient implements PaseoTransport {
       workerId,
       error: result.error,
       lastMessage: result.lastMessage,
-      finalSnapshot: result.final ? mapAgentSnapshot(result.final as unknown as Record<string, unknown>) : null,
+      finalSnapshot: result.final ? mapAgentSnapshot(result.final) : null,
     }
   }
 
@@ -1018,8 +1024,8 @@ export class PaseoClient implements PaseoTransport {
       return null
     }
     return {
-      agent: mapAgentSnapshot(result.agent as unknown as Record<string, unknown>),
-      project: (result.project as Record<string, unknown>) ?? null,
+      agent: mapAgentSnapshot(result.agent),
+      project: result.project ?? null,
     }
   }
 
@@ -1125,7 +1131,7 @@ export class PaseoClient implements PaseoTransport {
       cwd: options.cwd,
       repoRoot: options.repoRoot,
     })
-    return mapWorktreeListResult(result as unknown as Record<string, unknown>)
+    return mapWorktreeListResult(result)
   }
 
   async createWorktree(options: WorktreeCreateOptions): Promise<WorktreeCreateResult> {
@@ -1137,7 +1143,7 @@ export class PaseoClient implements PaseoTransport {
     if (options.githubPrNumber !== undefined) input.githubPrNumber = options.githubPrNumber
     if (options.firstAgentContext !== undefined) input.firstAgentContext = options.firstAgentContext
     const result = await this.daemon.createPaseoWorktree(input as Parameters<typeof this.daemon.createPaseoWorktree>[0])
-    return mapWorktreeCreateResult(result as unknown as Record<string, unknown>)
+    return mapWorktreeCreateResult(result)
   }
 
   async archiveWorktree(options: WorktreeArchiveOptions): Promise<WorktreeArchiveResult> {
@@ -1146,7 +1152,7 @@ export class PaseoClient implements PaseoTransport {
       repoRoot: options.repoRoot,
       branchName: options.branchName,
     })
-    return mapWorktreeArchiveResult(result as unknown as Record<string, unknown>)
+    return mapWorktreeArchiveResult(result)
   }
 
   // ─── Loop Operations ─────────────────────────────────────────────────
@@ -1168,52 +1174,52 @@ export class PaseoClient implements PaseoTransport {
       maxIterations: options.maxIterations,
       maxTimeMs: options.maxTimeMs,
     })
-    return mapLoopRunResult(result as unknown as Record<string, unknown>)
+    return mapLoopRunResult(result)
   }
 
   async loopList(): Promise<LoopListResult> {
     const result = await this.daemon.loopList()
-    return mapLoopListResult(result as unknown as Record<string, unknown>)
+    return mapLoopListResult(result)
   }
 
   async loopInspect(options: LoopInspectOptions): Promise<LoopInspectResult> {
     const result = await this.daemon.loopInspect({ id: options.id })
-    return mapLoopInspectResult(result as unknown as Record<string, unknown>)
+    return mapLoopInspectResult(result)
   }
 
   async loopLogs(options: LoopLogsOptions): Promise<LoopLogsResult> {
     const result = await this.daemon.loopLogs({ id: options.id, afterSeq: options.afterSeq })
-    return mapLoopLogsResult(result as unknown as Record<string, unknown>)
+    return mapLoopLogsResult(result)
   }
 
   async loopStop(options: LoopStopOptions): Promise<LoopStopResult> {
     const result = await this.daemon.loopStop({ id: options.id })
-    return mapLoopStopResult(result as unknown as Record<string, unknown>)
+    return mapLoopStopResult(result)
   }
 
   // ─── Schedule Operations ─────────────────────────────────────────────
 
   async scheduleList(): Promise<ScheduleListResult> {
     const result = await this.daemon.scheduleList()
-    return mapScheduleListResult(result as unknown as Record<string, unknown>)
+    return mapScheduleListResult(result)
   }
 
   async scheduleInspect(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleInspect({ id: options.id })
-    return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    return mapScheduleMutationResult(result)
   }
 
   async scheduleCreate(options: ScheduleCreateOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleCreate({
       prompt: options.prompt,
       name: options.name,
-      cadence: options.cadence as unknown as Record<string, unknown>,
-      target: options.target as unknown as Record<string, unknown>,
+      cadence: options.cadence,
+      target: options.target,
       maxRuns: options.maxRuns,
       expiresAt: options.expiresAt,
       runOnCreate: options.runOnCreate,
-    } as Parameters<typeof this.daemon.scheduleCreate>[0])
-    return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    })
+    return mapScheduleMutationResult(result)
   }
 
   async scheduleUpdate(options: ScheduleUpdateOptions): Promise<ScheduleMutationResult> {
@@ -1221,33 +1227,33 @@ export class PaseoClient implements PaseoTransport {
       id: options.id,
       name: options.name,
       prompt: options.prompt,
-      cadence: options.cadence as unknown as Record<string, unknown> | undefined,
-      newAgentConfig: options.newAgentConfig as unknown as Record<string, unknown> | undefined,
+      cadence: options.cadence,
+      newAgentConfig: options.newAgentConfig,
       maxRuns: options.maxRuns,
       expiresAt: options.expiresAt,
-    } as Parameters<typeof this.daemon.scheduleUpdate>[0])
-    return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    })
+    return mapScheduleMutationResult(result)
   }
 
   async schedulePause(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.schedulePause({ id: options.id })
-    return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    return mapScheduleMutationResult(result)
   }
 
   async scheduleResume(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleResume({ id: options.id })
-    return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    return mapScheduleMutationResult(result)
   }
 
   async scheduleDelete(options: ScheduleInspectOptions): Promise<ScheduleDeleteResult> {
     const result = await this.daemon.scheduleDelete({ id: options.id })
-    return mapScheduleDeleteResult(result as unknown as Record<string, unknown>)
+    return mapScheduleDeleteResult(result)
   }
 
   async scheduleRunOnce(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     try {
       const result = await this.daemon.scheduleRunOnce({ id: options.id })
-      return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+      return mapScheduleMutationResult(result)
     } catch (err: unknown) {
       if (err instanceof Error && /Timeout waiting for message \(10000ms\)/.test(err.message)) {
         return {
@@ -1268,7 +1274,7 @@ export class PaseoClient implements PaseoTransport {
 
   async scheduleLogs(options: ScheduleInspectOptions): Promise<ScheduleLogsResult> {
     const result = await this.daemon.scheduleLogs({ id: options.id })
-    return mapScheduleLogsResult(result as unknown as Record<string, unknown>)
+    return mapScheduleLogsResult(result)
   }
 
   // ─── Event Subscription ──────────────────────────────────────────────

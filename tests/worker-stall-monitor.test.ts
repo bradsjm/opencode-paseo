@@ -62,19 +62,19 @@ test("createWorkerStallMonitor", async (t) => {
     seedWorker(state)
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
-    globalThis.setInterval = ((fn: IntervalCallback) => {
+    globalThis.setInterval = (fn: IntervalCallback) => {
       sweep = fn
       return 1 as unknown as ReturnType<typeof setInterval>
-    }) as typeof setInterval
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    }
+    globalThis.clearInterval = () => {}
 
     const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) => emitted.push(event))
     monitor.seedFromWorkers()
     monitor.start()
 
     assert.ok(sweep)
-    sweep!()
-    sweep!()
+    sweep()
+    sweep()
 
     assert.equal(emitted.length, 1)
     assert.equal(emitted[0]?.type, "worker.stalled")
@@ -86,11 +86,11 @@ test("createWorkerStallMonitor", async (t) => {
     const worker = seedWorker(state)
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
-    globalThis.setInterval = ((fn: IntervalCallback) => {
+    globalThis.setInterval = (fn: IntervalCallback) => {
       sweep = fn
       return 1 as unknown as ReturnType<typeof setInterval>
-    }) as typeof setInterval
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    }
+    globalThis.clearInterval = () => {}
 
     const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) => {
       emitted.push(event)
@@ -130,11 +130,11 @@ test("createWorkerStallMonitor", async (t) => {
     seedWorker(state, { rawStatus: "idle" })
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
-    globalThis.setInterval = ((fn: IntervalCallback) => {
+    globalThis.setInterval = (fn: IntervalCallback) => {
       sweep = fn
       return 1 as unknown as ReturnType<typeof setInterval>
-    }) as typeof setInterval
-    globalThis.clearInterval = (() => {}) as typeof clearInterval
+    }
+    globalThis.clearInterval = () => {}
 
     const monitor = createWorkerStallMonitor(state, new Logger(false), TEST_CONFIG, (event) => emitted.push(event))
     monitor.seedFromWorkers()

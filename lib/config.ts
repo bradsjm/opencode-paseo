@@ -127,7 +127,7 @@ interface ValidationError {
 }
 
 interface ConfigLoadResult {
-  data: unknown | null
+  data: unknown
   parseError?: string
 }
 
@@ -197,7 +197,7 @@ function loadConfigFile(configPath: string): ConfigLoadResult {
   }
 
   const parseErrors: ParseError[] = []
-  const parsed = parse(fileContent, parseErrors, { allowTrailingComma: true })
+  const parsed = parse(fileContent, parseErrors, { allowTrailingComma: true }) as unknown
 
   if (parseErrors.length > 0) {
     return { data: null, parseError: formatParseErrors(parseErrors) }
@@ -341,7 +341,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
       showParseWarning(ctx, layer.path, layer.kind, result.parseError)
       continue
     }
-    if (!result.data) continue
+    if (result.data === null) continue
 
     const parsedLayer = configLayerSchema.safeParse(result.data)
     if (!parsedLayer.success) {

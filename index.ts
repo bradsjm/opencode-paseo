@@ -72,12 +72,13 @@ const server: Plugin = (async (ctx) => {
   const state = createPluginState()
   const client = new PaseoClient(config.daemon)
   const notifyStartupWarning = createStartupWarningNotifier(ctx)
+  const getErrorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
   // Attempt connection to Paseo daemon
   try {
     await client.connect()
-  } catch (err: any) {
-    logger.warn("Paseo plugin not loading because Paseo daemon was not found", err.message)
+  } catch (err: unknown) {
+    logger.warn("Paseo plugin not loading because Paseo daemon was not found", getErrorMessage(err))
     notifyStartupWarning(
       "Paseo daemon unavailable",
       `Could not connect to Paseo daemon at ${config.daemon.host}:${config.daemon.port}. Paseo tools were not loaded.`,
@@ -123,8 +124,8 @@ const server: Plugin = (async (ctx) => {
       try {
         await client.close()
         logger.info("Paseo client closed")
-      } catch (err: any) {
-        logger.error("Error closing Paseo client during dispose", err.message)
+      } catch (err: unknown) {
+        logger.error("Error closing Paseo client during dispose", getErrorMessage(err))
       }
       resetPluginState(state)
       logger.info("Paseo plugin disposed")

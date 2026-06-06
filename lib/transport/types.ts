@@ -351,7 +351,7 @@ export interface LoopLogsOptions extends LoopInspectOptions {
   afterSeq?: number
 }
 
-export interface LoopStopOptions extends LoopInspectOptions {}
+export type LoopStopOptions = LoopInspectOptions
 
 export interface LoopRunResult {
   requestId: string
@@ -576,12 +576,12 @@ export interface PermissionResolvedPayload extends Record<string, unknown> {
 
 export interface DaemonConnectedEvent {
   type: "daemon.connected"
-  payload: {}
+  payload: Record<string, never>
 }
 
 export interface DaemonDisconnectedEvent {
   type: "daemon.disconnected"
-  payload: {}
+  payload: Record<string, never>
 }
 
 export interface DaemonErrorEvent {

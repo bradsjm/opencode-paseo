@@ -59,7 +59,7 @@ test("buildDaemonConfig maps DaemonConfig to DaemonClientConfig", async (t) => {
     const a = buildDaemonConfig(baseConfig)
     const b = buildDaemonConfig(baseConfig)
     assert.notEqual(a.clientId, b.clientId)
-    assert.ok(a.clientId!.startsWith("opencode-paseo-"))
+    assert.ok(a.clientId.startsWith("opencode-paseo-"))
   })
 })
 

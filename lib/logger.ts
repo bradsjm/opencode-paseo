@@ -27,7 +27,9 @@ function compactData(data: unknown): string {
   try {
     return JSON.stringify(data, null, 0)
   } catch {
-    return String(data)
+    if (data instanceof Error) return data.message
+    if (typeof data === "number" || typeof data === "boolean" || typeof data === "bigint") return String(data)
+    return "[unserializable]"
   }
 }
 

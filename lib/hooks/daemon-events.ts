@@ -46,7 +46,7 @@ function syncWorkerFromPayload(
     provider: (typeof agent?.provider === "string" && agent.provider) || current?.provider || "unknown",
     cwd: (typeof agent?.cwd === "string" && agent.cwd) || current?.cwd || "",
     model: (typeof agent?.model === "string" && agent.model) || current?.model || null,
-    status: typeof agent?.status === "string" ? (agent.status as string) : (current?.status ?? "unknown"),
+    status: typeof agent?.status === "string" ? agent.status : (current?.status ?? "unknown"),
     title: (typeof agent?.title === "string" && agent.title) || current?.title || null,
     labels: (agent?.labels as Record<string, string>) ?? current?.labels ?? {},
     pendingPermissions:

@@ -246,9 +246,11 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
 // produce a consistent WorkerSummary from a transport-level AgentSummary.
 
 export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
-  const rawLabels = agent.labels
+  const rawLabels: unknown = agent.labels
   const labels: string[] = Array.isArray(rawLabels)
-    ? rawLabels.filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
+    ? rawLabels.filter(
+        (label): label is string => typeof label === "string" && !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX),
+      )
     : rawLabels && typeof rawLabels === "object"
       ? Object.keys(rawLabels).filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
       : []
@@ -257,7 +259,7 @@ export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
   const pendingPermissionIds = pendingPermissions
     .map((p) => p?.id as string | undefined)
     .filter((id): id is string => typeof id === "string")
-  const chatRoom = getChatRoomFromAgentLabels(rawLabels)
+  const chatRoom = getChatRoomFromAgentLabels(agent.labels)
 
   return {
     id: agent.id,

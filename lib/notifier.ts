@@ -69,10 +69,10 @@ export function sendNudge(client: OpencodeClient, sessionIds: string[], message:
       .then(() => {
         logger.debug("Nudge sent", { sessionId, messageLength: message.length })
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         logger.warn("Nudge delivery failed", {
           sessionId,
-          error: err.message ?? String(err),
+          error: err instanceof Error ? err.message : String(err),
         })
       })
   }

@@ -1,4 +1,5 @@
 import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
+import type { InboxEvent } from "../state/types.js"
 import type { PluginState } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
@@ -13,10 +14,7 @@ interface NextActionSummary {
   suggestedTool: string | null
 }
 
-function buildNextAction(
-  state: PluginState,
-  blockingEvents: Array<PluginState["inbox"] extends Map<any, infer T> ? T : never>,
-): NextActionSummary | null {
+function buildNextAction(state: PluginState, blockingEvents: InboxEvent[]): NextActionSummary | null {
   const primaryEvent = blockingEvents[0]
   if (primaryEvent) {
     return {

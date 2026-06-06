@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createPluginState, insertInboxEvent, markEventRead } from "../lib/state/state.js"
-import type { PaseoTransport } from "../lib/transport/types.js"
+import type { AgentSummary, PaseoTransport } from "../lib/transport/types.js"
 import type { RunWorkerOptions } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 import { Logger } from "../lib/logger.js"
@@ -758,7 +758,7 @@ test("paseo_worker_archive", async (t) => {
           model: "gpt-4",
           status: "closed",
           title: "Archived Worker",
-          labels: {},
+          labels: {} as Record<string, string>,
         },
         project: null,
       }),
@@ -815,29 +815,31 @@ test("paseo_worker_list", async (t) => {
       timestamp: Date.now(),
     })
 
+    const fetchedAgents: AgentSummary[] = [
+      {
+        id: "w-live",
+        provider: "test",
+        cwd: "/tmp",
+        model: null,
+        status: "running",
+        title: "Live Worker",
+        labels: {},
+        pendingPermissions: [],
+      },
+      {
+        id: "w-new",
+        provider: "test",
+        cwd: "/tmp",
+        model: null,
+        status: "idle",
+        title: "New Worker",
+        labels: { "opencodePaseo.chatRoom": "ops-room" },
+        pendingPermissions: [],
+      },
+    ]
+
     const client = createMockTransport({
-      fetchAgents: async () => [
-        {
-          id: "w-live",
-          provider: "test",
-          cwd: "/tmp",
-          model: null,
-          status: "running",
-          title: "Live Worker",
-          labels: {} as Record<string, string>,
-          pendingPermissions: [],
-        },
-        {
-          id: "w-new",
-          provider: "test",
-          cwd: "/tmp",
-          model: null,
-          status: "idle",
-          title: "New Worker",
-          labels: { "opencodePaseo.chatRoom": "ops-room" },
-          pendingPermissions: [],
-        },
-      ],
+      fetchAgents: async () => fetchedAgents,
     })
 
     const toolDef = createWorkerListTool(state, client, logger)
