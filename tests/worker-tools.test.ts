@@ -13,6 +13,7 @@ import {
   createWorkerLaunchStatusTool,
   createWorkerListTool,
   createWorkerRunTool,
+  createWorkerSendTool,
   createWorkerUpdateTool,
   createWorkerWaitTool,
 } from "../lib/tools/worker.js"
@@ -228,6 +229,30 @@ async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve))
 }
 
+test("paseo_worker_send", async (t) => {
+  const logger = new Logger(false)
+
+  await t.test("forwards to daemon even when worker is absent from local state", async () => {
+    const state = createPluginState()
+    let received: { workerId: string; message: string } | null = null
+    const client = createMockTransport({
+      sendWorkerMessage: async (workerId, message) => {
+        received = { workerId, message }
+      },
+    })
+
+    const result = await createWorkerSendTool(state, client, logger).execute(
+      { workerId: "missing", message: "hello" },
+      mockContext(),
+    )
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.deepEqual(received, { workerId: "missing", message: "hello" })
+    assert.equal(output.workerId, "missing")
+    assert.equal(output.sent, 5)
+  })
+})
+
 // ─── Wait Tool Tests ─────────────────────────────────────────────────────────
 
 test("paseo_worker_wait", async (t) => {
@@ -372,15 +397,26 @@ test("paseo_worker_wait", async (t) => {
     assert.deepEqual(output.results, [])
   })
 
-  await t.test("fails immediately on unknown worker", async () => {
+  await t.test("waits using daemon truth even when a worker is absent from local state", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
-    const client = createMockTransport()
+    const client = createMockTransport({
+      waitForWorker: async (workerId) => ({
+        status: "idle",
+        workerId,
+        error: null,
+        lastMessage: null,
+        finalSnapshot: null,
+      }),
+    })
 
     const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
-    await assert.rejects(
-      () => toolDef.execute({ workerIds: ["w1", "missing"] }, mockContext()),
-      /not found in local state/,
+    const result = await toolDef.execute({ workerIds: ["w1", "missing"] }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.deepEqual(
+      output.results.map((entry: { workerId: string }) => entry.workerId),
+      ["w1", "missing"],
     )
   })
 
@@ -659,12 +695,24 @@ test("paseo_worker_cancel", async (t) => {
     assert.ok(state.workers.has("w1"))
   })
 
-  await t.test("throws when worker not in state", async () => {
+  await t.test("still cancels when worker is not in local state", async () => {
     const state = createPluginState()
-    const client = createMockTransport()
+    let cancelCalls = 0
+    const client = createMockTransport({
+      cancelWorker: async () => {
+        cancelCalls += 1
+      },
+    })
 
-    const toolDef = createWorkerCancelTool(state, client, logger)
-    await assert.rejects(() => toolDef.execute({ workerId: "nonexistent" }, mockContext()), /not found in local state/)
+    const result = await createWorkerCancelTool(state, client, logger).execute(
+      { workerId: "nonexistent" },
+      mockContext(),
+    )
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(cancelCalls, 1)
+    assert.equal(output.workerId, "nonexistent")
+    assert.equal(output.action, "canceled")
   })
 
   await t.test("description warns that forceKill should capture output first", async () => {
@@ -744,6 +792,27 @@ test("paseo_worker_archive", async (t) => {
     assert.equal(output.workerId, "w1")
     assert.equal(output.archivedAt, null)
     assert.equal(output.alreadyRemovedUpstream, true)
+  })
+
+  await t.test("still archives when worker is absent from local state", async () => {
+    const state = createPluginState()
+    let archiveCalls = 0
+    const client = createMockTransport({
+      archiveWorker: async (workerId) => {
+        archiveCalls += 1
+        return {
+          workerId,
+          archivedAt: "2026-01-01T00:00:00.000Z",
+        }
+      },
+    })
+
+    const result = await createWorkerArchiveTool(state, client, logger).execute({ workerId: "missing" }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(archiveCalls, 1)
+    assert.equal(output.workerId, "missing")
+    assert.equal(output.alreadyRemovedUpstream, false)
   })
 
   await t.test("archived workers can still be daemon-inspectable after leaving the active list", async () => {
@@ -858,7 +927,7 @@ test("paseo_worker_list", async (t) => {
     assert.equal(output.workers.find((worker: { id: string }) => worker.id === "w-new")?.chatRoom, "ops-room")
   })
 
-  await t.test("failed refresh does not prune local workers", async () => {
+  await t.test("failed refresh surfaces the daemon error and does not prune local workers", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
     const client = createMockTransport({
@@ -868,12 +937,9 @@ test("paseo_worker_list", async (t) => {
     })
 
     const toolDef = createWorkerListTool(state, client, logger)
-    const result = await toolDef.execute({}, mockContext())
-    const output = JSON.parse((result as { output: string }).output)
+    await assert.rejects(() => toolDef.execute({}, mockContext()), /fetch failed/)
 
     assert.equal(state.workers.has("w1"), true)
-    assert.equal(output.count, 1)
-    assert.equal(output.workers[0].id, "w1")
   })
 
   await t.test("recalculates unread counts and exposes observed launch ids from raw labels", async () => {
@@ -2037,12 +2103,30 @@ test("paseo_worker_update", async (t) => {
     assert.equal(output.updated, false)
   })
 
-  await t.test("throws when worker not in state", async () => {
+  await t.test("still updates when worker is absent from local state", async () => {
     const state = createPluginState()
-    const client = createMockTransport()
+    let receivedWorkerId: string | null = null
+    const client = createMockTransport({
+      updateWorker: async (opts) => {
+        receivedWorkerId = opts.workerId
+        return {
+          workerId: opts.workerId,
+          updated: false,
+          metadataUpdated: false,
+          settingsUpdated: false,
+          errors: [],
+        }
+      },
+    })
 
-    const toolDef = createWorkerUpdateTool(state, client, logger)
-    await assert.rejects(() => toolDef.execute({ workerId: "nonexistent" }, mockContext()), /not found in local state/)
+    const result = await createWorkerUpdateTool(state, client, logger).execute(
+      { workerId: "nonexistent" },
+      mockContext(),
+    )
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(receivedWorkerId, "nonexistent")
+    assert.equal(output.workerId, "nonexistent")
   })
 })
 
@@ -2084,10 +2168,21 @@ test("paseo_worker_inspect", async (t) => {
 
   await t.test("returns snapshot without activity by default", async () => {
     const state = createPluginState()
-    const worker = seedWorker(state, "w1")
-    worker.chatRoom = "ops-room"
+    seedWorker(state, "w1")
     let activityCalled = false
     const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: { "opencodePaseo.chatRoom": "ops-room" },
+        },
+        project: null,
+      }),
       fetchWorkerActivity: async () => {
         activityCalled = true
         return { workerId: "w1", activity: null }
@@ -2100,7 +2195,7 @@ test("paseo_worker_inspect", async (t) => {
     assert.ok(!activityCalled)
     const output = JSON.parse((result as { output: string }).output)
     assert.equal(output.worker.id, "w1")
-    assert.equal(output.worker.source, "local-cache")
+    assert.equal(output.worker.source, "daemon")
     assert.equal(output.worker.rawStatus, "running")
     assert.equal(output.worker.chatRoom, "ops-room")
     assert.equal(output.progress.activityState, "unknown")
@@ -2114,6 +2209,18 @@ test("paseo_worker_inspect", async (t) => {
     const state = createPluginState()
     seedWorker(state, "w1")
     const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
       fetchWorkerActivity: async (opts) => ({
         workerId: opts.workerId,
         activity: {
@@ -2147,6 +2254,18 @@ test("paseo_worker_inspect", async (t) => {
     const state = createPluginState()
     seedWorker(state, "w1")
     const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
       fetchWorkerActivity: async () => ({
         workerId: "w1",
         activity: null,
@@ -2166,6 +2285,18 @@ test("paseo_worker_inspect", async (t) => {
     seedWorker(state, "w1")
     let receivedLimit: number | undefined
     const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
       fetchWorkerActivity: async (opts) => {
         receivedLimit = opts.limit
         return { workerId: opts.workerId, activity: { entries: [], hasMore: false } }
@@ -2218,6 +2349,18 @@ test("paseo_worker_inspect", async (t) => {
     const state = createPluginState()
     seedWorker(state, "w1")
     const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
       fetchWorkerActivity: async () => ({
         workerId: "w1",
         activity: { entries: [], hasMore: false },
@@ -2232,22 +2375,15 @@ test("paseo_worker_inspect", async (t) => {
     assert.match(output.progress.summary, /running but has no recent projected activity/)
   })
 
-  await t.test("falls back to local state when daemon fetch returns null", async () => {
+  await t.test("fails when daemon fetch returns null", async () => {
     const state = createPluginState()
-    const worker = seedWorker(state, "w1")
-    worker.requiresAttention = true
-    worker.attentionReason = "needs input"
+    seedWorker(state, "w1")
     const client = createMockTransport({
       fetchWorker: async () => null,
     })
 
     const toolDef = createWorkerInspectTool(state, client, logger)
-    const result = await toolDef.execute({ workerId: "w1" }, mockContext())
-
-    const output = JSON.parse((result as { output: string }).output)
-    assert.equal(output.worker.source, "local-cache")
-    assert.equal(output.attention.requiresAttention, true)
-    assert.equal(output.attention.attentionReason, "needs input")
+    await assert.rejects(() => toolDef.execute({ workerId: "w1" }, mockContext()), /not found/)
   })
 
   await t.test("throws when worker not found anywhere", async () => {

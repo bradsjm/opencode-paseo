@@ -701,8 +701,7 @@ test("worker launch queue controller", async (t) => {
     assert.equal(archiveCalls.length, 1)
     assert.deepEqual(at(archiveCalls, 0), {
       worktreePath: "/project/feature-test",
-      repoRoot: "/project",
-      branchName: "feature/test",
+      cwd: "/project",
     })
     assert.equal(promptMessages.length, 1)
     assert.match(at(promptMessages, 0), /\[paseo:worker-launch\.failed_rolled_back\]/)

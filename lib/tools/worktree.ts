@@ -9,23 +9,17 @@ import { collapseNull, compactDefined, nullableOptional, optionalNonBlankString,
 
 export function createWorktreeListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "List Paseo worktrees for a project. Requires explicit directory context via cwd or repoRoot.",
+    description: "List Paseo worktrees for a project. Requires explicit directory context via cwd.",
     args: {
       cwd: nullableOptional(tool.schema.string()).describe(
         "Working directory of the project (defaults to session directory)",
       ),
-      repoRoot: nullableOptional(tool.schema.string()).describe("Repository root path (alternative to cwd)"),
     },
     async execute(args, context: ToolContext) {
       const cwd = optionalNonBlankString(args.cwd) ?? context.directory
-      const repoRoot = optionalNonBlankString(args.repoRoot)
-      logger.info("Tool: paseo_worktree_list invoked", { cwd, repoRoot })
+      logger.info("Tool: paseo_worktree_list invoked", { cwd })
 
-      if (!cwd && !repoRoot) {
-        throw new Error("Either cwd or repoRoot must be provided")
-      }
-
-      const result = await client.listWorktrees({ ...compactDefined({ cwd, repoRoot }) })
+      const result = await client.listWorktrees({ cwd })
 
       return {
         title: "Paseo Worktrees",
@@ -85,34 +79,30 @@ export function createWorktreeCreateTool(state: PluginState, client: PaseoTransp
 
 export function createWorktreeArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "Archive a Paseo worktree. Requires explicit directory context or worktree identification.",
+    description: "Archive a Paseo worktree. Requires explicit directory context for the project.",
     args: {
-      worktreePath: nullableOptional(tool.schema.string()).describe("Path to the worktree to archive"),
-      repoRoot: nullableOptional(tool.schema.string()).describe("Repository root path"),
-      branchName: nullableOptional(tool.schema.string()).describe("Branch name of the worktree to archive"),
+      worktreePath: tool.schema.string().describe("Path to the worktree to archive"),
       cwd: tool.schema
         .string()
         .nullable()
         .optional()
-        .describe("Working directory (defaults to session directory, used as repoRoot fallback)"),
+        .describe("Working directory of the project (defaults to session directory)"),
     },
     async execute(args, context: ToolContext) {
       const cwd = collapseNull(args.cwd) ?? context.directory
-      const worktreePath = collapseNull(args.worktreePath)
-      const repoRoot = collapseNull(args.repoRoot)
-      const branchName = collapseNull(args.branchName)
+      const worktreePath = optionalNonBlankString(args.worktreePath)
       logger.info("Tool: paseo_worktree_archive invoked", {
         worktreePath,
-        branchName,
+        cwd,
       })
 
-      if (!worktreePath && !branchName && !repoRoot) {
-        throw new Error("At least one of worktreePath, branchName, or repoRoot must be provided")
+      if (!worktreePath) {
+        throw new Error("worktreePath must be provided")
       }
 
       const result = await client.archiveWorktree({
-        repoRoot: repoRoot ?? cwd,
-        ...compactDefined({ worktreePath, branchName }),
+        worktreePath,
+        cwd,
       })
 
       for (const workerId of result.removedAgents ?? []) {

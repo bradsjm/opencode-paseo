@@ -222,9 +222,8 @@ export interface WorktreeCreateOptions {
 }
 
 export interface WorktreeArchiveOptions {
-  worktreePath?: string
-  repoRoot?: string
-  branchName?: string
+  worktreePath: string
+  cwd: string
 }
 
 // ─── Phase 2 Result Types ─────────────────────────────────────────────────────

@@ -1149,8 +1149,7 @@ export class PaseoClient implements PaseoTransport {
   async archiveWorktree(options: WorktreeArchiveOptions): Promise<WorktreeArchiveResult> {
     const result = await this.daemon.archivePaseoWorktree({
       worktreePath: options.worktreePath,
-      repoRoot: options.repoRoot,
-      branchName: options.branchName,
+      repoRoot: options.cwd,
     })
     return mapWorktreeArchiveResult(result)
   }

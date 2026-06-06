@@ -363,8 +363,7 @@ export function createWorkerLaunchQueueController(
                 try {
                   const archiveResult = await client.archiveWorktree({
                     worktreePath: candidate.worktreePath,
-                    repoRoot: record.cwd,
-                    ...(candidate.branchName ? { branchName: candidate.branchName } : {}),
+                    cwd: record.cwd,
                   })
                   if (!archiveResult.success) {
                     throw new Error(archiveResult.error?.message ?? "archiveWorktree returned success=false")

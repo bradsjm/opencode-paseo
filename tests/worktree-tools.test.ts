@@ -18,7 +18,7 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
 test("paseo_worktree_list", async (t) => {
   const logger = new Logger(false)
 
-  await t.test("omits empty repoRoot and uses provided cwd", async () => {
+  await t.test("uses provided cwd", async () => {
     const state = createPluginState()
     let receivedOptions: any = null
     const client = createMockTransport({
@@ -29,12 +29,12 @@ test("paseo_worktree_list", async (t) => {
     })
 
     const toolDef = createWorktreeListTool(state, client, logger)
-    await toolDef.execute({ cwd: "/repo", repoRoot: "" }, mockContext())
+    await toolDef.execute({ cwd: "/repo" }, mockContext())
 
     assert.deepEqual(receivedOptions, { cwd: "/repo" })
   })
 
-  await t.test("treats null repoRoot like omission", async () => {
+  await t.test("treats null cwd like omission and defaults to context directory", async () => {
     const state = createPluginState()
     let receivedOptions: any = null
     const client = createMockTransport({
@@ -44,9 +44,16 @@ test("paseo_worktree_list", async (t) => {
       },
     })
 
-    await createWorktreeListTool(state, client, logger).execute({ cwd: null, repoRoot: null }, mockContext())
+    await createWorktreeListTool(state, client, logger).execute({ cwd: null }, mockContext())
 
     assert.deepEqual(receivedOptions, { cwd: "/tmp" })
+  })
+
+  await t.test("does not expose repoRoot in public args", async () => {
+    const state = createPluginState()
+    const toolDef = createWorktreeListTool(state, createMockTransport(), logger)
+
+    assert.equal("repoRoot" in toolDef.args, false)
   })
 })
 
@@ -159,7 +166,7 @@ test("paseo_worktree_archive", async (t) => {
     assert.equal(state.workers.has("w-keep"), true)
   })
 
-  await t.test("treats null optional archive args as omitted", async () => {
+  await t.test("treats null cwd as omission and sends canonical archive args", async () => {
     const state = createPluginState()
     let receivedOptions: any = null
     const client = createMockTransport({
@@ -170,10 +177,18 @@ test("paseo_worktree_archive", async (t) => {
     })
 
     await createWorktreeArchiveTool(state, client, logger).execute(
-      { worktreePath: "/tmp/wt", repoRoot: null, branchName: null, cwd: null },
+      { worktreePath: "/tmp/wt", cwd: null },
       mockContext(),
     )
 
-    assert.deepEqual(receivedOptions, { worktreePath: "/tmp/wt", repoRoot: "/tmp" })
+    assert.deepEqual(receivedOptions, { worktreePath: "/tmp/wt", cwd: "/tmp" })
+  })
+
+  await t.test("does not expose repoRoot or branchName in public args", async () => {
+    const state = createPluginState()
+    const toolDef = createWorktreeArchiveTool(state, createMockTransport(), logger)
+
+    assert.equal("repoRoot" in toolDef.args, false)
+    assert.equal("branchName" in toolDef.args, false)
   })
 })

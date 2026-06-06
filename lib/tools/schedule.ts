@@ -36,9 +36,15 @@ function optionalNonEmptyString(value: string | null | undefined): string | unde
   return optionalNonBlankString(value)
 }
 
-function optionalPositiveInteger(value: number | null | undefined): number | undefined {
+function optionalPositiveInteger(value: number | null | undefined, fieldName: string): number | undefined {
   const normalized = optionalNumber(value)
-  return normalized !== undefined && normalized > 0 ? normalized : undefined
+  if (normalized === undefined) {
+    return undefined
+  }
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    throw new Error(`${fieldName} must be a positive integer`)
+  }
+  return normalized
 }
 
 function buildScheduleCadence(args: {
@@ -64,38 +70,6 @@ function buildScheduleCadence(args: {
     expression: args.cronExpression,
     ...compactDefined({ timezone: args.timezone }),
   }
-}
-
-async function resolveValidatedScheduleProfile(
-  client: PaseoTransport,
-  opencodeClient: OpencodeClient,
-  logger: Logger,
-  profileName: string,
-  cwd: string,
-) {
-  const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profileName, cwd)
-
-  try {
-    const providers = await client.getProvidersSnapshot(cwd)
-    const found = providers.some((p) => p.id === resolvedProfile.provider || p.provider === resolvedProfile.provider)
-    if (!found) {
-      const available = providers
-        .map((p) => p.id || p.provider)
-        .filter(Boolean)
-        .join(", ")
-      throw new Error(
-        `Provider "${resolvedProfile.provider}" not found in daemon provider snapshot for cwd "${cwd}". Available providers: ${available || "(none)"}`,
-      )
-    }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    if (message.includes("not found in daemon provider snapshot")) {
-      throw err
-    }
-    logger.warn("Provider validation skipped due to snapshot fetch failure", message)
-  }
-
-  return resolvedProfile
 }
 
 // ─── Schedule List Tool ──────────────────────────────────────────────────────
@@ -192,13 +166,13 @@ export function createScheduleCreateTool(
         throw new Error("prompt must not be empty")
       }
       const name = collapseNull(args.name)
-      const everyMs = optionalNumber(args.everyMs)
+      const everyMs = optionalPositiveInteger(args.everyMs, "everyMs")
       const cronExpression = collapseNull(args.cronExpression)
       const timezone = collapseNull(args.timezone)
       const agentId = collapseNull(args.agentId)
       const profile = optionalNonEmptyString(args.profile)
       const cwd = collapseNull(args.cwd) ?? context.directory
-      const maxRuns = optionalNumber(args.maxRuns)
+      const maxRuns = optionalPositiveInteger(args.maxRuns, "maxRuns")
       const expiresAt = collapseNull(args.expiresAt)
       const runOnCreate = collapseNull(args.runOnCreate)
       logger.info("Tool: paseo_schedule_create invoked", {
@@ -206,6 +180,10 @@ export function createScheduleCreateTool(
         cadenceType: args.cadenceType,
         targetType: args.targetType,
       })
+
+      if (args.cadenceType !== "every" && everyMs !== undefined) {
+        throw new Error("everyMs is only supported when cadenceType is 'every'")
+      }
 
       const cadence = buildScheduleCadence({
         cadenceType: args.cadenceType,
@@ -235,7 +213,7 @@ export function createScheduleCreateTool(
             throw new Error("profile is required for 'new-agent' target")
           }
 
-          const resolvedProfile = await resolveValidatedScheduleProfile(client, opencodeClient, logger, profile, cwd)
+          const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profile, cwd)
 
           target = {
             type: "new-agent",
@@ -312,8 +290,12 @@ export function createScheduleUpdateTool(
       const profile = optionalNonEmptyString(args.profile)
       const cwd = optionalNonEmptyString(args.cwd)
       const expiresAt = optionalNonEmptyString(args.expiresAt)
-      const everyMs = optionalPositiveInteger(args.everyMs)
-      const maxRuns = optionalPositiveInteger(args.maxRuns)
+      const everyMs = optionalPositiveInteger(args.everyMs, "everyMs")
+      const maxRuns = optionalPositiveInteger(args.maxRuns, "maxRuns")
+
+      if (args.cadenceType !== "every" && everyMs !== undefined) {
+        throw new Error("everyMs is only supported when cadenceType is 'every'")
+      }
 
       const cadence = buildScheduleCadence({
         ...compactDefined({ cadenceType: args.cadenceType ?? undefined, everyMs, cronExpression, timezone }),
@@ -331,7 +313,7 @@ export function createScheduleUpdateTool(
       // Resolve and validate profile-backed provider for newAgentConfig if provided
       if (newAgentConfig && profile) {
         const cwd = newAgentConfig.cwd ?? context.directory
-        const resolvedProfile = await resolveValidatedScheduleProfile(client, opencodeClient, logger, profile, cwd)
+        const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profile, cwd)
         newAgentConfig.provider = resolvedProfile.provider
         newAgentConfig.model = resolvedProfile.model ?? null
         newAgentConfig.modeId = resolvedProfile.modeId ?? null

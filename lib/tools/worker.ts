@@ -74,27 +74,22 @@ export function createWorkerListTool(
     async execute() {
       logger.info("Tool: paseo_worker_list invoked")
 
-      // Refresh from daemon
-      try {
-        const preexistingWorkerIds = new Set(state.workers.keys())
-        const agents = await client.fetchAgents(undefined)
-        const fetchedWorkerIds = new Set<string>()
+      const preexistingWorkerIds = new Set(state.workers.keys())
+      const agents = await client.fetchAgents(undefined)
+      const fetchedWorkerIds = new Set<string>()
 
-        for (const a of agents) {
-          fetchedWorkerIds.add(a.id)
-          const worker = mapAgentToWorkerSummary(a)
-          worker.unreadEventCount = getUnreadEventCountForResource(state, worker.id)
-          upsertWorker(state, worker)
-          onWorkerObserved?.(worker, getWorkerLaunchIdFromLabels(a.labels))
-        }
+      for (const a of agents) {
+        fetchedWorkerIds.add(a.id)
+        const worker = mapAgentToWorkerSummary(a)
+        worker.unreadEventCount = getUnreadEventCountForResource(state, worker.id)
+        upsertWorker(state, worker)
+        onWorkerObserved?.(worker, getWorkerLaunchIdFromLabels(a.labels))
+      }
 
-        for (const workerId of preexistingWorkerIds) {
-          if (!fetchedWorkerIds.has(workerId)) {
-            removeWorkerFromState(state, workerId)
-          }
+      for (const workerId of preexistingWorkerIds) {
+        if (!fetchedWorkerIds.has(workerId)) {
+          removeWorkerFromState(state, workerId)
         }
-      } catch (err: unknown) {
-        logger.warn("Worker list refresh failed", err instanceof Error ? err.message : String(err))
       }
 
       const workers = Array.from(state.workers.values()).map((w) => ({
@@ -512,12 +507,6 @@ export function createWorkerSendTool(state: PluginState, client: PaseoTransport,
         messageLength: args.message.length,
       })
 
-      // Verify worker exists in local state
-      const worker = state.workers.get(args.workerId)
-      if (!worker) {
-        throw new Error(`Worker "${args.workerId}" not found in local state`)
-      }
-
       await client.sendWorkerMessage(args.workerId, args.message)
 
       return {
@@ -559,7 +548,7 @@ interface WorkerInspectResponse {
     branchName?: string
     createdAt?: string
     updatedAt?: string
-    source: "daemon" | "local-cache"
+    source: "daemon"
   }
   attention: {
     pendingPermissionIds: string[]
@@ -769,12 +758,6 @@ export function createWorkerWaitTool(
         throw new Error("workerIds must contain at least one non-empty worker ID")
       }
 
-      for (const workerId of workerIds) {
-        if (!state.workers.get(workerId)) {
-          throw new Error(`Worker "${workerId}" not found in local state`)
-        }
-      }
-
       const session = state.sessions.get(context.sessionID)
       const ownedWorkerIds = session?.createdWorkerIds ?? new Set<string>()
 
@@ -919,12 +902,6 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
         forceKill: isKill,
       })
 
-      // Verify worker exists in local state
-      const worker = state.workers.get(args.workerId)
-      if (!worker) {
-        throw new Error(`Worker "${args.workerId}" not found in local state`)
-      }
-
       if (isKill) {
         await client.killWorker(args.workerId)
 
@@ -949,7 +926,10 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
       await client.cancelWorker(args.workerId)
 
       // Update local state
-      worker.status = "canceled"
+      const worker = state.workers.get(args.workerId)
+      if (worker) {
+        worker.status = "canceled"
+      }
 
       return {
         title: "Worker Canceled",
@@ -979,12 +959,6 @@ export function createWorkerArchiveTool(state: PluginState, client: PaseoTranspo
     },
     async execute(args) {
       logger.info("Tool: paseo_worker_archive invoked", { workerId: args.workerId })
-
-      // Verify worker exists in local state
-      const worker = state.workers.get(args.workerId)
-      if (!worker) {
-        throw new Error(`Worker "${args.workerId}" not found in local state`)
-      }
 
       let archivedAt: string | null = null
       let alreadyRemovedUpstream = false
@@ -1061,12 +1035,6 @@ export function createWorkerUpdateTool(
     async execute(args) {
       logger.info("Tool: paseo_worker_update invoked", { workerId: args.workerId })
 
-      // Verify worker exists in local state
-      const worker = state.workers.get(args.workerId)
-      if (!worker) {
-        throw new Error(`Worker "${args.workerId}" not found in local state`)
-      }
-
       const name = collapseNull(args.name)
       const labels = collapseNull(args.labels)
       const settingsInput = collapseNull(args.settings)
@@ -1091,7 +1059,7 @@ export function createWorkerUpdateTool(
         const fetched = await client.fetchWorker(args.workerId)
         if (fetched) {
           const refreshed = mapAgentToWorkerSummary(fetched.agent)
-          refreshed.unreadEventCount = worker.unreadEventCount
+          refreshed.unreadEventCount = state.workers.get(args.workerId)?.unreadEventCount ?? 0
           upsertWorker(state, refreshed)
           onWorkerObserved?.(refreshed)
         }
@@ -1136,57 +1104,35 @@ export function createWorkerInspectTool(
         includeActivity,
       })
 
-      let snapshot: WorkerInspectResponse["worker"] | null = null
-      let worker = state.workers.get(args.workerId)
-
-      // Try fresh daemon fetch first
       const fetched = await client.fetchWorker(args.workerId)
-      if (fetched) {
-        const mapped = mapAgentToWorkerSummary(fetched.agent)
-        const existing = state.workers.get(args.workerId)
-        if (existing) {
-          mapped.unreadEventCount = existing.unreadEventCount
-        }
-        upsertWorker(state, mapped)
-        onWorkerObserved?.(mapped)
-        worker = mapped
-
-        snapshot = {
-          id: mapped.id,
-          title: mapped.title,
-          status: mapped.status,
-          rawStatus: mapped.rawStatus ?? fetched.agent.status ?? null,
-          cwd: mapped.cwd,
-          provider: mapped.provider,
-          model: mapped.model,
-          currentModeId: mapped.currentModeId,
-          ...(mapped.chatRoom !== undefined ? { chatRoom: mapped.chatRoom } : {}),
-          ...(mapped.worktreePath !== undefined ? { worktreePath: mapped.worktreePath } : {}),
-          ...(mapped.branchName !== undefined ? { branchName: mapped.branchName } : {}),
-          ...(mapped.createdAt !== undefined ? { createdAt: mapped.createdAt } : {}),
-          ...(mapped.updatedAt !== undefined ? { updatedAt: mapped.updatedAt } : {}),
-          source: "daemon",
-        }
-      } else if (worker) {
-        // Fallback to local state
-        snapshot = {
-          id: worker.id,
-          title: worker.title,
-          status: worker.status,
-          rawStatus: worker.rawStatus ?? null,
-          cwd: worker.cwd,
-          provider: worker.provider,
-          model: worker.model,
-          currentModeId: worker.currentModeId,
-          ...(worker.chatRoom !== undefined ? { chatRoom: worker.chatRoom } : {}),
-          ...(worker.worktreePath !== undefined ? { worktreePath: worker.worktreePath } : {}),
-          ...(worker.branchName !== undefined ? { branchName: worker.branchName } : {}),
-          ...(worker.createdAt !== undefined ? { createdAt: worker.createdAt } : {}),
-          ...(worker.updatedAt !== undefined ? { updatedAt: worker.updatedAt } : {}),
-          source: "local-cache",
-        }
-      } else {
+      if (!fetched) {
         throw new Error(`Worker "${args.workerId}" not found`)
+      }
+
+      const mapped = mapAgentToWorkerSummary(fetched.agent)
+      const existing = state.workers.get(args.workerId)
+      if (existing) {
+        mapped.unreadEventCount = existing.unreadEventCount
+      }
+      upsertWorker(state, mapped)
+      onWorkerObserved?.(mapped)
+      const worker = mapped
+
+      const snapshot: WorkerInspectResponse["worker"] = {
+        id: mapped.id,
+        title: mapped.title,
+        status: mapped.status,
+        rawStatus: mapped.rawStatus ?? fetched.agent.status ?? null,
+        cwd: mapped.cwd,
+        provider: mapped.provider,
+        model: mapped.model,
+        currentModeId: mapped.currentModeId,
+        ...(mapped.chatRoom !== undefined ? { chatRoom: mapped.chatRoom } : {}),
+        ...(mapped.worktreePath !== undefined ? { worktreePath: mapped.worktreePath } : {}),
+        ...(mapped.branchName !== undefined ? { branchName: mapped.branchName } : {}),
+        ...(mapped.createdAt !== undefined ? { createdAt: mapped.createdAt } : {}),
+        ...(mapped.updatedAt !== undefined ? { updatedAt: mapped.updatedAt } : {}),
+        source: "daemon",
       }
 
       // Optional activity fetch

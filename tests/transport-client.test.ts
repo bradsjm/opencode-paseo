@@ -651,6 +651,7 @@ test("PaseoClient maps schedule and worktree payloads to plugin-owned result sha
     port: 1,
     connectionTimeoutMs: 100,
   })
+  let archiveInput: Record<string, unknown> | null = null
   ;(client as any).daemon = {
     scheduleCreate: async () => ({
       requestId: "sched-req",
@@ -729,12 +730,15 @@ test("PaseoClient maps schedule and worktree payloads to plugin-owned result sha
         },
       ],
     }),
-    archivePaseoWorktree: async () => ({
-      requestId: "wt-archive-req",
-      success: true,
-      removedAgents: ["a1"],
-      error: null,
-    }),
+    archivePaseoWorktree: async (input: Record<string, unknown>) => {
+      archiveInput = input
+      return {
+        requestId: "wt-archive-req",
+        success: true,
+        removedAgents: ["a1"],
+        error: null,
+      }
+    },
   }
 
   const createdSchedule = await client.scheduleCreate({
@@ -757,9 +761,10 @@ test("PaseoClient maps schedule and worktree payloads to plugin-owned result sha
   assert.equal(worktreeList.requestId, "wt-list-req")
   assert.equal(worktreeList.worktrees[0]?.branchName, "feature")
 
-  const archivedWorktree = await client.archiveWorktree({ repoRoot: "/repo" })
+  const archivedWorktree = await client.archiveWorktree({ worktreePath: "/repo/.worktrees/feature", cwd: "/repo" })
   assert.equal(archivedWorktree.requestId, "wt-archive-req")
   assert.deepEqual(archivedWorktree.removedAgents, ["a1"])
+  assert.deepEqual(archiveInput, { worktreePath: "/repo/.worktrees/feature", repoRoot: "/repo" })
 })
 
 test("PaseoClient.scheduleRunOnce maps daemon timeout to async dispatch acknowledgment", async () => {

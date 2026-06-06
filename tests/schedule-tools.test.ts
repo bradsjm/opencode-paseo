@@ -320,11 +320,35 @@ test("paseo_schedule_create", async (t) => {
     assert.deepEqual(receivedOptions.target, { type: "agent", agentId: "a1" })
   })
 
-  await t.test("errors when resolved provider is unavailable", async () => {
+  await t.test("does not prevalidate resolved provider availability against daemon snapshots", async () => {
     const state = createPluginState()
+    let providerSnapshotCalls = 0
     const client = createMockTransport({
-      getProvidersSnapshot: async () => [{ id: "claude", provider: "claude" }],
+      getProvidersSnapshot: async () => {
+        providerSnapshotCalls += 1
+        return [{ id: "claude", provider: "claude" }]
+      },
     })
+    const opencode = mockOpencodeClient()
+
+    const toolDef = createScheduleCreateTool(state, client, opencode, logger)
+    await toolDef.execute(
+      {
+        prompt: "Run nightly",
+        cadenceType: "every",
+        everyMs: 1000,
+        targetType: "new-agent",
+        profile: "build",
+      },
+      mockContext(),
+    )
+
+    assert.equal(providerSnapshotCalls, 0)
+  })
+
+  await t.test("rejects invalid provided numeric inputs", async () => {
+    const state = createPluginState()
+    const client = createMockTransport()
     const opencode = mockOpencodeClient()
 
     const toolDef = createScheduleCreateTool(state, client, opencode, logger)
@@ -334,13 +358,45 @@ test("paseo_schedule_create", async (t) => {
           {
             prompt: "Run nightly",
             cadenceType: "every",
-            everyMs: 1000,
-            targetType: "new-agent",
-            profile: "build",
+            everyMs: 0,
+            targetType: "agent",
+            agentId: "a1",
           },
           mockContext(),
         ),
-      /Provider "opencode" not found in daemon provider snapshot/,
+      /everyMs must be a positive integer/,
+    )
+
+    await assert.rejects(
+      () =>
+        toolDef.execute(
+          {
+            prompt: "Run nightly",
+            cadenceType: "cron",
+            everyMs: 1000,
+            cronExpression: "0 * * * *",
+            targetType: "agent",
+            agentId: "a1",
+          },
+          mockContext(),
+        ),
+      /everyMs is only supported when cadenceType is 'every'/,
+    )
+
+    await assert.rejects(
+      () =>
+        toolDef.execute(
+          {
+            prompt: "Run nightly",
+            cadenceType: "every",
+            everyMs: 1000,
+            targetType: "agent",
+            agentId: "a1",
+            maxRuns: 0,
+          },
+          mockContext(),
+        ),
+      /maxRuns must be a positive integer/,
     )
   })
 
@@ -412,13 +468,8 @@ test("paseo_schedule_update", async (t) => {
   await t.test("resolves profile using provided cwd when profile and cwd are both set", async () => {
     const state = createPluginState()
     let receivedOptions: any = null
-    let snapshotCwd: string | undefined
     let profileDirectory: string | undefined
     const client = createMockTransport({
-      getProvidersSnapshot: async (cwd) => {
-        snapshotCwd = cwd
-        return [{ id: "opencode", provider: "opencode" }]
-      },
       scheduleUpdate: async (opts) => {
         receivedOptions = opts
         return { requestId: "req", schedule: null, error: null }
@@ -446,7 +497,6 @@ test("paseo_schedule_update", async (t) => {
     await toolDef.execute({ id: "sched-2b", profile: "build", cwd: "/repo" }, mockContext())
 
     assert.equal(profileDirectory, "/repo")
-    assert.equal(snapshotCwd, "/repo")
     assert.deepEqual(receivedOptions.newAgentConfig, {
       provider: "opencode",
       model: "openai/gpt-5.4",
@@ -455,7 +505,7 @@ test("paseo_schedule_update", async (t) => {
     })
   })
 
-  await t.test("omits wrapper-default empty strings and zeroes", async () => {
+  await t.test("omits wrapper-default empty strings", async () => {
     const state = createPluginState()
     let receivedOptions: any = null
     const client = createMockTransport({
@@ -472,8 +522,6 @@ test("paseo_schedule_update", async (t) => {
         id: "sched-3",
         name: "Renamed",
         prompt: "",
-        everyMs: 0,
-        maxRuns: 0,
         cronExpression: "   ",
         timezone: "",
         profile: "   ",
@@ -484,6 +532,26 @@ test("paseo_schedule_update", async (t) => {
     )
 
     assert.deepEqual(receivedOptions, { id: "sched-3", name: "Renamed" })
+  })
+
+  await t.test("rejects invalid provided numeric inputs", async () => {
+    const state = createPluginState()
+    const client = createMockTransport()
+    const opencode = mockOpencodeClient()
+
+    const toolDef = createScheduleUpdateTool(state, client, opencode, logger)
+    await assert.rejects(
+      () => toolDef.execute({ id: "sched-3a", everyMs: 0 }, mockContext()),
+      /everyMs must be a positive integer/,
+    )
+    await assert.rejects(
+      () => toolDef.execute({ id: "sched-3b", cadenceType: "cron", everyMs: 1000 }, mockContext()),
+      /everyMs is only supported when cadenceType is 'every'/,
+    )
+    await assert.rejects(
+      () => toolDef.execute({ id: "sched-3c", maxRuns: 0 }, mockContext()),
+      /maxRuns must be a positive integer/,
+    )
   })
 
   await t.test("treats null optional update args as omitted", async () => {
