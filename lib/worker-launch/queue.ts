@@ -274,144 +274,10 @@ export function createWorkerLaunchQueueController(
         record.status = "starting"
         record.startedAt = new Date().toISOString()
 
-        let rollbackBaseline: WorkerLaunchRollbackSnapshotEntry[] | null = null
-        let rollbackBaselineFailed = false
-
-        if (record.worktreeName) {
-          try {
-            rollbackBaseline = await listRollbackSnapshot(client, record.cwd)
-          } catch (err: unknown) {
-            rollbackBaselineFailed = true
-            logger.warn("Worker launch rollback baseline failed", {
-              launchId,
-              cwd: record.cwd,
-              error: toErrorMessage(err),
-            })
-          }
-        }
-
         try {
-          const created = await client.createWorker({
-            cwd: record.cwd,
-            profile: record.profile,
-            provider: record.provider,
-            ...(record.model !== undefined ? { model: record.model } : {}),
-            modeId: record.modeId,
-            ...(record.initialPrompt !== null ? { initialPrompt: record.initialPrompt } : {}),
-            labels: record.labels,
-            ...(record.worktreeName !== null ? { worktreeName: record.worktreeName } : {}),
-          })
-
-          record.status = "created"
-          record.workerId = created.id
-          record.finishedAt = new Date().toISOString()
-
-          try {
-            const worker = buildFallbackWorker(record, created)
-            getOrCreateSession(state, record.sessionId, record.projectRoot)
-            recordCreatedWorker(state, record.sessionId, worker)
-            onWorkerObserved?.(worker)
-          } catch (err: unknown) {
-            logger.warn("Worker launch bookkeeping failed", {
-              launchId,
-              workerId: created.id,
-              error: toErrorMessage(err),
-            })
-          }
-
-          try {
-            const enriched = await client.fetchWorker(created.id)
-            if (enriched?.agent) {
-              const mapped = mapAgentToWorkerSummary(enriched.agent)
-              mapped.unreadEventCount = getUnreadEventCountForResource(state, created.id)
-              upsertWorker(state, mapped)
-              onWorkerObserved?.(mapped)
-            }
-          } catch (err: unknown) {
-            logger.warn("Worker launch enrichment failed", {
-              launchId,
-              workerId: created.id,
-              error: toErrorMessage(err),
-            })
-          }
-
-          sendNudge(opencodeClient, [record.sessionId], buildCreatedNudgeMessage(launchId, created.id), logger)
+          await processWorkerLaunch(launchId, record)
         } catch (err: unknown) {
-          const error = toErrorMessage(err)
-          record.error = error
-          record.finishedAt = new Date().toISOString()
-
-          if (!record.worktreeName) {
-            record.status = "failed"
-            record.rollback = null
-          } else if (rollbackBaselineFailed || !rollbackBaseline) {
-            record.status = "failed_needs_cleanup"
-            record.rollback = buildNeedsCleanupRollbackMetadata(ROLLBACK_NEEDS_CLEANUP_MESSAGE, {
-              baselineSnapshot: rollbackBaseline,
-              attempted: false,
-            })
-          } else {
-            try {
-              const postFailureSnapshot = await listRollbackSnapshot(client, record.cwd)
-              const newWorktrees = diffNewWorktrees(rollbackBaseline, postFailureSnapshot)
-
-              if (newWorktrees.length === 0) {
-                record.status = "failed"
-                record.rollback = buildNotNeededRollbackMetadata()
-              } else if (newWorktrees.length === 1 && newWorktrees[0]?.branchName === record.worktreeName) {
-                const candidate = newWorktrees[0]
-                try {
-                  const archiveResult = await client.archiveWorktree({
-                    worktreePath: candidate.worktreePath,
-                    cwd: record.cwd,
-                  })
-                  if (!archiveResult.success) {
-                    throw new Error(archiveResult.error?.message ?? "archiveWorktree returned success=false")
-                  }
-                  record.status = "failed_rolled_back"
-                  record.rollback = buildRolledBackRollbackMetadata(rollbackBaseline, [toRollbackCandidate(candidate)])
-                } catch (archiveErr: unknown) {
-                  record.status = "failed_needs_cleanup"
-                  record.rollback = buildNeedsCleanupRollbackMetadata(ROLLBACK_NEEDS_CLEANUP_MESSAGE, {
-                    baselineSnapshot: rollbackBaseline,
-                    attempted: true,
-                    candidateWorktrees: [toRollbackCandidate(candidate, toErrorMessage(archiveErr))],
-                  })
-                }
-              } else {
-                record.status = "failed_needs_cleanup"
-                record.rollback = buildNeedsCleanupRollbackMetadata(ROLLBACK_NEEDS_CLEANUP_MESSAGE, {
-                  baselineSnapshot: rollbackBaseline,
-                  attempted: false,
-                  candidateWorktrees: newWorktrees.map((candidate) => toRollbackCandidate(candidate)),
-                })
-              }
-            } catch (listErr: unknown) {
-              record.status = "failed_needs_cleanup"
-              record.rollback = buildNeedsCleanupRollbackMetadata(ROLLBACK_NEEDS_CLEANUP_MESSAGE, {
-                baselineSnapshot: rollbackBaseline,
-                attempted: false,
-              })
-              logger.warn("Worker launch rollback assessment failed", {
-                launchId,
-                cwd: record.cwd,
-                error: toErrorMessage(listErr),
-              })
-            }
-          }
-
-          logger.warn("Worker launch failed", {
-            launchId,
-            error,
-            rollbackOutcome: record.rollback?.outcome ?? null,
-          })
-
-          sendNudge(
-            opencodeClient,
-            [record.sessionId],
-            buildFailedNudgeMessageForOutcome(launchId, record.status, error),
-            logger,
-          )
+          finalizeWorkerLaunchFailure(launchId, record, err)
         } finally {
           state.activeWorkerLaunchId = null
         }
@@ -421,6 +287,175 @@ export function createWorkerLaunchQueueController(
       if (!state.activeWorkerLaunchId && state.workerLaunchQueue.length > 0) {
         void drainWorkerLaunchQueue()
       }
+    }
+  }
+
+  async function processWorkerLaunch(launchId: string, record: WorkerLaunchRecord): Promise<void> {
+    const rollbackBaseline = await captureRollbackBaseline(launchId, record)
+    try {
+      const created = await client.createWorker(buildWorkerCreatePayload(record))
+      markWorkerLaunchCreated(record, created)
+      recordLaunchFallbackWorker(launchId, record, created)
+      await enrichCreatedWorker(launchId, created.id)
+      sendNudge(opencodeClient, [record.sessionId], buildCreatedNudgeMessage(launchId, created.id), logger)
+    } catch (err: unknown) {
+      await applyWorkerLaunchFailureRollback(launchId, record, err, rollbackBaseline)
+      throw err
+    }
+  }
+
+  async function captureRollbackBaseline(launchId: string, record: WorkerLaunchRecord) {
+    if (!record.worktreeName) return { snapshot: null, failed: false }
+    try {
+      return { snapshot: await listRollbackSnapshot(client, record.cwd), failed: false }
+    } catch (err: unknown) {
+      logger.warn("Worker launch rollback baseline failed", { launchId, cwd: record.cwd, error: toErrorMessage(err) })
+      return { snapshot: null, failed: true }
+    }
+  }
+
+  function buildWorkerCreatePayload(record: WorkerLaunchRecord) {
+    return {
+      cwd: record.cwd,
+      profile: record.profile,
+      provider: record.provider,
+      ...(record.model !== undefined ? { model: record.model } : {}),
+      modeId: record.modeId,
+      ...(record.initialPrompt !== null ? { initialPrompt: record.initialPrompt } : {}),
+      labels: record.labels,
+      ...(record.worktreeName !== null ? { worktreeName: record.worktreeName } : {}),
+    }
+  }
+
+  function markWorkerLaunchCreated(record: WorkerLaunchRecord, created: CreatedWorker): void {
+    record.status = "created"
+    record.workerId = created.id
+    record.finishedAt = new Date().toISOString()
+  }
+
+  function recordLaunchFallbackWorker(launchId: string, record: WorkerLaunchRecord, created: CreatedWorker): void {
+    try {
+      const worker = buildFallbackWorker(record, created)
+      getOrCreateSession(state, record.sessionId, record.projectRoot)
+      recordCreatedWorker(state, record.sessionId, worker)
+      onWorkerObserved?.(worker)
+    } catch (err: unknown) {
+      logger.warn("Worker launch bookkeeping failed", { launchId, workerId: created.id, error: toErrorMessage(err) })
+    }
+  }
+
+  async function enrichCreatedWorker(launchId: string, workerId: string): Promise<void> {
+    try {
+      const enriched = await client.fetchWorker(workerId)
+      if (!enriched?.agent) return
+      const mapped = mapAgentToWorkerSummary(enriched.agent)
+      mapped.unreadEventCount = getUnreadEventCountForResource(state, workerId)
+      upsertWorker(state, mapped)
+      onWorkerObserved?.(mapped)
+    } catch (err: unknown) {
+      logger.warn("Worker launch enrichment failed", { launchId, workerId, error: toErrorMessage(err) })
+    }
+  }
+
+  function finalizeWorkerLaunchFailure(launchId: string, record: WorkerLaunchRecord, err: unknown): void {
+    const error = toErrorMessage(err)
+    record.error = error
+    record.finishedAt = new Date().toISOString()
+    logger.warn("Worker launch failed", { launchId, error, rollbackOutcome: record.rollback?.outcome ?? null })
+    sendNudge(
+      opencodeClient,
+      [record.sessionId],
+      buildFailedNudgeMessageForOutcome(launchId, record.status, error),
+      logger,
+    )
+  }
+
+  async function applyWorkerLaunchFailureRollback(
+    launchId: string,
+    record: WorkerLaunchRecord,
+    err: unknown,
+    baseline: { snapshot: WorkerLaunchRollbackSnapshotEntry[] | null; failed: boolean },
+  ): Promise<void> {
+    record.error = toErrorMessage(err)
+    record.finishedAt = new Date().toISOString()
+    if (!record.worktreeName) return markLaunchFailedWithoutRollback(record)
+    if (baseline.failed || !baseline.snapshot) return markLaunchNeedsCleanup(record, baseline.snapshot, false)
+    await assessWorkerLaunchRollback(launchId, record, baseline.snapshot)
+  }
+
+  function markLaunchFailedWithoutRollback(record: WorkerLaunchRecord): void {
+    record.status = "failed"
+    record.rollback = null
+  }
+
+  function markLaunchNeedsCleanup(
+    record: WorkerLaunchRecord,
+    baselineSnapshot: WorkerLaunchRollbackSnapshotEntry[] | null,
+    attempted: boolean,
+    candidateWorktrees?: WorkerLaunchRollbackCandidate[],
+  ): void {
+    record.status = "failed_needs_cleanup"
+    record.rollback = buildNeedsCleanupRollbackMetadata(ROLLBACK_NEEDS_CLEANUP_MESSAGE, {
+      baselineSnapshot,
+      attempted,
+      candidateWorktrees,
+    })
+  }
+
+  async function assessWorkerLaunchRollback(
+    launchId: string,
+    record: WorkerLaunchRecord,
+    rollbackBaseline: WorkerLaunchRollbackSnapshotEntry[],
+  ): Promise<void> {
+    try {
+      const newWorktrees = diffNewWorktrees(rollbackBaseline, await listRollbackSnapshot(client, record.cwd))
+      await applyRollbackAssessment(record, rollbackBaseline, newWorktrees)
+    } catch (listErr: unknown) {
+      markLaunchNeedsCleanup(record, rollbackBaseline, false)
+      logger.warn("Worker launch rollback assessment failed", {
+        launchId,
+        cwd: record.cwd,
+        error: toErrorMessage(listErr),
+      })
+    }
+  }
+
+  async function applyRollbackAssessment(
+    record: WorkerLaunchRecord,
+    rollbackBaseline: WorkerLaunchRollbackSnapshotEntry[],
+    newWorktrees: WorkerLaunchRollbackSnapshotEntry[],
+  ): Promise<void> {
+    if (newWorktrees.length === 0) return markRollbackNotNeeded(record)
+    if (newWorktrees.length === 1 && newWorktrees[0]?.branchName === record.worktreeName)
+      return archiveRollbackCandidate(record, rollbackBaseline, newWorktrees[0])
+    markLaunchNeedsCleanup(
+      record,
+      rollbackBaseline,
+      false,
+      newWorktrees.map((candidate) => toRollbackCandidate(candidate)),
+    )
+  }
+
+  function markRollbackNotNeeded(record: WorkerLaunchRecord): void {
+    record.status = "failed"
+    record.rollback = buildNotNeededRollbackMetadata()
+  }
+
+  async function archiveRollbackCandidate(
+    record: WorkerLaunchRecord,
+    rollbackBaseline: WorkerLaunchRollbackSnapshotEntry[],
+    candidate: WorkerLaunchRollbackSnapshotEntry,
+  ): Promise<void> {
+    try {
+      const archiveResult = await client.archiveWorktree({ worktreePath: candidate.worktreePath, cwd: record.cwd })
+      if (!archiveResult.success)
+        throw new Error(archiveResult.error?.message ?? "archiveWorktree returned success=false")
+      record.status = "failed_rolled_back"
+      record.rollback = buildRolledBackRollbackMetadata(rollbackBaseline, [toRollbackCandidate(candidate)])
+    } catch (archiveErr: unknown) {
+      markLaunchNeedsCleanup(record, rollbackBaseline, true, [
+        toRollbackCandidate(candidate, toErrorMessage(archiveErr)),
+      ])
     }
   }
 

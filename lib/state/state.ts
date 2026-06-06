@@ -246,50 +246,104 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
 // produce a consistent WorkerSummary from a transport-level AgentSummary.
 
 export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
-  const rawLabels: unknown = agent.labels
-  const labels: string[] = Array.isArray(rawLabels)
-    ? rawLabels.filter(
-        (label): label is string => typeof label === "string" && !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX),
-      )
-    : rawLabels && typeof rawLabels === "object"
-      ? Object.keys(rawLabels).filter((label) => !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX))
-      : []
-
   const pendingPermissions = agent.pendingPermissions ?? []
-  const pendingPermissionIds = pendingPermissions
-    .map((p) => p?.id as string | undefined)
-    .filter((id): id is string => typeof id === "string")
-  const chatRoom = getChatRoomFromAgentLabels(agent.labels)
+  return {
+    ...workerIdentityFields(agent),
+    status: mapDaemonWorkerStatus(workerStatusInput(agent, pendingPermissions)),
+    ...workerLabelFields(agent),
+    ...workerWorktreeFields(agent),
+    pendingPermissions,
+    pendingPermissionIds: pendingPermissionIdsForAgent(pendingPermissions),
+    ...workerAttentionFields(agent),
+    ...workerRuntimeFields(agent),
+    ...workerTimestampFields(agent),
+  }
+}
 
+function workerIdentityFields(
+  agent: AgentSummary,
+): Pick<WorkerSummary, "id" | "title" | "agent" | "provider" | "model" | "currentModeId" | "cwd" | "unreadEventCount"> {
   return {
     id: agent.id,
     title: agent.title ?? agent.model ?? agent.id,
     agent: agent.provider ?? "unknown",
     provider: agent.provider ?? "unknown",
     model: agent.model ?? null,
-    currentModeId:
-      (agent.runtimeInfo?.currentModeId as string | undefined) ??
-      (agent.capabilities?.currentModeId as string | undefined) ??
-      null,
-    status: mapDaemonWorkerStatus({
-      status: agent.status,
-      ...(agent.requiresAttention !== undefined ? { requiresAttention: agent.requiresAttention } : {}),
-      ...(agent.attentionReason !== undefined ? { attentionReason: agent.attentionReason } : {}),
-      pendingPermissions,
-    }),
-    ...(agent.status !== undefined ? { rawStatus: agent.status } : {}),
+    currentModeId: currentModeIdForAgent(agent),
     cwd: agent.cwd ?? "",
-    labels,
+    unreadEventCount: 0,
+  }
+}
+
+function workerLabelFields(
+  agent: AgentSummary,
+): Pick<WorkerSummary, "labels"> & Partial<Pick<WorkerSummary, "rawStatus" | "chatRoom">> {
+  const chatRoom = getChatRoomFromAgentLabels(agent.labels)
+  return {
+    ...(agent.status !== undefined ? { rawStatus: agent.status } : {}),
+    labels: visibleWorkerLabels(agent.labels),
     ...(chatRoom !== undefined ? { chatRoom } : {}),
-    ...(agent.worktreePath !== undefined ? { worktreePath: agent.worktreePath } : {}),
-    ...(agent.branchName !== undefined ? { branchName: agent.branchName } : {}),
-    pendingPermissions,
-    pendingPermissionIds,
+  }
+}
+
+function workerAttentionFields(agent: AgentSummary): Pick<WorkerSummary, "requiresAttention" | "attentionReason"> {
+  return {
     requiresAttention: Boolean(agent.requiresAttention),
     attentionReason: agent.attentionReason ?? null,
+  }
+}
+
+function workerRuntimeFields(agent: AgentSummary): Pick<WorkerSummary, "runtimeInfo" | "persistence"> {
+  return {
     runtimeInfo: agent.runtimeInfo ?? null,
     persistence: (agent.capabilities?.persistence as Record<string, unknown>) ?? null,
-    unreadEventCount: 0,
+  }
+}
+
+function visibleWorkerLabels(rawLabels: unknown): string[] {
+  if (Array.isArray(rawLabels)) return rawLabels.filter(isVisibleWorkerLabel)
+  if (rawLabels && typeof rawLabels === "object") return Object.keys(rawLabels).filter(isVisibleWorkerLabel)
+  return []
+}
+
+function isVisibleWorkerLabel(label: unknown): label is string {
+  return typeof label === "string" && !label.startsWith(INTERNAL_WORKER_LABEL_PREFIX)
+}
+
+function pendingPermissionIdsForAgent(pendingPermissions: Array<Record<string, unknown>>): string[] {
+  return pendingPermissions.map((permission) => permission?.id as string | undefined).filter(isString)
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string"
+}
+
+function currentModeIdForAgent(agent: AgentSummary): string | null {
+  return (
+    (agent.runtimeInfo?.currentModeId as string | undefined) ??
+    (agent.capabilities?.currentModeId as string | undefined) ??
+    null
+  )
+}
+
+function workerStatusInput(agent: AgentSummary, pendingPermissions: Array<Record<string, unknown>>) {
+  return {
+    status: agent.status,
+    ...(agent.requiresAttention !== undefined ? { requiresAttention: agent.requiresAttention } : {}),
+    ...(agent.attentionReason !== undefined ? { attentionReason: agent.attentionReason } : {}),
+    pendingPermissions,
+  }
+}
+
+function workerWorktreeFields(agent: AgentSummary): Partial<WorkerSummary> {
+  return {
+    ...(agent.worktreePath !== undefined ? { worktreePath: agent.worktreePath } : {}),
+    ...(agent.branchName !== undefined ? { branchName: agent.branchName } : {}),
+  }
+}
+
+function workerTimestampFields(agent: AgentSummary): Partial<WorkerSummary> {
+  return {
     ...(agent.createdAt !== undefined ? { createdAt: agent.createdAt } : {}),
     ...(agent.updatedAt !== undefined ? { updatedAt: agent.updatedAt } : {}),
   }

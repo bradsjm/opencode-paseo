@@ -18,6 +18,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      complexity: ["error", 10],
       "no-console": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-empty-object-type": "off",

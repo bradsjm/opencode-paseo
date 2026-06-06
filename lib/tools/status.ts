@@ -14,6 +14,13 @@ interface NextActionSummary {
   suggestedTool: string | null
 }
 
+interface BlockingSummary {
+  total: number
+  permissionRequests: number
+  blockedWorkers: number
+  bySuggestedTool: Record<string, number>
+}
+
 function buildNextAction(state: PluginState, blockingEvents: InboxEvent[]): NextActionSummary | null {
   const primaryEvent = blockingEvents[0]
   if (primaryEvent) {
@@ -47,59 +54,63 @@ export function createStatusTool(state: PluginState, _client: PaseoTransport, lo
     execute() {
       return Promise.resolve().then(() => {
         logger.info("Tool: paseo_status invoked")
-
-        const unreadEvents = Array.from(state.inbox.values()).filter((e) => !e.read)
-        const blockingEvents = unreadEvents.filter((e) => e.blocking)
-        const nextAction = buildNextAction(state, blockingEvents)
-
-        // Derive actionable blocking summary
-        let permissionRequests = 0
-        let blockedWorkers = 0
-        const bySuggestedTool: Record<string, number> = {}
-
-        for (const evt of blockingEvents) {
-          const actionKind = evt.metadata?.actionKind as string | undefined
-          const suggestedTool = evt.metadata?.suggestedTool
-          if (typeof suggestedTool === "string") {
-            bySuggestedTool[suggestedTool] = (bySuggestedTool[suggestedTool] ?? 0) + 1
-          }
-          if (actionKind === "permission" || evt.kind === "permission.requested") {
-            permissionRequests++
-          } else if (actionKind === "worker-question" || evt.kind === "worker.blocked") {
-            blockedWorkers++
-          }
-        }
-
         return {
           title: "Paseo Status",
-          output: JSON.stringify(
-            {
-              pluginLoaded: true,
-              connected: state.connectionStatus === "connected",
-              readiness:
-                state.connectionStatus === "connected" ? (nextAction ? "action_required" : "ready") : "degraded",
-              actionRequired: nextAction !== null,
-              nextAction,
-              version: state.capabilities?.version ?? null,
-              features: state.capabilities?.features ?? [],
-              lastError: state.lastError ?? null,
-              workers: state.workers.size,
-              chatRooms: state.chatRooms.size,
-              terminals: state.terminals.size,
-              inboxUnread: unreadEvents.length,
-              inboxBlocking: blockingEvents.length,
-              blockingSummary: {
-                total: blockingEvents.length,
-                permissionRequests,
-                blockedWorkers,
-                bySuggestedTool,
-              },
-            },
-            null,
-            2,
-          ),
+          output: JSON.stringify(buildStatusPayload(state), null, 2),
         }
       })
     },
   })
+}
+
+function buildStatusPayload(state: PluginState) {
+  const { unreadEvents, blockingEvents, nextAction } = collectStatusSummary(state)
+  return {
+    pluginLoaded: true,
+    connected: state.connectionStatus === "connected",
+    readiness: state.connectionStatus === "connected" ? (nextAction ? "action_required" : "ready") : "degraded",
+    actionRequired: nextAction !== null,
+    nextAction,
+    version: state.capabilities?.version ?? null,
+    features: state.capabilities?.features ?? [],
+    lastError: state.lastError ?? null,
+    workers: state.workers.size,
+    chatRooms: state.chatRooms.size,
+    terminals: state.terminals.size,
+    inboxUnread: unreadEvents.length,
+    inboxBlocking: blockingEvents.length,
+    blockingSummary: countBlockingEvents(blockingEvents),
+  }
+}
+
+function collectStatusSummary(state: PluginState) {
+  const unreadEvents = Array.from(state.inbox.values()).filter((event) => !event.read)
+  const blockingEvents = unreadEvents.filter((event) => event.blocking)
+  return { unreadEvents, blockingEvents, nextAction: buildNextAction(state, blockingEvents) }
+}
+
+function countBlockingEvents(blockingEvents: InboxEvent[]): BlockingSummary {
+  const summary: BlockingSummary = {
+    total: blockingEvents.length,
+    permissionRequests: 0,
+    blockedWorkers: 0,
+    bySuggestedTool: {},
+  }
+  for (const event of blockingEvents) {
+    countSuggestedTool(summary, event)
+    countBlockingKind(summary, event)
+  }
+  return summary
+}
+
+function countSuggestedTool(summary: BlockingSummary, event: InboxEvent): void {
+  const suggestedTool = event.metadata?.suggestedTool
+  if (typeof suggestedTool === "string")
+    summary.bySuggestedTool[suggestedTool] = (summary.bySuggestedTool[suggestedTool] ?? 0) + 1
+}
+
+function countBlockingKind(summary: BlockingSummary, event: InboxEvent): void {
+  const actionKind = event.metadata?.actionKind as string | undefined
+  if (actionKind === "permission" || event.kind === "permission.requested") summary.permissionRequests++
+  if (actionKind === "worker-question" || event.kind === "worker.blocked") summary.blockedWorkers++
 }

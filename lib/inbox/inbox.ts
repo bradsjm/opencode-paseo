@@ -28,39 +28,49 @@ export interface InboxStatusResult {
 
 export function readInbox(state: PluginState, options: InboxReadOptions = {}): InboxReadResult {
   const { unreadOnly = false, kind, resourceId, cursor = 0, limit = 50, markRead = false } = options
-
-  // Collect and filter events
-  let events = Array.from(state.inbox.values())
-
-  // Sort by timestamp descending (newest first)
-  events.sort((a, b) => b.timestamp - a.timestamp)
-
-  if (unreadOnly) {
-    events = events.filter((e) => !e.read)
-  }
-  if (kind) {
-    events = events.filter((e) => e.kind === kind)
-  }
-  if (resourceId) {
-    events = events.filter((e) => e.resourceId === resourceId)
-  }
-
-  // Apply cursor (skip events before cursor position)
-  const paginated = events.slice(cursor, cursor + limit)
-  const hasMore = cursor + limit < events.length
-  const nextCursor = hasMore ? cursor + limit : null
-
-  // Mark read if requested
-  if (markRead) {
-    for (const event of paginated) {
-      markEventRead(state, event.id)
-    }
-  }
-
-  // Count total unread
-  const unreadCount = Array.from(state.inbox.values()).filter((e) => !e.read).length
+  const events = filteredInboxEvents(state, { unreadOnly, kind, resourceId })
+  const { paginated, hasMore, nextCursor } = paginateInboxEvents(events, cursor, limit)
+  markPaginatedEventsRead(state, paginated, markRead)
+  const unreadCount = countUnreadInboxEvents(state)
 
   return { events: paginated, nextCursor, hasMore, unreadCount }
+}
+
+function filteredInboxEvents(
+  state: PluginState,
+  options: Pick<InboxReadOptions, "unreadOnly" | "kind" | "resourceId">,
+): InboxEvent[] {
+  return Array.from(state.inbox.values()).sort(sortInboxNewestFirst).filter(matchesInboxReadOptions(options))
+}
+
+function sortInboxNewestFirst(a: InboxEvent, b: InboxEvent): number {
+  return b.timestamp - a.timestamp
+}
+
+function matchesInboxReadOptions(options: Pick<InboxReadOptions, "unreadOnly" | "kind" | "resourceId">) {
+  return (event: InboxEvent): boolean => {
+    if (options.unreadOnly && event.read) return false
+    if (options.kind && event.kind !== options.kind) return false
+    if (options.resourceId && event.resourceId !== options.resourceId) return false
+    return true
+  }
+}
+
+function paginateInboxEvents(events: InboxEvent[], cursor: number, limit: number) {
+  const paginated = events.slice(cursor, cursor + limit)
+  const hasMore = cursor + limit < events.length
+  return { paginated, hasMore, nextCursor: hasMore ? cursor + limit : null }
+}
+
+function markPaginatedEventsRead(state: PluginState, events: InboxEvent[], markRead: boolean): void {
+  if (!markRead) return
+  for (const event of events) {
+    markEventRead(state, event.id)
+  }
+}
+
+function countUnreadInboxEvents(state: PluginState): number {
+  return Array.from(state.inbox.values()).filter((event) => !event.read).length
 }
 
 export function getInboxStatus(state: PluginState): InboxStatusResult {

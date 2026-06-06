@@ -72,6 +72,207 @@ function buildScheduleCadence(args: {
   }
 }
 
+interface ScheduleCreateArgs {
+  prompt: string
+  name?: string | null
+  cadenceType: "every" | "cron"
+  everyMs?: number | null
+  cronExpression?: string | null
+  timezone?: string | null
+  targetType: "agent" | "new-agent"
+  agentId?: string | null
+  profile?: string | null
+  cwd?: string | null
+  maxRuns?: number | null
+  expiresAt?: string | null
+  runOnCreate?: boolean | null
+}
+
+interface NormalizedScheduleCreateArgs {
+  prompt: string
+  name?: string
+  everyMs?: number
+  cronExpression?: string
+  timezone?: string
+  agentId?: string
+  profile?: string
+  cwd: string
+  maxRuns?: number
+  expiresAt?: string
+  runOnCreate?: boolean
+}
+
+function normalizeScheduleCreateArgs(args: ScheduleCreateArgs, context: ToolContext): NormalizedScheduleCreateArgs {
+  const prompt = ensureNonEmptyPrompt(args.prompt)
+  if (!prompt) throw new Error("prompt must not be empty")
+  return {
+    prompt,
+    ...compactDefined({
+      name: collapseNull(args.name),
+      everyMs: optionalPositiveInteger(args.everyMs, "everyMs"),
+      cronExpression: collapseNull(args.cronExpression),
+      timezone: collapseNull(args.timezone),
+      agentId: collapseNull(args.agentId),
+      profile: optionalNonEmptyString(args.profile),
+      maxRuns: optionalPositiveInteger(args.maxRuns, "maxRuns"),
+      expiresAt: collapseNull(args.expiresAt),
+      runOnCreate: collapseNull(args.runOnCreate),
+    }),
+    cwd: collapseNull(args.cwd) ?? context.directory,
+  }
+}
+
+async function buildScheduleCreateTarget(
+  args: ScheduleCreateArgs,
+  normalized: NormalizedScheduleCreateArgs,
+  opencodeClient: OpencodeClient,
+): Promise<ScheduleTarget> {
+  switch (args.targetType) {
+    case "agent":
+      return buildExistingAgentScheduleTarget(args.targetType, normalized.agentId, normalized.profile)
+    case "new-agent":
+      return buildNewAgentScheduleTarget(normalized.cwd, normalized.profile, opencodeClient)
+  }
+}
+
+function buildExistingAgentScheduleTarget(
+  targetType: "agent",
+  agentId: string | undefined,
+  profile: string | undefined,
+) {
+  if (profile) throw new Error(`profile is only supported for target type 'new-agent'`)
+  if (!agentId) throw new Error(`agentId is required for target type '${targetType}'`)
+  return { type: targetType, agentId }
+}
+
+async function buildNewAgentScheduleTarget(
+  cwd: string | undefined,
+  profile: string | undefined,
+  opencodeClient: OpencodeClient,
+): Promise<ScheduleTarget> {
+  if (!cwd) throw new Error("cwd is required for 'new-agent' target")
+  if (!profile) throw new Error("profile is required for 'new-agent' target")
+  const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profile, cwd)
+  return {
+    type: "new-agent",
+    config: {
+      provider: resolvedProfile.provider,
+      cwd,
+      modeId: resolvedProfile.modeId,
+      ...compactDefined({ model: resolvedProfile.model }),
+    },
+  }
+}
+
+function buildScheduleCreatePayload(
+  normalized: NormalizedScheduleCreateArgs,
+  cadence: ScheduleCadence,
+  target: ScheduleTarget,
+) {
+  return {
+    prompt: normalized.prompt,
+    cadence,
+    target,
+    ...compactDefined({
+      name: normalized.name,
+      maxRuns: normalized.maxRuns,
+      expiresAt: normalized.expiresAt,
+      runOnCreate: normalized.runOnCreate,
+    }),
+  }
+}
+
+interface ScheduleUpdateArgs {
+  id: string
+  name?: string | null
+  prompt?: string | null
+  cadenceType?: "every" | "cron" | null
+  everyMs?: number | null
+  cronExpression?: string | null
+  timezone?: string | null
+  profile?: string | null
+  cwd?: string | null
+  maxRuns?: number | null
+  expiresAt?: string | null
+}
+
+interface ScheduleUpdateNormalizedFields {
+  name?: string
+  prompt?: string
+  everyMs?: number
+  cronExpression?: string
+  timezone?: string
+  profile?: string
+  cwd?: string
+  maxRuns?: number
+  expiresAt?: string
+}
+
+function normalizeScheduleUpdateFields(args: ScheduleUpdateArgs): ScheduleUpdateNormalizedFields {
+  return compactDefined({
+    name: optionalNonEmptyString(args.name),
+    prompt: optionalNonEmptyString(args.prompt),
+    everyMs: optionalPositiveInteger(args.everyMs, "everyMs"),
+    cronExpression: optionalNonEmptyString(args.cronExpression),
+    timezone: optionalNonEmptyString(args.timezone),
+    profile: optionalNonEmptyString(args.profile),
+    cwd: optionalNonEmptyString(args.cwd),
+    maxRuns: optionalPositiveInteger(args.maxRuns, "maxRuns"),
+    expiresAt: optionalNonEmptyString(args.expiresAt),
+  })
+}
+
+function buildScheduleUpdateCadence(args: ScheduleUpdateArgs, normalized: ScheduleUpdateNormalizedFields) {
+  if (args.cadenceType !== "every" && normalized.everyMs !== undefined) {
+    throw new Error("everyMs is only supported when cadenceType is 'every'")
+  }
+  return buildScheduleCadence({
+    ...compactDefined({
+      cadenceType: args.cadenceType ?? undefined,
+      everyMs: normalized.everyMs,
+      cronExpression: normalized.cronExpression,
+      timezone: normalized.timezone,
+    }),
+  })
+}
+
+async function resolveScheduleUpdateNewAgentConfig(
+  normalized: ScheduleUpdateNormalizedFields,
+  context: ToolContext,
+  opencodeClient: OpencodeClient,
+) {
+  if (!normalized.profile && !normalized.cwd) return undefined
+  const newAgentConfig: { provider?: string; model?: string | null; modeId?: string | null; cwd?: string } =
+    compactDefined({ cwd: normalized.cwd })
+  if (normalized.profile) {
+    const cwd = newAgentConfig.cwd ?? context.directory
+    const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, normalized.profile, cwd)
+    newAgentConfig.provider = resolvedProfile.provider
+    newAgentConfig.model = resolvedProfile.model ?? null
+    newAgentConfig.modeId = resolvedProfile.modeId ?? null
+  }
+  return newAgentConfig
+}
+
+function buildScheduleUpdatePayload(
+  args: ScheduleUpdateArgs,
+  normalized: ScheduleUpdateNormalizedFields,
+  cadence: ScheduleCadence | undefined,
+  newAgentConfig: { provider?: string; model?: string | null; modeId?: string | null; cwd?: string } | undefined,
+) {
+  return {
+    id: args.id,
+    ...compactDefined({
+      name: normalized.name,
+      prompt: normalized.prompt,
+      cadence,
+      newAgentConfig,
+      maxRuns: normalized.maxRuns,
+      expiresAt: normalized.expiresAt,
+    }),
+  }
+}
+
 // ─── Schedule List Tool ──────────────────────────────────────────────────────
 
 export function createScheduleListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
@@ -161,79 +362,31 @@ export function createScheduleCreateTool(
       runOnCreate: nullableOptional(tool.schema.boolean()).describe("Whether to execute immediately upon creation"),
     },
     async execute(args, context: ToolContext) {
-      const prompt = ensureNonEmptyPrompt(args.prompt)
-      if (!prompt) {
-        throw new Error("prompt must not be empty")
-      }
-      const name = collapseNull(args.name)
-      const everyMs = optionalPositiveInteger(args.everyMs, "everyMs")
-      const cronExpression = collapseNull(args.cronExpression)
-      const timezone = collapseNull(args.timezone)
-      const agentId = collapseNull(args.agentId)
-      const profile = optionalNonEmptyString(args.profile)
-      const cwd = collapseNull(args.cwd) ?? context.directory
-      const maxRuns = optionalPositiveInteger(args.maxRuns, "maxRuns")
-      const expiresAt = collapseNull(args.expiresAt)
-      const runOnCreate = collapseNull(args.runOnCreate)
+      const normalized = normalizeScheduleCreateArgs(args, context)
       logger.info("Tool: paseo_schedule_create invoked", {
-        name,
+        name: normalized.name,
         cadenceType: args.cadenceType,
         targetType: args.targetType,
       })
 
-      if (args.cadenceType !== "every" && everyMs !== undefined) {
+      if (args.cadenceType !== "every" && normalized.everyMs !== undefined) {
         throw new Error("everyMs is only supported when cadenceType is 'every'")
       }
 
       const cadence = buildScheduleCadence({
         cadenceType: args.cadenceType,
-        ...compactDefined({ everyMs, cronExpression, timezone }),
+        ...compactDefined({
+          everyMs: normalized.everyMs,
+          cronExpression: normalized.cronExpression,
+          timezone: normalized.timezone,
+        }),
       })
       if (!cadence) {
         throw new Error("cadenceType is required")
       }
 
-      let target: ScheduleTarget
-
-      switch (args.targetType) {
-        case "agent":
-          if (profile) {
-            throw new Error(`profile is only supported for target type 'new-agent'`)
-          }
-          if (!agentId) {
-            throw new Error(`agentId is required for target type '${args.targetType}'`)
-          }
-          target = { type: args.targetType, agentId }
-          break
-        case "new-agent": {
-          if (!cwd) {
-            throw new Error("cwd is required for 'new-agent' target")
-          }
-          if (!profile) {
-            throw new Error("profile is required for 'new-agent' target")
-          }
-
-          const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profile, cwd)
-
-          target = {
-            type: "new-agent",
-            config: {
-              provider: resolvedProfile.provider,
-              cwd,
-              modeId: resolvedProfile.modeId,
-              ...compactDefined({ model: resolvedProfile.model }),
-            },
-          }
-          break
-        }
-      }
-
-      const result = await client.scheduleCreate({
-        prompt,
-        cadence,
-        target,
-        ...compactDefined({ name, maxRuns, expiresAt, runOnCreate }),
-      })
+      const target = await buildScheduleCreateTarget(args, normalized, opencodeClient)
+      const result = await client.scheduleCreate(buildScheduleCreatePayload(normalized, cadence, target))
 
       return {
         title: "Schedule Created",
@@ -283,46 +436,11 @@ export function createScheduleUpdateTool(
     async execute(args, context: ToolContext) {
       logger.info("Tool: paseo_schedule_update invoked", { id: args.id })
 
-      const name = collapseNull(args.name)
-      const prompt = optionalNonEmptyString(args.prompt)
-      const cronExpression = optionalNonEmptyString(args.cronExpression)
-      const timezone = optionalNonEmptyString(args.timezone)
-      const profile = optionalNonEmptyString(args.profile)
-      const cwd = optionalNonEmptyString(args.cwd)
-      const expiresAt = optionalNonEmptyString(args.expiresAt)
-      const everyMs = optionalPositiveInteger(args.everyMs, "everyMs")
-      const maxRuns = optionalPositiveInteger(args.maxRuns, "maxRuns")
-
-      if (args.cadenceType !== "every" && everyMs !== undefined) {
-        throw new Error("everyMs is only supported when cadenceType is 'every'")
-      }
-
-      const cadence = buildScheduleCadence({
-        ...compactDefined({ cadenceType: args.cadenceType ?? undefined, everyMs, cronExpression, timezone }),
-      })
-
-      // Build optional newAgentConfig
-      let newAgentConfig: { provider?: string; model?: string | null; modeId?: string | null; cwd?: string } | undefined
-
-      if (profile || cwd) {
-        newAgentConfig = compactDefined({ cwd })
-      }
-
-      ensureNonEmptyPrompt(prompt)
-
-      // Resolve and validate profile-backed provider for newAgentConfig if provided
-      if (newAgentConfig && profile) {
-        const cwd = newAgentConfig.cwd ?? context.directory
-        const resolvedProfile = await resolveScheduleProfileConfig(opencodeClient, profile, cwd)
-        newAgentConfig.provider = resolvedProfile.provider
-        newAgentConfig.model = resolvedProfile.model ?? null
-        newAgentConfig.modeId = resolvedProfile.modeId ?? null
-      }
-
-      const result = await client.scheduleUpdate({
-        id: args.id,
-        ...compactDefined({ name, prompt, cadence, newAgentConfig, maxRuns, expiresAt }),
-      })
+      const normalized = normalizeScheduleUpdateFields(args)
+      ensureNonEmptyPrompt(normalized.prompt)
+      const cadence = buildScheduleUpdateCadence(args, normalized)
+      const newAgentConfig = await resolveScheduleUpdateNewAgentConfig(normalized, context, opencodeClient)
+      const result = await client.scheduleUpdate(buildScheduleUpdatePayload(args, normalized, cadence, newAgentConfig))
 
       return {
         title: `Schedule Updated: ${args.id}`,

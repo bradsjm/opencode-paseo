@@ -118,7 +118,6 @@ const GLOBAL_CONFIG_DIR = process.env.XDG_CONFIG_HOME
   ? join(process.env.XDG_CONFIG_HOME, "opencode")
   : join(homedir(), ".config", "opencode")
 const GLOBAL_CONFIG_PATH_JSONC = join(GLOBAL_CONFIG_DIR, "paseo.jsonc")
-const GLOBAL_CONFIG_PATH_JSON = join(GLOBAL_CONFIG_DIR, "paseo.json")
 
 interface ValidationError {
   key: string
@@ -150,31 +149,26 @@ function getConfigPaths(ctx?: PluginInput): {
   configDir: string | null
   project: string | null
 } {
-  const global = existsSync(GLOBAL_CONFIG_PATH_JSONC)
-    ? GLOBAL_CONFIG_PATH_JSONC
-    : existsSync(GLOBAL_CONFIG_PATH_JSON)
-      ? GLOBAL_CONFIG_PATH_JSON
-      : null
-
-  let configDir: string | null = null
+  const global = resolveConfigFileInDir(GLOBAL_CONFIG_DIR)
   const opencodeConfigDir = process.env.OPENCODE_CONFIG_DIR
-  if (opencodeConfigDir) {
-    const jsonc = join(opencodeConfigDir, "paseo.jsonc")
-    const json = join(opencodeConfigDir, "paseo.json")
-    configDir = existsSync(jsonc) ? jsonc : existsSync(json) ? json : null
-  }
+  const configDir = opencodeConfigDir ? resolveConfigFileInDir(opencodeConfigDir) : null
 
   let project: string | null = null
   if (ctx?.directory) {
     const opencodeDir = findOpencodeDir(ctx.directory)
     if (opencodeDir) {
-      const jsonc = join(opencodeDir, "paseo.jsonc")
-      const json = join(opencodeDir, "paseo.json")
-      project = existsSync(jsonc) ? jsonc : existsSync(json) ? json : null
+      project = resolveConfigFileInDir(opencodeDir)
     }
   }
 
   return { global, configDir, project }
+}
+
+function resolveConfigFileInDir(dir: string): string | null {
+  const jsonc = join(dir, "paseo.jsonc")
+  if (existsSync(jsonc)) return jsonc
+  const json = join(dir, "paseo.json")
+  return existsSync(json) ? json : null
 }
 
 function formatParseErrors(errors: ParseError[]): string {

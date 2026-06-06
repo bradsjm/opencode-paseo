@@ -163,6 +163,48 @@ export function createWorkerStallMonitor(
     }
   }
 
+  function observeActivityEvent(payload: Extract<DaemonEvent, { type: "worker.activity" }>["payload"]): void {
+    recordActivity(payload.workerId, payload.timestamp, "activity")
+  }
+
+  function observeWorkerStartedEvent(payload: Extract<DaemonEvent, { type: "worker.started" }>["payload"]): void {
+    observeSnapshotUpdate(payload, "snapshot-update")
+    clearIfIneligible(payload.workerId, "started-state-change")
+  }
+
+  function observeWorkerBlockedEvent(payload: Extract<DaemonEvent, { type: "worker.blocked" }>["payload"]): void {
+    observeSnapshotUpdate(payload, "blocked-update")
+    clearIfIneligible(payload.workerId, "blocked")
+  }
+
+  function observeTerminalWorkerEvent(
+    payload: Extract<DaemonEvent, { type: "worker.finished" | "worker.failed" }>["payload"],
+    reason: "worker.finished" | "worker.failed",
+  ): void {
+    observeSnapshotUpdate(payload, "terminal-update")
+    clearIfIneligible(payload.workerId, reason)
+  }
+
+  function observePermissionEvent(workerId: string, reason: "permission.requested" | "permission.resolved"): void {
+    clearIfIneligible(workerId, reason)
+  }
+
+  function observeWorkerMonitorEvent(event: DaemonEvent): boolean {
+    if (event.type === "worker.activity") observeActivityEvent(event.payload)
+    else if (event.type === "worker.started") observeWorkerStartedEvent(event.payload)
+    else if (event.type === "worker.blocked") observeWorkerBlockedEvent(event.payload)
+    else if (event.type === "worker.finished" || event.type === "worker.failed")
+      observeTerminalWorkerEvent(event.payload, event.type)
+    else return false
+    return true
+  }
+
+  function observePermissionMonitorEvent(event: DaemonEvent): boolean {
+    if (event.type !== "permission.requested" && event.type !== "permission.resolved") return false
+    observePermissionEvent(event.payload.workerId, event.type)
+    return true
+  }
+
   return {
     seedFromWorkers() {
       const nowMs = Date.now()
@@ -177,40 +219,9 @@ export function createWorkerStallMonitor(
       }
     },
     observeEvent(event) {
-      switch (event.type) {
-        case "worker.activity": {
-          const payload = event.payload
-          recordActivity(payload.workerId, payload.timestamp, "activity")
-          break
-        }
-        case "worker.started":
-          observeSnapshotUpdate(event.payload, "snapshot-update")
-          clearIfIneligible(event.payload.workerId, "started-state-change")
-          break
-        case "worker.blocked":
-          observeSnapshotUpdate(event.payload, "blocked-update")
-          clearIfIneligible(event.payload.workerId, "blocked")
-          break
-        case "worker.finished":
-        case "worker.failed":
-          observeSnapshotUpdate(event.payload, "terminal-update")
-          clearIfIneligible(event.payload.workerId, event.type)
-          break
-        case "permission.requested":
-        case "permission.resolved":
-          clearIfIneligible(event.payload.workerId, event.type)
-          break
-        case "worker.stalled":
-        case "terminal.exited":
-        case "daemon.connected":
-        case "daemon.disconnected":
-        case "daemon.error":
-          break
-        default: {
-          const exhaustive: never = event
-          return exhaustive
-        }
-      }
+      if (observeWorkerMonitorEvent(event)) return
+      if (observePermissionMonitorEvent(event)) return
+      if (isIgnoredMonitorEvent(event)) return
     },
     start() {
       if (intervalHandle) return
@@ -223,5 +234,23 @@ export function createWorkerStallMonitor(
       }
       entries.clear()
     },
+  }
+
+  function isIgnoredMonitorEvent(
+    event: DaemonEvent,
+  ): event is Extract<
+    DaemonEvent,
+    { type: "worker.stalled" | "terminal.exited" | "daemon.connected" | "daemon.disconnected" | "daemon.error" }
+  > {
+    switch (event.type) {
+      case "worker.stalled":
+      case "terminal.exited":
+      case "daemon.connected":
+      case "daemon.disconnected":
+      case "daemon.error":
+        return true
+      default:
+        return false
+    }
   }
 }

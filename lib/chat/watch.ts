@@ -152,42 +152,17 @@ export function createChatWatcher(
 
   async function watchRoom(room: string): Promise<void> {
     const watched = watchedRooms.get(room)
-    if (!watched || watched.running) {
-      return
-    }
+    if (!canStartWatching(watched)) return
 
-    watched.running = true
-    noteRoomWatching(room, true)
+    markWatcherRunning(room, watched!)
 
     try {
-      let afterMessageId = state.chatRooms.get(room)?.lastMessageId ?? null
-      if (afterMessageId === null) {
-        afterMessageId = await seedCursor(room)
-      }
+      let afterMessageId = await initialRoomCursor(room)
 
       while (!disposed && watchedRooms.has(room)) {
-        const result = await client.waitForChatMessages({
-          room,
-          afterMessageId,
-          timeoutMs: 30_000,
-        })
-
-        if (disposed || !watchedRooms.has(room)) {
-          return
-        }
-
-        if (result.messages.length === 0) {
-          if (result.timedOut) {
-            await delay(0)
-            continue
-          }
-          afterMessageId = state.chatRooms.get(room)?.lastMessageId ?? afterMessageId
-          await delay(0)
-          continue
-        }
-
-        handleMessages(room, result.messages)
-        afterMessageId = result.messages[result.messages.length - 1]?.id ?? afterMessageId
+        const result = await waitForRoomMessages(room, afterMessageId)
+        if (watchStopped(room)) return
+        afterMessageId = handleWatchResult(room, afterMessageId, result)
         await delay(0)
       }
     } catch (err: unknown) {
@@ -196,18 +171,53 @@ export function createChatWatcher(
         error: err instanceof Error ? err.message : String(err),
       })
     } finally {
-      const latest = watchedRooms.get(room)
-      if (latest) {
-        latest.running = false
-      }
-      noteRoomWatching(room, false)
-
-      if (!disposed && watchedRooms.has(room)) {
-        setTimeout(() => {
-          void watchRoom(room)
-        }, restartDelayMs)
-      }
+      cleanupWatcher(room)
     }
+  }
+
+  function canStartWatching(watched: { running: boolean } | undefined): boolean {
+    return Boolean(watched && !watched.running)
+  }
+
+  function markWatcherRunning(room: string, watched: { running: boolean }): void {
+    watched.running = true
+    noteRoomWatching(room, true)
+  }
+
+  async function initialRoomCursor(room: string): Promise<string | null> {
+    return state.chatRooms.get(room)?.lastMessageId ?? (await seedCursor(room))
+  }
+
+  function waitForRoomMessages(room: string, afterMessageId: string | null) {
+    return client.waitForChatMessages({ room, afterMessageId, timeoutMs: 30_000 })
+  }
+
+  function watchStopped(room: string): boolean {
+    return disposed || !watchedRooms.has(room)
+  }
+
+  function handleWatchResult(
+    room: string,
+    afterMessageId: string | null,
+    result: Awaited<ReturnType<typeof client.waitForChatMessages>>,
+  ): string | null {
+    if (result.messages.length === 0)
+      return result.timedOut ? afterMessageId : (state.chatRooms.get(room)?.lastMessageId ?? afterMessageId)
+    handleMessages(room, result.messages)
+    return result.messages[result.messages.length - 1]?.id ?? afterMessageId
+  }
+
+  function cleanupWatcher(room: string): void {
+    const latest = watchedRooms.get(room)
+    if (latest) latest.running = false
+    noteRoomWatching(room, false)
+    if (!disposed && watchedRooms.has(room)) scheduleWatcherRestart(room)
+  }
+
+  function scheduleWatcherRestart(room: string): void {
+    setTimeout(() => {
+      void watchRoom(room)
+    }, restartDelayMs)
   }
 
   return {

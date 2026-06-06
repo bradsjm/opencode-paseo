@@ -18,30 +18,34 @@ const TEST_CONFIG: PluginConfig = {
   agents: {},
 }
 
-function seedWorker(state: ReturnType<typeof createPluginState>, partial: Partial<WorkerSummary> = {}) {
-  const worker: WorkerSummary = {
-    id: partial.id ?? "w1",
-    title: partial.title ?? "Worker 1",
-    agent: partial.agent ?? "test",
-    status: partial.status ?? "running",
-    rawStatus: partial.rawStatus ?? "running",
-    cwd: partial.cwd ?? "/tmp",
-    provider: partial.provider ?? "test",
-    model: partial.model ?? null,
-    currentModeId: partial.currentModeId ?? null,
-    labels: partial.labels ?? [],
-    worktreePath: partial.worktreePath,
-    branchName: partial.branchName,
-    pendingPermissions: partial.pendingPermissions ?? [],
-    pendingPermissionIds: partial.pendingPermissionIds ?? [],
-    requiresAttention: partial.requiresAttention ?? false,
-    attentionReason: partial.attentionReason ?? null,
-    runtimeInfo: partial.runtimeInfo ?? null,
-    persistence: partial.persistence ?? null,
-    unreadEventCount: partial.unreadEventCount ?? 0,
-    createdAt: partial.createdAt ?? new Date(Date.now() - 20_000).toISOString(),
-    updatedAt: partial.updatedAt ?? new Date(Date.now() - 20_000).toISOString(),
+function makeWorkerSummary(overrides: Partial<WorkerSummary> = {}): WorkerSummary {
+  const timestamp = new Date(Date.now() - 20_000).toISOString()
+  const defaults: WorkerSummary = {
+    id: "w1",
+    title: "Worker 1",
+    agent: "test",
+    status: "running",
+    rawStatus: "running",
+    cwd: "/tmp",
+    provider: "test",
+    model: null,
+    currentModeId: null,
+    labels: [],
+    pendingPermissions: [],
+    pendingPermissionIds: [],
+    requiresAttention: false,
+    attentionReason: null,
+    runtimeInfo: null,
+    persistence: null,
+    unreadEventCount: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
   }
+  return { ...defaults, ...overrides }
+}
+
+function seedWorker(state: ReturnType<typeof createPluginState>, partial: Partial<WorkerSummary> = {}) {
+  const worker = makeWorkerSummary(partial)
   state.workers.set(worker.id, worker)
   const session = getOrCreateSession(state, "sess-1", "/tmp")
   session.createdWorkerIds.add(worker.id)

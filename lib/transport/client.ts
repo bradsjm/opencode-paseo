@@ -122,20 +122,6 @@ export function mapServerInfo(info: {
 }
 
 export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
-  const labels = (agent.labels ?? {}) as Record<string, string>
-  const requiresAttention = typeof agent.requiresAttention === "boolean" ? agent.requiresAttention : undefined
-  const attentionReason =
-    typeof agent.attentionReason === "string" || agent.attentionReason === null ? agent.attentionReason : undefined
-  const attentionTimestamp =
-    typeof agent.attentionTimestamp === "string" || agent.attentionTimestamp === null
-      ? agent.attentionTimestamp
-      : undefined
-  const runtimeInfo = asRecord(agent.runtimeInfo)
-  const createdAt = typeof agent.createdAt === "string" ? agent.createdAt : undefined
-  const updatedAt = typeof agent.updatedAt === "string" ? agent.updatedAt : undefined
-  const worktreePath = (typeof agent.worktreePath === "string" ? agent.worktreePath : undefined) ?? labels.worktreePath
-  const branchName = (typeof agent.branchName === "string" ? agent.branchName : undefined) ?? labels.branchName
-
   return {
     id: agent.id as string,
     provider: (agent.provider as string) ?? "unknown",
@@ -143,15 +129,53 @@ export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
     model: (agent.model as string | null) ?? null,
     status: (agent.status as string) ?? "unknown",
     title: (agent.title as string | null) ?? null,
-    labels,
-    ...(requiresAttention !== undefined ? { requiresAttention } : {}),
-    ...(attentionReason !== undefined ? { attentionReason } : {}),
-    ...(attentionTimestamp !== undefined ? { attentionTimestamp } : {}),
+    labels: agentLabels(agent),
+    ...agentAttentionFields(agent),
     pendingPermissions: (agent.pendingPermissions as Array<Record<string, unknown>>) ?? [],
     capabilities: asRecord(agent.capabilities) ?? {},
-    ...(runtimeInfo !== null ? { runtimeInfo } : {}),
-    ...(createdAt !== undefined ? { createdAt } : {}),
-    ...(updatedAt !== undefined ? { updatedAt } : {}),
+    ...agentRuntimeFields(agent),
+    ...agentTimestampFields(agent),
+    ...agentWorktreeFields(agent),
+  }
+}
+
+function agentLabels(agent: Record<string, unknown>): Record<string, string> {
+  return (agent.labels ?? {}) as Record<string, string>
+}
+
+function optionalStringOrNull(value: unknown): string | null | undefined {
+  return typeof value === "string" || value === null ? value : undefined
+}
+
+function agentAttentionFields(agent: Record<string, unknown>): Partial<AgentSummary> {
+  return {
+    ...(typeof agent.requiresAttention === "boolean" ? { requiresAttention: agent.requiresAttention } : {}),
+    ...(optionalStringOrNull(agent.attentionReason) !== undefined
+      ? { attentionReason: optionalStringOrNull(agent.attentionReason) }
+      : {}),
+    ...(optionalStringOrNull(agent.attentionTimestamp) !== undefined
+      ? { attentionTimestamp: optionalStringOrNull(agent.attentionTimestamp) }
+      : {}),
+  }
+}
+
+function agentRuntimeFields(agent: Record<string, unknown>): Partial<AgentSummary> {
+  const runtimeInfo = asRecord(agent.runtimeInfo)
+  return runtimeInfo !== null ? { runtimeInfo } : {}
+}
+
+function agentTimestampFields(agent: Record<string, unknown>): Partial<AgentSummary> {
+  return {
+    ...(typeof agent.createdAt === "string" ? { createdAt: agent.createdAt } : {}),
+    ...(typeof agent.updatedAt === "string" ? { updatedAt: agent.updatedAt } : {}),
+  }
+}
+
+function agentWorktreeFields(agent: Record<string, unknown>): Partial<AgentSummary> {
+  const labels = agentLabels(agent)
+  const worktreePath = (typeof agent.worktreePath === "string" ? agent.worktreePath : undefined) ?? labels.worktreePath
+  const branchName = (typeof agent.branchName === "string" ? agent.branchName : undefined) ?? labels.branchName
+  return {
     ...(worktreePath !== undefined ? { worktreePath } : {}),
     ...(branchName !== undefined ? { branchName } : {}),
   }
@@ -175,17 +199,11 @@ function getNestedValue(record: Record<string, unknown>, path: string[]): unknow
 
 function firstString(value: unknown, maxLength = 160): string | null {
   if (typeof value === "string") {
-    const normalized = value.replace(/\s+/g, " ").trim()
-    if (!normalized) return null
-    return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1).trimEnd()}…` : normalized
+    return normalizeSummaryString(value, maxLength)
   }
 
   if (Array.isArray(value)) {
-    for (const entry of value) {
-      const found = firstString(entry, maxLength)
-      if (found) return found
-    }
-    return null
+    return firstStringInArray(value, maxLength)
   }
 
   const record = asRecord(value)
@@ -193,7 +211,25 @@ function firstString(value: unknown, maxLength = 160): string | null {
     return null
   }
 
-  const preferredPaths = [
+  return firstPreferredString(record, maxLength) ?? firstRecordString(record, maxLength)
+}
+
+function normalizeSummaryString(value: string, maxLength: number): string | null {
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (!normalized) return null
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1).trimEnd()}…` : normalized
+}
+
+function firstStringInArray(values: unknown[], maxLength: number): string | null {
+  for (const entry of values) {
+    const found = firstString(entry, maxLength)
+    if (found) return found
+  }
+  return null
+}
+
+function preferredSummaryPaths(): string[][] {
+  return [
     ["summary"],
     ["title"],
     ["message"],
@@ -208,17 +244,21 @@ function firstString(value: unknown, maxLength = 160): string | null {
     ["event", "message"],
     ["event", "text"],
   ]
+}
 
-  for (const path of preferredPaths) {
+function firstPreferredString(record: Record<string, unknown>, maxLength: number): string | null {
+  for (const path of preferredSummaryPaths()) {
     const found = firstString(getNestedValue(record, path), maxLength)
     if (found) return found
   }
+  return null
+}
 
+function firstRecordString(record: Record<string, unknown>, maxLength: number): string | null {
   for (const key of Object.keys(record)) {
     const found = firstString(record[key], maxLength)
     if (found) return found
   }
-
   return null
 }
 
@@ -251,8 +291,7 @@ function extractTimelineEntries(timeline: unknown): unknown[] {
 
 function projectTimelineEntry(entry: unknown): WorkerActivityEntrySummary | null {
   if (typeof entry === "string") {
-    const summary = firstString(entry)
-    return summary ? { kind: "message", summary } : null
+    return projectStringTimelineEntry(entry)
   }
 
   const record = asRecord(entry)
@@ -260,22 +299,22 @@ function projectTimelineEntry(entry: unknown): WorkerActivityEntrySummary | null
     return null
   }
 
+  return projectRecordTimelineEntry(record)
+}
+
+function projectStringTimelineEntry(entry: string): WorkerActivityEntrySummary | null {
+  const summary = firstString(entry)
+  return summary ? { kind: "message", summary } : null
+}
+
+function projectRecordTimelineEntry(record: Record<string, unknown>): WorkerActivityEntrySummary {
   const kind =
     firstScalar(record, ["kind", "type", "eventType", "category"]) ??
     (record.toolName || record.tool ? "tool" : "event")
   const timestamp = firstScalar(record, ["timestamp", "createdAt", "updatedAt", "at"])
-  const toolName =
-    firstScalar(record, ["toolName", "tool", "name"]) ??
-    firstScalar(asRecord(record.event) ?? {}, ["toolName", "tool", "name"])
-  const status =
-    firstScalar(record, ["status", "state", "result"]) ??
-    firstScalar(asRecord(record.event) ?? {}, ["status", "state", "result"])
-  const summary =
-    firstString(record.summary) ??
-    firstString(record.payload) ??
-    firstString(record.event) ??
-    firstString(record) ??
-    `${kind}${toolName ? ` ${toolName}` : ""}${status ? ` (${status})` : ""}`
+  const toolName = firstTimelineScalar(record, ["toolName", "tool", "name"])
+  const status = firstTimelineScalar(record, ["status", "state", "result"])
+  const summary = timelineSummary(record, kind, toolName, status)
 
   return {
     kind,
@@ -284,6 +323,25 @@ function projectTimelineEntry(entry: unknown): WorkerActivityEntrySummary | null
     ...(status !== undefined ? { status } : {}),
     summary,
   }
+}
+
+function firstTimelineScalar(record: Record<string, unknown>, keys: string[]): string | undefined {
+  return firstScalar(record, keys) ?? firstScalar(asRecord(record.event) ?? {}, keys)
+}
+
+function timelineSummary(
+  record: Record<string, unknown>,
+  kind: string,
+  toolName: string | undefined,
+  status: string | undefined,
+): string {
+  return (
+    firstString(record.summary) ??
+    firstString(record.payload) ??
+    firstString(record.event) ??
+    firstString(record) ??
+    `${kind}${toolName ? ` ${toolName}` : ""}${status ? ` (${status})` : ""}`
+  )
 }
 
 export function projectTimeline(timeline: unknown, requestedLimit?: number): WorkerActivitySummary {
@@ -309,68 +367,11 @@ export function projectTimeline(timeline: unknown, requestedLimit?: number): Wor
 
 export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerminalExitEvent): DaemonEvent | null {
   switch (event.type) {
-    case "agent_update": {
-      const payload = event.payload as Record<string, unknown>
-      const kind = payload.kind as string | undefined
+    case "agent_update":
+      return translateAgentUpdateEvent(event)
 
-      if (kind === "remove") {
-        return {
-          type: "worker.finished",
-          payload: { ...payload, workerId: event.agentId },
-        }
-      }
-
-      const agent = payload.agent as Record<string, unknown> | undefined
-      if (!agent) {
-        return null
-      }
-
-      const agentId = agent.id as string
-      const status = agent.status as string
-      const requiresAttention = agent.requiresAttention as boolean | undefined
-      const attentionReason = agent.attentionReason as string | undefined
-      const pendingPermissions = agent.pendingPermissions
-
-      if (
-        requiresAttention &&
-        (attentionReason === "permission" || (Array.isArray(pendingPermissions) && pendingPermissions.length > 0))
-      ) {
-        return {
-          type: "worker.blocked",
-          payload: {
-            ...payload,
-            workerId: agentId,
-            summary: attentionReason,
-          },
-        }
-      }
-      if (status === "error") {
-        return { type: "worker.failed", payload: { ...payload, workerId: agentId } }
-      }
-      if (status === "closed") {
-        return { type: "worker.finished", payload: { ...payload, workerId: agentId } }
-      }
-      // running, idle, initializing
-      return { type: "worker.started", payload: { ...payload, workerId: agentId } }
-    }
-
-    case "agent_stream": {
-      const streamEvent = asRecord(event.event)
-      const subtype =
-        (typeof streamEvent?.type === "string" && streamEvent.type) ||
-        (typeof streamEvent?.kind === "string" && streamEvent.kind) ||
-        undefined
-
-      return {
-        type: "worker.activity",
-        payload: {
-          workerId: event.agentId,
-          ...(typeof event.timestamp === "string" ? { timestamp: event.timestamp } : {}),
-          ...(subtype !== undefined ? { subtype } : {}),
-          ...(firstString(streamEvent) !== null ? { summary: firstString(streamEvent)! } : {}),
-        },
-      }
-    }
+    case "agent_stream":
+      return translateAgentStreamEvent(event)
 
     case "agent_deleted":
       return {
@@ -384,31 +385,11 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerm
         payload: { terminalId: event.payload.terminalId },
       }
 
-    case "agent_permission_request": {
-      const permissionRequest = asRecord(event.request) ?? {}
+    case "agent_permission_request":
+      return translatePermissionRequestEvent(event)
 
-      return {
-        type: "permission.requested",
-        payload: {
-          workerId: event.agentId,
-          ...(typeof permissionRequest.id === "string" ? { permissionId: permissionRequest.id } : {}),
-          request: permissionRequest,
-        },
-      }
-    }
-
-    case "agent_permission_resolved": {
-      const permissionResolution = asRecord(event.resolution) ?? {}
-
-      return {
-        type: "permission.resolved",
-        payload: {
-          workerId: event.agentId,
-          permissionId: event.requestId,
-          resolution: permissionResolution,
-        },
-      }
-    }
+    case "agent_permission_resolved":
+      return translatePermissionResolvedEvent(event)
 
     case "error":
       return {
@@ -418,6 +399,87 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerm
 
     default:
       return null
+  }
+}
+
+function translateAgentUpdateEvent(event: Extract<UpstreamDaemonEvent, { type: "agent_update" }>): DaemonEvent | null {
+  const payload = event.payload as Record<string, unknown>
+  if ((payload.kind as string | undefined) === "remove") {
+    return { type: "worker.finished", payload: { ...payload, workerId: event.agentId } }
+  }
+
+  const agent = payload.agent as Record<string, unknown> | undefined
+  if (!agent) return null
+  return translateAgentStatusPayload(payload, agent)
+}
+
+function translateAgentStatusPayload(payload: Record<string, unknown>, agent: Record<string, unknown>): DaemonEvent {
+  const workerId = agent.id as string
+  if (agentRequiresPermissionAttention(agent)) {
+    return {
+      type: "worker.blocked",
+      payload: { ...payload, workerId, summary: agent.attentionReason as string | undefined },
+    }
+  }
+  if (agent.status === "error") return { type: "worker.failed", payload: { ...payload, workerId } }
+  if (agent.status === "closed") return { type: "worker.finished", payload: { ...payload, workerId } }
+  return { type: "worker.started", payload: { ...payload, workerId } }
+}
+
+function agentRequiresPermissionAttention(agent: Record<string, unknown>): boolean {
+  return Boolean(
+    agent.requiresAttention &&
+    (agent.attentionReason === "permission" ||
+      (Array.isArray(agent.pendingPermissions) && agent.pendingPermissions.length > 0)),
+  )
+}
+
+function translateAgentStreamEvent(event: Extract<UpstreamDaemonEvent, { type: "agent_stream" }>): DaemonEvent {
+  const streamEvent = asRecord(event.event)
+  const summary = firstString(streamEvent)
+  return {
+    type: "worker.activity",
+    payload: {
+      workerId: event.agentId,
+      ...(typeof event.timestamp === "string" ? { timestamp: event.timestamp } : {}),
+      ...streamSubtypeField(streamEvent),
+      ...(summary !== null ? { summary } : {}),
+    },
+  }
+}
+
+function streamSubtypeField(streamEvent: Record<string, unknown> | null): { subtype?: string } {
+  const subtype =
+    (typeof streamEvent?.type === "string" && streamEvent.type) ||
+    (typeof streamEvent?.kind === "string" && streamEvent.kind) ||
+    undefined
+  return subtype !== undefined ? { subtype } : {}
+}
+
+function translatePermissionRequestEvent(
+  event: Extract<UpstreamDaemonEvent, { type: "agent_permission_request" }>,
+): DaemonEvent {
+  const request = asRecord(event.request) ?? {}
+  return {
+    type: "permission.requested",
+    payload: {
+      workerId: event.agentId,
+      ...(typeof request.id === "string" ? { permissionId: request.id } : {}),
+      request,
+    },
+  }
+}
+
+function translatePermissionResolvedEvent(
+  event: Extract<UpstreamDaemonEvent, { type: "agent_permission_resolved" }>,
+): DaemonEvent {
+  return {
+    type: "permission.resolved",
+    payload: {
+      workerId: event.agentId,
+      permissionId: event.requestId,
+      resolution: asRecord(event.resolution) ?? {},
+    },
   }
 }
 
@@ -719,6 +781,16 @@ function mapWorktreeArchiveResult(result: Record<string, unknown>): WorktreeArch
     success: Boolean(result.success),
     removedAgents: (result.removedAgents as string[] | undefined) ?? undefined,
     error: (result.error as WorktreeArchiveResult["error"]) ?? null,
+  }
+}
+
+function buildWorkerMetadataUpdate(
+  options: UpdateWorkerOptions,
+): { name?: string; labels?: Record<string, string> } | null {
+  if (options.name === undefined && options.labels === undefined) return null
+  return {
+    ...(options.name !== undefined ? { name: options.name } : {}),
+    ...(options.labels !== undefined ? { labels: options.labels } : {}),
   }
 }
 
@@ -1036,67 +1108,8 @@ export class PaseoClient implements PaseoTransport {
 
   async updateWorker(options: UpdateWorkerOptions): Promise<WorkerUpdateResult> {
     const errors: string[] = []
-    let metadataUpdated = false
-    let settingsUpdated = false
-
-    // Metadata: name and labels go through updateAgent
-    if (options.name !== undefined || options.labels !== undefined) {
-      try {
-        const updates: { name?: string; labels?: Record<string, string> } = {}
-        if (options.name !== undefined) updates.name = options.name
-        if (options.labels !== undefined) updates.labels = options.labels
-        await this.daemon.updateAgent(options.workerId, updates)
-        metadataUpdated = true
-      } catch (err: unknown) {
-        errors.push(`metadata update failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-
-    // Settings: each runtime setting has its own upstream RPC (independent try/catch)
-    if (options.settings) {
-      const s = options.settings
-      let anySettingApplied = false
-
-      if (s.modeId !== undefined) {
-        try {
-          await this.daemon.setAgentMode(options.workerId, s.modeId)
-          anySettingApplied = true
-        } catch (err: unknown) {
-          errors.push(`setAgentMode failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-
-      if (s.model !== undefined) {
-        try {
-          await this.daemon.setAgentModel(options.workerId, s.model)
-          anySettingApplied = true
-        } catch (err: unknown) {
-          errors.push(`setAgentModel failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-
-      if (s.thinkingOptionId !== undefined) {
-        try {
-          await this.daemon.setAgentThinkingOption(options.workerId, s.thinkingOptionId)
-          anySettingApplied = true
-        } catch (err: unknown) {
-          errors.push(`setAgentThinkingOption failed: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-
-      if (s.features) {
-        for (const [featureId, value] of Object.entries(s.features)) {
-          try {
-            await this.daemon.setAgentFeature(options.workerId, featureId, value)
-            anySettingApplied = true
-          } catch (err: unknown) {
-            errors.push(`setAgentFeature(${featureId}) failed: ${err instanceof Error ? err.message : String(err)}`)
-          }
-        }
-      }
-
-      settingsUpdated = anySettingApplied
-    }
+    const metadataUpdated = await this.updateWorkerMetadata(options, errors)
+    const settingsUpdated = await this.updateWorkerSettings(options, errors)
 
     return {
       workerId: options.workerId,
@@ -1104,6 +1117,68 @@ export class PaseoClient implements PaseoTransport {
       metadataUpdated,
       settingsUpdated,
       errors,
+    }
+  }
+
+  private async updateWorkerMetadata(options: UpdateWorkerOptions, errors: string[]): Promise<boolean> {
+    const updates = buildWorkerMetadataUpdate(options)
+    if (!updates) return false
+    return this.runUpdateStep("metadata update", errors, async () => {
+      await this.daemon.updateAgent(options.workerId, updates)
+    })
+  }
+
+  private async updateWorkerSettings(options: UpdateWorkerOptions, errors: string[]): Promise<boolean> {
+    if (!options.settings) return false
+    let updated = false
+    updated = (await this.updateWorkerMode(options, errors)) || updated
+    updated = (await this.updateWorkerModel(options, errors)) || updated
+    updated = (await this.updateWorkerThinkingOption(options, errors)) || updated
+    updated = (await this.updateWorkerFeatures(options, errors)) || updated
+    return updated
+  }
+
+  private async updateWorkerMode(options: UpdateWorkerOptions, errors: string[]): Promise<boolean> {
+    if (options.settings?.modeId === undefined) return false
+    return this.runUpdateStep("setAgentMode", errors, async () => {
+      await this.daemon.setAgentMode(options.workerId, options.settings!.modeId!)
+    })
+  }
+
+  private async updateWorkerModel(options: UpdateWorkerOptions, errors: string[]): Promise<boolean> {
+    if (options.settings?.model === undefined) return false
+    return this.runUpdateStep("setAgentModel", errors, async () => {
+      await this.daemon.setAgentModel(options.workerId, options.settings!.model!)
+    })
+  }
+
+  private async updateWorkerThinkingOption(options: UpdateWorkerOptions, errors: string[]): Promise<boolean> {
+    if (options.settings?.thinkingOptionId === undefined) return false
+    return this.runUpdateStep("setAgentThinkingOption", errors, async () => {
+      await this.daemon.setAgentThinkingOption(options.workerId, options.settings!.thinkingOptionId!)
+    })
+  }
+
+  private async updateWorkerFeatures(options: UpdateWorkerOptions, errors: string[]): Promise<boolean> {
+    const features = options.settings?.features
+    if (!features) return false
+    let updated = false
+    for (const [featureId, value] of Object.entries(features)) {
+      updated =
+        (await this.runUpdateStep(`setAgentFeature(${featureId})`, errors, async () => {
+          await this.daemon.setAgentFeature(options.workerId, featureId, value)
+        })) || updated
+    }
+    return updated
+  }
+
+  private async runUpdateStep(label: string, errors: string[], update: () => Promise<void>): Promise<boolean> {
+    try {
+      await update()
+      return true
+    } catch (err: unknown) {
+      errors.push(`${label} failed: ${err instanceof Error ? err.message : String(err)}`)
+      return false
     }
   }
 

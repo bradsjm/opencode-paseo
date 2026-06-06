@@ -8,6 +8,7 @@ import type {
   DaemonEvent,
   MultiWorkerWaitResult,
   PaseoTransport,
+  CreatedWorker,
   WorkerWaitNudgeEvent,
   WorkerWaitResult,
 } from "../transport/types.js"
@@ -353,142 +354,179 @@ export function createWorkerRunTool(
       registerEphemeralWorkerRun(state, context.sessionID, createdWorker.id, { background })
 
       if (background) {
-        return {
-          title: "Worker Run Started",
-          output: JSON.stringify(
-            {
-              workerId: createdWorker.id,
-              profile: profileName,
-              cwd: createdWorker.cwd,
-              background: true,
-              detached: false,
-              ephemeral: true,
-              status: "started",
-              message:
-                "Ephemeral worker started in background mode. It will be best-effort canceled if the owning tool session is deleted while the plugin is still running.",
-            },
-            null,
-            2,
-          ),
-        }
+        return workerRunBackgroundResponse(createdWorker, profileName)
       }
 
-      let cancelRequested = false
-      let cancelIssued = false
-      let resolveAbort: (() => void) | undefined
-      const abortPromise = new Promise<"aborted">((resolve) => {
-        resolveAbort = () => resolve("aborted")
-      })
-      const requestCancel = async () => {
-        if (cancelIssued) {
-          return
-        }
-        cancelIssued = true
-        try {
-          await client.cancelWorker(createdWorker.id)
-        } catch (err: unknown) {
-          logger.warn("Failed to cancel ephemeral worker after abort", {
-            workerId: createdWorker.id,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        }
-      }
-      const onAbort = () => {
-        cancelRequested = true
-        void requestCancel()
-        resolveAbort?.()
-      }
-
-      if (context.abort.aborted) {
-        onAbort()
-      } else {
-        context.abort.addEventListener("abort", onAbort, { once: true })
-      }
-
-      try {
-        const deadline = Date.now() + timeout
-
-        while (true) {
-          if (cancelRequested) {
-            return {
-              title: "Worker Run Aborted",
-              output: JSON.stringify(
-                {
-                  workerId: createdWorker.id,
-                  profile: profileName,
-                  cwd: createdWorker.cwd,
-                  background: false,
-                  detached: false,
-                  ephemeral: true,
-                  status: "aborted",
-                  aborted: true,
-                },
-                null,
-                2,
-              ),
-            }
-          }
-
-          const remaining = deadline - Date.now()
-          if (remaining <= 0) {
-            return {
-              title: "Worker Run Timed Out",
-              output: JSON.stringify(
-                {
-                  workerId: createdWorker.id,
-                  profile: profileName,
-                  cwd: createdWorker.cwd,
-                  background: false,
-                  detached: false,
-                  ephemeral: true,
-                  status: "timeout",
-                  timedOut: true,
-                  timeoutMs: timeout,
-                },
-                null,
-                2,
-              ),
-            }
-          }
-
-          const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, remaining)
-          const outcome = await Promise.race([
-            client.waitForWorker(createdWorker.id, sliceTimeout).then((result) => ({ type: "wait" as const, result })),
-            abortPromise.then(() => ({ type: "abort" as const })),
-          ])
-
-          if (outcome.type === "abort") {
-            continue
-          }
-
-          syncWorkerFromFinalSnapshot(state, outcome.result)
-          if (outcome.result.status === "timeout") {
-            continue
-          }
-
-          return {
-            title: "Worker Run Completed",
-            output: JSON.stringify(
-              {
-                workerId: createdWorker.id,
-                profile: profileName,
-                cwd: createdWorker.cwd,
-                background: false,
-                detached: false,
-                ephemeral: true,
-                status: "completed",
-                result: outcome.result,
-              },
-              null,
-              2,
-            ),
-          }
-        }
-      } finally {
-        context.abort.removeEventListener("abort", onAbort)
-        removeEphemeralWorkerRun(state, createdWorker.id)
-      }
+      return waitForForegroundWorkerRun(state, client, logger, context, createdWorker, profileName, timeout)
     },
+  })
+}
+
+function workerRunBackgroundResponse(createdWorker: CreatedWorker, profileName: string) {
+  return workerRunResponse("Worker Run Started", {
+    workerId: createdWorker.id,
+    profile: profileName,
+    cwd: createdWorker.cwd,
+    background: true,
+    detached: false,
+    ephemeral: true,
+    status: "started",
+    message:
+      "Ephemeral worker started in background mode. It will be best-effort canceled if the owning tool session is deleted while the plugin is still running.",
+  })
+}
+
+function workerRunResponse(title: string, payload: Record<string, unknown>) {
+  return { title, output: JSON.stringify(payload, null, 2) }
+}
+
+interface WorkerRunAbortState {
+  cancelRequested: boolean
+  abortPromise: Promise<"aborted">
+  onAbort: () => void
+}
+
+function setupWorkerRunAbort(
+  client: PaseoTransport,
+  logger: Logger,
+  context: ToolContext,
+  workerId: string,
+): WorkerRunAbortState {
+  let cancelIssued = false
+  let resolveAbort: (() => void) | undefined
+  const abortState: WorkerRunAbortState = {
+    cancelRequested: false,
+    abortPromise: new Promise<"aborted">((resolve) => {
+      resolveAbort = () => resolve("aborted")
+    }),
+    onAbort: () => {},
+  }
+  abortState.onAbort = () => {
+    abortState.cancelRequested = true
+    void requestWorkerRunCancel(
+      client,
+      logger,
+      workerId,
+      () => cancelIssued,
+      () => {
+        cancelIssued = true
+      },
+    )
+    resolveAbort?.()
+  }
+  if (context.abort.aborted) abortState.onAbort()
+  else context.abort.addEventListener("abort", abortState.onAbort, { once: true })
+  return abortState
+}
+
+async function requestWorkerRunCancel(
+  client: PaseoTransport,
+  logger: Logger,
+  workerId: string,
+  isCancelIssued: () => boolean,
+  markCancelIssued: () => void,
+): Promise<void> {
+  if (isCancelIssued()) return
+  markCancelIssued()
+  try {
+    await client.cancelWorker(workerId)
+  } catch (err: unknown) {
+    logger.warn("Failed to cancel ephemeral worker after abort", {
+      workerId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+async function waitForForegroundWorkerRun(
+  state: PluginState,
+  client: PaseoTransport,
+  logger: Logger,
+  context: ToolContext,
+  createdWorker: CreatedWorker,
+  profileName: string,
+  timeout: number,
+) {
+  const abortState = setupWorkerRunAbort(client, logger, context, createdWorker.id)
+  try {
+    return await pollForegroundWorkerRun(state, client, createdWorker, profileName, timeout, abortState)
+  } finally {
+    context.abort.removeEventListener("abort", abortState.onAbort)
+    removeEphemeralWorkerRun(state, createdWorker.id)
+  }
+}
+
+async function pollForegroundWorkerRun(
+  state: PluginState,
+  client: PaseoTransport,
+  createdWorker: CreatedWorker,
+  profileName: string,
+  timeout: number,
+  abortState: WorkerRunAbortState,
+) {
+  const deadline = Date.now() + timeout
+  while (true) {
+    if (abortState.cancelRequested) return workerRunAbortedResponse(createdWorker, profileName)
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) return workerRunTimeoutResponse(createdWorker, profileName, timeout)
+    const outcome = await waitForWorkerRunSlice(client, createdWorker.id, remaining, abortState.abortPromise)
+    if (outcome.type === "abort") continue
+    syncWorkerFromFinalSnapshot(state, outcome.result)
+    if (outcome.result.status === "timeout") continue
+    return workerRunCompletedResponse(createdWorker, profileName, outcome.result)
+  }
+}
+
+function waitForWorkerRunSlice(
+  client: PaseoTransport,
+  workerId: string,
+  remaining: number,
+  abortPromise: Promise<"aborted">,
+) {
+  const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, remaining)
+  return Promise.race([
+    client.waitForWorker(workerId, sliceTimeout).then((result) => ({ type: "wait" as const, result })),
+    abortPromise.then(() => ({ type: "abort" as const })),
+  ])
+}
+
+function workerRunAbortedResponse(createdWorker: CreatedWorker, profileName: string) {
+  return workerRunResponse("Worker Run Aborted", {
+    workerId: createdWorker.id,
+    profile: profileName,
+    cwd: createdWorker.cwd,
+    background: false,
+    detached: false,
+    ephemeral: true,
+    status: "aborted",
+    aborted: true,
+  })
+}
+
+function workerRunTimeoutResponse(createdWorker: CreatedWorker, profileName: string, timeout: number) {
+  return workerRunResponse("Worker Run Timed Out", {
+    workerId: createdWorker.id,
+    profile: profileName,
+    cwd: createdWorker.cwd,
+    background: false,
+    detached: false,
+    ephemeral: true,
+    status: "timeout",
+    timedOut: true,
+    timeoutMs: timeout,
+  })
+}
+
+function workerRunCompletedResponse(createdWorker: CreatedWorker, profileName: string, result: WorkerWaitResult) {
+  return workerRunResponse("Worker Run Completed", {
+    workerId: createdWorker.id,
+    profile: profileName,
+    cwd: createdWorker.cwd,
+    background: false,
+    detached: false,
+    ephemeral: true,
+    status: "completed",
+    result,
   })
 }
 
@@ -575,19 +613,25 @@ function deriveActivityState(
   activity: WorkerActivitySummary | null,
   activityFetched: boolean,
 ): InspectActivityState {
-  if (worker.requiresAttention || worker.pendingPermissionIds.length > 0 || worker.status === "blocked") {
-    return "blocked"
-  }
-  if (isTerminalWorkerStatus(worker.status)) {
-    return "finished"
-  }
-  if (worker.status === "running") {
-    if (!activityFetched) {
-      return "unknown"
-    }
-    return activity && activity.entries.length > 0 ? "active" : "quiet"
-  }
-  return activity && activity.entries.length > 0 ? "active" : "unknown"
+  if (workerIsBlocked(worker)) return "blocked"
+  if (isTerminalWorkerStatus(worker.status)) return "finished"
+  if (worker.status === "running") return runningActivityState(activity, activityFetched)
+  return hasProjectedActivity(activity) ? "active" : "unknown"
+}
+
+function workerIsBlocked(
+  worker: Pick<WorkerSummary, "status" | "pendingPermissionIds" | "requiresAttention">,
+): boolean {
+  return worker.requiresAttention || worker.pendingPermissionIds.length > 0 || worker.status === "blocked"
+}
+
+function hasProjectedActivity(activity: WorkerActivitySummary | null): boolean {
+  return Boolean(activity && activity.entries.length > 0)
+}
+
+function runningActivityState(activity: WorkerActivitySummary | null, activityFetched: boolean): InspectActivityState {
+  if (!activityFetched) return "unknown"
+  return hasProjectedActivity(activity) ? "active" : "quiet"
 }
 
 function deriveReadyForDependentWork(status: string): ReadyForDependentWork {
@@ -605,42 +649,35 @@ function deriveProgressSummary(
   activityFetched: boolean,
 ): { summary: string; lastMeaningfulUpdate: string | null } {
   const latest = activity?.entries[0]
-  if (latest) {
-    return {
-      summary: latest.summary,
-      lastMeaningfulUpdate: latest.timestamp ?? null,
-    }
-  }
-  if (activityState === "blocked") {
-    return {
-      summary:
-        worker.attentionReason ??
-        (worker.pendingPermissionIds.length > 0 ? "Waiting for permission response" : "Worker needs attention"),
-      lastMeaningfulUpdate: null,
-    }
-  }
-  if (activityState === "finished") {
-    return {
-      summary: worker.status === "failed" ? "Worker failed" : "Worker reached a terminal state",
-      lastMeaningfulUpdate: null,
-    }
-  }
-  if (activityState === "quiet") {
-    return {
-      summary: "Worker is running but has no recent projected activity",
-      lastMeaningfulUpdate: null,
-    }
-  }
-  if (!activityFetched && worker.status === "running") {
-    return {
-      summary: "Activity not fetched; worker status is running",
-      lastMeaningfulUpdate: null,
-    }
-  }
-  return {
-    summary: worker.status === "idle" ? "Worker is idle" : "No recent projected activity",
-    lastMeaningfulUpdate: null,
-  }
+  if (latest) return latestActivityProgress(latest)
+  if (activityState === "blocked") return blockedProgress(worker)
+  if (activityState === "finished") return finishedProgress(worker.status)
+  if (activityState === "quiet") return progressSummary("Worker is running but has no recent projected activity")
+  if (!activityFetched && worker.status === "running")
+    return progressSummary("Activity not fetched; worker status is running")
+  return progressSummary(worker.status === "idle" ? "Worker is idle" : "No recent projected activity")
+}
+
+function latestActivityProgress(entry: WorkerActivitySummary["entries"][number]) {
+  return { summary: entry.summary, lastMeaningfulUpdate: entry.timestamp ?? null }
+}
+
+function progressSummary(summary: string): { summary: string; lastMeaningfulUpdate: string | null } {
+  return { summary, lastMeaningfulUpdate: null }
+}
+
+function blockedProgress(worker: Pick<WorkerSummary, "pendingPermissionIds" | "attentionReason">): {
+  summary: string
+  lastMeaningfulUpdate: string | null
+} {
+  return progressSummary(
+    worker.attentionReason ??
+      (worker.pendingPermissionIds.length > 0 ? "Waiting for permission response" : "Worker needs attention"),
+  )
+}
+
+function finishedProgress(status: string): { summary: string; lastMeaningfulUpdate: string | null } {
+  return progressSummary(status === "failed" ? "Worker failed" : "Worker reached a terminal state")
 }
 
 function syncWorkerFromFinalSnapshot(state: PluginState, result: WorkerWaitResult): void {
@@ -661,27 +698,36 @@ function getNudgeEventFromDaemonEvent(
   ownedWorkerIds: Set<string>,
   config: PluginConfig,
 ): WorkerWaitNudgeEvent | null {
-  switch (event.type) {
-    case "worker.stalled":
-    case "worker.finished":
-    case "worker.failed":
-    case "worker.blocked":
-    case "permission.requested": {
-      const workerId = event.payload.workerId
-      if (!ownedWorkerIds.has(workerId) || !shouldNudge(event.type, config.notifications)) {
-        return null
-      }
+  if (!isDaemonNudgeEvent(event)) return null
+  const workerId = event.payload.workerId
+  if (!ownedWorkerIds.has(workerId) || !shouldNudge(event.type, config.notifications)) return null
+  return { kind: event.type, workerId, summary: daemonNudgeSummary(event, workerId) }
+}
 
-      const summary =
-        (typeof event.payload.summary === "string" && event.payload.summary) ||
-        (typeof event.payload.message === "string" && event.payload.message) ||
-        `${event.type} for ${workerId}`
+type DaemonWorkerWaitNudgeKind = Extract<WorkerWaitNudgeEvent["kind"], DaemonEvent["type"]>
 
-      return { kind: event.type, workerId, summary }
-    }
-    default:
-      return null
-  }
+function isDaemonNudgeEvent(
+  event: DaemonEvent,
+): event is Extract<DaemonEvent, { payload: { workerId: string } }> & { type: DaemonWorkerWaitNudgeKind } {
+  return isDaemonNudgeKind(event.type)
+}
+
+function isDaemonNudgeKind(kind: DaemonEvent["type"]): kind is DaemonWorkerWaitNudgeKind {
+  return (
+    kind === "worker.stalled" ||
+    kind === "worker.finished" ||
+    kind === "worker.failed" ||
+    kind === "worker.blocked" ||
+    kind === "permission.requested"
+  )
+}
+
+function daemonNudgeSummary(event: Extract<DaemonEvent, { payload: { workerId: string } }>, workerId: string): string {
+  return (
+    (typeof event.payload.summary === "string" && event.payload.summary) ||
+    (typeof event.payload.message === "string" && event.payload.message) ||
+    `${event.type} for ${workerId}`
+  )
 }
 
 function getExistingUnreadNudge(
@@ -695,27 +741,34 @@ function getExistingUnreadNudge(
   }
 
   for (const inboxEvent of session.unreadEvents.values()) {
-    if (!session.createdWorkerIds.has(inboxEvent.resourceId)) {
-      continue
-    }
-    if (
-      (inboxEvent.kind === "worker.stalled" ||
-        inboxEvent.kind === "worker.finished" ||
-        inboxEvent.kind === "worker.failed" ||
-        inboxEvent.kind === "worker.blocked" ||
-        inboxEvent.kind === "chat.mentioned" ||
-        inboxEvent.kind === "permission.requested") &&
-      shouldNudge(inboxEvent.kind, config.notifications)
-    ) {
-      return {
-        kind: inboxEvent.kind,
-        workerId: inboxEvent.resourceId,
-        summary: inboxEvent.summary,
-      }
-    }
+    if (!isUnreadInboxNudge(inboxEvent, session.createdWorkerIds, config)) continue
+    return { kind: inboxEvent.kind, workerId: inboxEvent.resourceId, summary: inboxEvent.summary }
   }
 
   return null
+}
+
+function isUnreadInboxNudge(
+  inboxEvent: { kind: string; resourceId: string },
+  createdWorkerIds: Set<string>,
+  config: PluginConfig,
+): inboxEvent is { kind: WorkerWaitNudgeEvent["kind"]; resourceId: string; summary: string } {
+  return (
+    createdWorkerIds.has(inboxEvent.resourceId) &&
+    isInboxNudgeKind(inboxEvent.kind) &&
+    shouldNudge(inboxEvent.kind, config.notifications)
+  )
+}
+
+function isInboxNudgeKind(kind: string): kind is WorkerWaitNudgeEvent["kind"] {
+  return (
+    kind === "worker.stalled" ||
+    kind === "worker.finished" ||
+    kind === "worker.failed" ||
+    kind === "worker.blocked" ||
+    kind === "chat.mentioned" ||
+    kind === "permission.requested"
+  )
 }
 
 export function createWorkerWaitTool(
@@ -744,133 +797,171 @@ export function createWorkerWaitTool(
         .describe(`Maximum time to wait in milliseconds (default: ${DEFAULT_WAIT_TIMEOUT_MS})`),
     },
     async execute(args, context: ToolContext) {
-      const timeout = optionalNumber(args.timeout) ?? DEFAULT_WAIT_TIMEOUT_MS
-      const waitFor = collapseNull(args.waitFor) ?? "all"
-      const workerIds = Array.from(new Set(args.workerIds.map((id) => id.trim()).filter(Boolean)))
+      const waitContext = createWorkerWaitContext(state, args, context, config)
       logger.info("Tool: paseo_worker_wait invoked", {
-        workerIds,
-        waitFor,
+        workerIds: waitContext.workerIds,
+        waitFor: waitContext.waitFor,
         sessionId: context.sessionID,
-        timeout,
+        timeout: waitContext.timeout,
       })
-
-      if (workerIds.length === 0) {
-        throw new Error("workerIds must contain at least one non-empty worker ID")
-      }
-
-      const session = state.sessions.get(context.sessionID)
-      const ownedWorkerIds = session?.createdWorkerIds ?? new Set<string>()
-
-      let pendingWorkerIds = [...workerIds]
-      const completedResults = new Map<string, WorkerWaitResult>()
-      let interruptedByNudge = false
-      let nudgeEvent: WorkerWaitNudgeEvent | undefined
-      let unsubscribe = () => {}
-
-      const buildPayload = (timedOut: boolean): MultiWorkerWaitResult => ({
-        waitFor,
-        workerIds,
-        results: workerIds
-          .filter((workerId) => completedResults.has(workerId))
-          .map((workerId) => completedResults.get(workerId)!),
-        pendingWorkerIds,
-        interruptedByNudge,
-        ...(nudgeEvent !== undefined ? { nudgeEvent } : {}),
-        timedOut,
-      })
-
-      try {
-        unsubscribe = client.onEvent((event) => {
-          if (nudgeEvent) {
-            return
-          }
-          const matched = getNudgeEventFromDaemonEvent(event, ownedWorkerIds, config)
-          if (matched) {
-            interruptedByNudge = true
-            nudgeEvent = matched
-          }
-        })
-
-        nudgeEvent = getExistingUnreadNudge(state, context.sessionID, config) ?? undefined
-        if (nudgeEvent) {
-          interruptedByNudge = true
-          return {
-            title: "Worker Wait",
-            output: JSON.stringify(buildPayload(false), null, 2),
-          }
-        }
-
-        const deadline = Date.now() + timeout
-
-        while (pendingWorkerIds.length > 0) {
-          if (nudgeEvent) {
-            interruptedByNudge = true
-            return {
-              title: "Worker Wait",
-              output: JSON.stringify(buildPayload(false), null, 2),
-            }
-          }
-
-          const remaining = deadline - Date.now()
-          if (remaining <= 0) {
-            return {
-              title: "Worker Wait",
-              output: JSON.stringify(buildPayload(true), null, 2),
-            }
-          }
-
-          const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, remaining)
-          const sliceWorkerIds = [...pendingWorkerIds]
-          const settled = await Promise.allSettled(
-            sliceWorkerIds.map((workerId) => client.waitForWorker(workerId, sliceTimeout)),
-          )
-
-          for (const [, settledResult] of settled.entries()) {
-            if (settledResult.status === "rejected") {
-              throw settledResult.reason
-            }
-
-            const result = settledResult.value
-            syncWorkerFromFinalSnapshot(state, result)
-            if (result.status === "timeout") {
-              continue
-            }
-
-            completedResults.set(result.workerId, result)
-          }
-
-          pendingWorkerIds = pendingWorkerIds.filter((workerId) => !completedResults.has(workerId))
-
-          if (waitFor === "any" && completedResults.size > 0) {
-            return {
-              title: "Worker Wait",
-              output: JSON.stringify(buildPayload(false), null, 2),
-            }
-          }
-
-          if (waitFor === "all" && pendingWorkerIds.length === 0) {
-            return {
-              title: "Worker Wait",
-              output: JSON.stringify(buildPayload(false), null, 2),
-            }
-          }
-
-          const unreadNudge = getExistingUnreadNudge(state, context.sessionID, config)
-          if (unreadNudge && !nudgeEvent) {
-            interruptedByNudge = true
-            nudgeEvent = unreadNudge
-          }
-        }
-
-        return {
-          title: "Worker Wait",
-          output: JSON.stringify(buildPayload(false), null, 2),
-        }
-      } finally {
-        unsubscribe()
-      }
+      return runWorkerWait(state, client, config, waitContext)
     },
   })
+}
+
+interface WorkerWaitExecutionContext {
+  sessionId: string
+  waitFor: "any" | "all"
+  workerIds: string[]
+  timeout: number
+  ownedWorkerIds: Set<string>
+  pendingWorkerIds: string[]
+  completedResults: Map<string, WorkerWaitResult>
+  interruptedByNudge: boolean
+  nudgeEvent?: WorkerWaitNudgeEvent
+}
+
+function createWorkerWaitContext(
+  state: PluginState,
+  args: { workerIds: string[]; waitFor?: "any" | "all" | null; timeout?: number | null },
+  context: ToolContext,
+  config: PluginConfig,
+): WorkerWaitExecutionContext {
+  const workerIds = normalizeWorkerWaitIds(args.workerIds)
+  const session = state.sessions.get(context.sessionID)
+  const nudgeEvent = getExistingUnreadNudge(state, context.sessionID, config) ?? undefined
+  return {
+    sessionId: context.sessionID,
+    waitFor: collapseNull(args.waitFor) ?? "all",
+    workerIds,
+    timeout: optionalNumber(args.timeout) ?? DEFAULT_WAIT_TIMEOUT_MS,
+    ownedWorkerIds: session?.createdWorkerIds ?? new Set<string>(),
+    pendingWorkerIds: [...workerIds],
+    completedResults: new Map<string, WorkerWaitResult>(),
+    interruptedByNudge: nudgeEvent !== undefined,
+    ...(nudgeEvent !== undefined ? { nudgeEvent } : {}),
+  }
+}
+
+function normalizeWorkerWaitIds(workerIds: string[]): string[] {
+  const normalized = Array.from(new Set(workerIds.map((id) => id.trim()).filter(Boolean)))
+  if (normalized.length === 0) throw new Error("workerIds must contain at least one non-empty worker ID")
+  return normalized
+}
+
+async function runWorkerWait(
+  state: PluginState,
+  client: PaseoTransport,
+  config: PluginConfig,
+  waitContext: WorkerWaitExecutionContext,
+) {
+  const unsubscribe = subscribeWorkerWaitNudges(client, config, waitContext)
+  try {
+    return await pollWorkerWait(state, client, config, waitContext)
+  } finally {
+    unsubscribe()
+  }
+}
+
+function subscribeWorkerWaitNudges(
+  client: PaseoTransport,
+  config: PluginConfig,
+  waitContext: WorkerWaitExecutionContext,
+) {
+  return client.onEvent((event) => {
+    if (waitContext.nudgeEvent) return
+    const matched = getNudgeEventFromDaemonEvent(event, waitContext.ownedWorkerIds, config)
+    if (matched) markWaitInterruptedByNudge(waitContext, matched)
+  })
+}
+
+async function pollWorkerWait(
+  state: PluginState,
+  client: PaseoTransport,
+  config: PluginConfig,
+  waitContext: WorkerWaitExecutionContext,
+) {
+  if (waitContext.nudgeEvent) return workerWaitResponse(waitContext, false)
+  const deadline = Date.now() + waitContext.timeout
+  while (waitContext.pendingWorkerIds.length > 0) {
+    const stop = workerWaitEarlyStop(waitContext, deadline)
+    if (stop) return stop
+    await runWorkerWaitSlice(state, client, waitContext, deadline)
+    const complete = workerWaitCompletionResponse(waitContext)
+    if (complete) return complete
+    markUnreadWaitNudge(state, config, waitContext)
+  }
+  return workerWaitResponse(waitContext, false)
+}
+
+function workerWaitEarlyStop(waitContext: WorkerWaitExecutionContext, deadline: number) {
+  if (waitContext.nudgeEvent) return workerWaitResponse(waitContext, false)
+  return deadline - Date.now() <= 0 ? workerWaitResponse(waitContext, true) : null
+}
+
+async function runWorkerWaitSlice(
+  state: PluginState,
+  client: PaseoTransport,
+  waitContext: WorkerWaitExecutionContext,
+  deadline: number,
+): Promise<void> {
+  const sliceTimeout = Math.min(WAIT_SLICE_TIMEOUT_MS, deadline - Date.now())
+  const settled = await Promise.allSettled(
+    waitContext.pendingWorkerIds.map((workerId) => client.waitForWorker(workerId, sliceTimeout)),
+  )
+  recordWorkerWaitSettledResults(state, waitContext, settled)
+}
+
+function recordWorkerWaitSettledResults(
+  state: PluginState,
+  waitContext: WorkerWaitExecutionContext,
+  settled: Array<PromiseSettledResult<WorkerWaitResult>>,
+): void {
+  for (const settledResult of settled) {
+    if (settledResult.status === "rejected") throw settledResult.reason
+    syncWorkerFromFinalSnapshot(state, settledResult.value)
+    if (settledResult.value.status !== "timeout")
+      waitContext.completedResults.set(settledResult.value.workerId, settledResult.value)
+  }
+  waitContext.pendingWorkerIds = waitContext.pendingWorkerIds.filter(
+    (workerId) => !waitContext.completedResults.has(workerId),
+  )
+}
+
+function workerWaitCompletionResponse(waitContext: WorkerWaitExecutionContext) {
+  if (waitContext.waitFor === "any" && waitContext.completedResults.size > 0)
+    return workerWaitResponse(waitContext, false)
+  if (waitContext.waitFor === "all" && waitContext.pendingWorkerIds.length === 0)
+    return workerWaitResponse(waitContext, false)
+  return null
+}
+
+function markUnreadWaitNudge(state: PluginState, config: PluginConfig, waitContext: WorkerWaitExecutionContext): void {
+  const unreadNudge = getExistingUnreadNudge(state, waitContext.sessionId, config)
+  if (unreadNudge && !waitContext.nudgeEvent) markWaitInterruptedByNudge(waitContext, unreadNudge)
+}
+
+function markWaitInterruptedByNudge(waitContext: WorkerWaitExecutionContext, nudgeEvent: WorkerWaitNudgeEvent): void {
+  waitContext.interruptedByNudge = true
+  waitContext.nudgeEvent = nudgeEvent
+}
+
+function workerWaitResponse(waitContext: WorkerWaitExecutionContext, timedOut: boolean) {
+  return { title: "Worker Wait", output: JSON.stringify(buildWorkerWaitPayload(waitContext, timedOut), null, 2) }
+}
+
+function buildWorkerWaitPayload(waitContext: WorkerWaitExecutionContext, timedOut: boolean): MultiWorkerWaitResult {
+  return {
+    waitFor: waitContext.waitFor,
+    workerIds: waitContext.workerIds,
+    results: waitContext.workerIds
+      .filter((workerId) => waitContext.completedResults.has(workerId))
+      .map((workerId) => waitContext.completedResults.get(workerId)!),
+    pendingWorkerIds: waitContext.pendingWorkerIds,
+    interruptedByNudge: waitContext.interruptedByNudge,
+    ...(waitContext.nudgeEvent !== undefined ? { nudgeEvent: waitContext.nudgeEvent } : {}),
+    timedOut,
+  }
 }
 
 // ─── Worker Cancel Tool ──────────────────────────────────────────────────────
@@ -1104,69 +1195,10 @@ export function createWorkerInspectTool(
         includeActivity,
       })
 
-      const fetched = await client.fetchWorker(args.workerId)
-      if (!fetched) {
-        throw new Error(`Worker "${args.workerId}" not found`)
-      }
-
-      const mapped = mapAgentToWorkerSummary(fetched.agent)
-      const existing = state.workers.get(args.workerId)
-      if (existing) {
-        mapped.unreadEventCount = existing.unreadEventCount
-      }
-      upsertWorker(state, mapped)
-      onWorkerObserved?.(mapped)
-      const worker = mapped
-
-      const snapshot: WorkerInspectResponse["worker"] = {
-        id: mapped.id,
-        title: mapped.title,
-        status: mapped.status,
-        rawStatus: mapped.rawStatus ?? fetched.agent.status ?? null,
-        cwd: mapped.cwd,
-        provider: mapped.provider,
-        model: mapped.model,
-        currentModeId: mapped.currentModeId,
-        ...(mapped.chatRoom !== undefined ? { chatRoom: mapped.chatRoom } : {}),
-        ...(mapped.worktreePath !== undefined ? { worktreePath: mapped.worktreePath } : {}),
-        ...(mapped.branchName !== undefined ? { branchName: mapped.branchName } : {}),
-        ...(mapped.createdAt !== undefined ? { createdAt: mapped.createdAt } : {}),
-        ...(mapped.updatedAt !== undefined ? { updatedAt: mapped.updatedAt } : {}),
-        source: "daemon",
-      }
-
-      // Optional activity fetch
-      let activity: WorkerActivitySummary | null = null
+      const { fetched, worker } = await fetchAndStoreWorkerSnapshot(state, client, args.workerId, onWorkerObserved)
       const activityFetched = Boolean(includeActivity)
-      if (activityFetched) {
-        const activityResult = await client.fetchWorkerActivity({
-          workerId: args.workerId,
-          ...compactDefined({ limit: activityLimit }),
-        })
-        activity = activityResult.activity
-      }
-
-      const activityState = deriveActivityState(worker, activity, activityFetched)
-      const progress = deriveProgressSummary(worker, activityState, activity, activityFetched)
-      const output: WorkerInspectResponse = {
-        worker: snapshot,
-        attention: {
-          pendingPermissionIds: worker.pendingPermissionIds,
-          pendingPermissionCount: worker.pendingPermissions.length,
-          blockingAction: getBlockingAction(worker),
-          requiresAttention: worker.requiresAttention,
-          attentionReason: worker.attentionReason,
-        },
-        progress: {
-          activityState,
-          summary: progress.summary,
-          lastMeaningfulUpdate: progress.lastMeaningfulUpdate,
-          readyForDependentWork: deriveReadyForDependentWork(worker.status),
-        },
-      }
-      if (includeActivity) {
-        output.activity = activity
-      }
+      const activity = await fetchInspectActivity(client, args.workerId, activityFetched, activityLimit)
+      const output = buildWorkerInspectResponse(fetched.agent.status, worker, activity, activityFetched)
 
       return {
         title: `Worker Inspect: ${args.workerId}`,
@@ -1174,4 +1206,93 @@ export function createWorkerInspectTool(
       }
     },
   })
+}
+
+async function fetchAndStoreWorkerSnapshot(
+  state: PluginState,
+  client: PaseoTransport,
+  workerId: string,
+  onWorkerObserved?: WorkerRefreshObserver,
+) {
+  const fetched = await client.fetchWorker(workerId)
+  if (!fetched) throw new Error(`Worker "${workerId}" not found`)
+  const worker = mapAgentToWorkerSummary(fetched.agent)
+  const existing = state.workers.get(workerId)
+  if (existing) worker.unreadEventCount = existing.unreadEventCount
+  upsertWorker(state, worker)
+  onWorkerObserved?.(worker)
+  return { fetched, worker }
+}
+
+async function fetchInspectActivity(
+  client: PaseoTransport,
+  workerId: string,
+  includeActivity: boolean,
+  activityLimit: number | undefined,
+): Promise<WorkerActivitySummary | null> {
+  if (!includeActivity) return null
+  const activityResult = await client.fetchWorkerActivity({ workerId, ...compactDefined({ limit: activityLimit }) })
+  return activityResult.activity
+}
+
+function buildWorkerInspectResponse(
+  rawAgentStatus: string | undefined,
+  worker: WorkerSummary,
+  activity: WorkerActivitySummary | null,
+  activityFetched: boolean,
+): WorkerInspectResponse {
+  const activityState = deriveActivityState(worker, activity, activityFetched)
+  return {
+    worker: buildWorkerInspectSnapshot(rawAgentStatus, worker),
+    attention: buildWorkerInspectAttention(worker),
+    progress: buildWorkerInspectProgress(worker, activityState, activity, activityFetched),
+    ...(activityFetched ? { activity } : {}),
+  }
+}
+
+function buildWorkerInspectSnapshot(
+  rawAgentStatus: string | undefined,
+  worker: WorkerSummary,
+): WorkerInspectResponse["worker"] {
+  return {
+    id: worker.id,
+    title: worker.title,
+    status: worker.status,
+    rawStatus: worker.rawStatus ?? rawAgentStatus ?? null,
+    cwd: worker.cwd,
+    provider: worker.provider,
+    model: worker.model,
+    currentModeId: worker.currentModeId,
+    ...(worker.chatRoom !== undefined ? { chatRoom: worker.chatRoom } : {}),
+    ...(worker.worktreePath !== undefined ? { worktreePath: worker.worktreePath } : {}),
+    ...(worker.branchName !== undefined ? { branchName: worker.branchName } : {}),
+    ...(worker.createdAt !== undefined ? { createdAt: worker.createdAt } : {}),
+    ...(worker.updatedAt !== undefined ? { updatedAt: worker.updatedAt } : {}),
+    source: "daemon",
+  }
+}
+
+function buildWorkerInspectAttention(worker: WorkerSummary): WorkerInspectResponse["attention"] {
+  return {
+    pendingPermissionIds: worker.pendingPermissionIds,
+    pendingPermissionCount: worker.pendingPermissions.length,
+    blockingAction: getBlockingAction(worker),
+    requiresAttention: worker.requiresAttention,
+    attentionReason: worker.attentionReason,
+  }
+}
+
+function buildWorkerInspectProgress(
+  worker: WorkerSummary,
+  activityState: InspectActivityState,
+  activity: WorkerActivitySummary | null,
+  activityFetched: boolean,
+): WorkerInspectResponse["progress"] {
+  const progress = deriveProgressSummary(worker, activityState, activity, activityFetched)
+  return {
+    activityState,
+    summary: progress.summary,
+    lastMeaningfulUpdate: progress.lastMeaningfulUpdate,
+    readyForDependentWork: deriveReadyForDependentWork(worker.status),
+  }
 }

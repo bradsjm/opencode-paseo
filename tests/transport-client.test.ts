@@ -453,6 +453,95 @@ test("PaseoClient implements extended worker transport methods", () => {
   }
 })
 
+test("PaseoClient.updateWorker applies metadata and settings independently", async (t) => {
+  const makeClient = (daemon: Record<string, unknown>) => {
+    const client = new PaseoClient({
+      host: "127.0.0.1",
+      port: 1,
+      connectionTimeoutMs: 100,
+    })
+    ;(client as any).daemon = daemon
+    return client
+  }
+
+  await t.test("metadata-only update calls updateAgent", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = []
+    const client = makeClient({
+      updateAgent: async (workerId: string, updates: Record<string, unknown>) => calls.push([workerId, updates]),
+    })
+
+    const result = await client.updateWorker({ workerId: "w1", name: "Worker", labels: { lane: "main" } })
+
+    assert.deepEqual(calls, [["w1", { name: "Worker", labels: { lane: "main" } }]])
+    assert.deepEqual(result, {
+      workerId: "w1",
+      updated: true,
+      metadataUpdated: true,
+      settingsUpdated: false,
+      errors: [],
+    })
+  })
+
+  await t.test("settings-only update preserves null clear semantics and feature values", async () => {
+    const calls: string[] = []
+    const client = makeClient({
+      setAgentMode: async (_workerId: string, modeId: string) => calls.push(`mode:${modeId}`),
+      setAgentModel: async (_workerId: string, model: string | null) => calls.push(`model:${String(model)}`),
+      setAgentThinkingOption: async (_workerId: string, thinkingOptionId: string | null) =>
+        calls.push(`thinking:${String(thinkingOptionId)}`),
+      setAgentFeature: async (_workerId: string, featureId: string, value: unknown) =>
+        calls.push(`feature:${featureId}:${String(value)}`),
+    })
+
+    const result = await client.updateWorker({
+      workerId: "w2",
+      settings: {
+        modeId: "build",
+        model: null,
+        thinkingOptionId: null,
+        features: { web: true, level: 2 },
+      },
+    })
+
+    assert.deepEqual(calls, ["mode:build", "model:null", "thinking:null", "feature:web:true", "feature:level:2"])
+    assert.equal(result.updated, true)
+    assert.equal(result.metadataUpdated, false)
+    assert.equal(result.settingsUpdated, true)
+    assert.deepEqual(result.errors, [])
+  })
+
+  await t.test("mixed failures aggregate errors while successful steps mark updated", async () => {
+    const client = makeClient({
+      updateAgent: async () => {
+        throw new Error("metadata rejected")
+      },
+      setAgentMode: async () => {},
+      setAgentModel: async () => {
+        throw new Error("model rejected")
+      },
+      setAgentThinkingOption: async () => {},
+      setAgentFeature: async (_workerId: string, featureId: string) => {
+        if (featureId === "bad") throw new Error("feature rejected")
+      },
+    })
+
+    const result = await client.updateWorker({
+      workerId: "w3",
+      name: "Worker",
+      settings: { modeId: "build", model: "gpt", thinkingOptionId: null, features: { ok: true, bad: false } },
+    })
+
+    assert.equal(result.updated, true)
+    assert.equal(result.metadataUpdated, false)
+    assert.equal(result.settingsUpdated, true)
+    assert.deepEqual(result.errors, [
+      "metadata update failed: metadata rejected",
+      "setAgentModel failed: model rejected",
+      "setAgentFeature(bad) failed: feature rejected",
+    ])
+  })
+})
+
 // ─── createWorker Payload Assembly ───────────────────────────────────────────
 
 test("PaseoClient.createWorker always sets background and detached to true", async () => {
