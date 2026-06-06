@@ -384,6 +384,24 @@ test("paseo_terminal_capture", async (t) => {
     assert.deepEqual(received, { terminalId: "t1", stripAnsi: true })
     assert.deepEqual(output, { terminalId: "t1", lines: [], totalLines: 0 })
   })
+
+  await t.test("treats null capture options as omitted and keeps default stripAnsi", async () => {
+    const state = createPluginState()
+    let received: Record<string, unknown> | undefined
+    const client = createMockTransport({
+      captureTerminal: async (opts) => {
+        received = opts as unknown as Record<string, unknown>
+        return { terminalId: opts.terminalId, lines: [], totalLines: 0 }
+      },
+    })
+
+    await createTerminalCaptureTool(state, client, logger).execute(
+      { terminalId: "t1", start: null, end: null, scrollback: null, stripAnsi: null },
+      mockContext(),
+    )
+
+    assert.deepEqual(received, { terminalId: "t1", stripAnsi: true })
+  })
 })
 
 test("paseo_terminal_list returns daemon terminals only", async () => {
@@ -426,6 +444,22 @@ test("paseo_terminal_list filters by current cwd unless all is true", async () =
   assert.deepEqual(received, ["/tmp", "/other", undefined])
 })
 
+test("paseo_terminal_list treats null optional args as omitted", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  const received: Array<string | undefined> = []
+  const client = createMockTransport({
+    listTerminals: async (cwd) => {
+      received.push(cwd)
+      return []
+    },
+  })
+
+  await createTerminalListTool(state, client, logger).execute({ cwd: null, all: null }, mockContext())
+
+  assert.deepEqual(received, ["/tmp"])
+})
+
 test("paseo_terminal_create creates shell terminal without command or args support", async () => {
   const logger = new Logger(false)
   const state = createPluginState()
@@ -447,4 +481,20 @@ test("paseo_terminal_create creates shell terminal without command or args suppo
   assert.deepEqual(received, { cwd: "/tmp", name: "term", agentId: "agent-1" })
   assert.equal(output.id, "t1")
   assert.equal(output.status, "running")
+})
+
+test("paseo_terminal_create treats null optional args as omitted and uses context cwd", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  let received: Record<string, unknown> | undefined
+  const client = createMockTransport({
+    createTerminal: async (opts) => {
+      received = opts as unknown as Record<string, unknown>
+      return { id: "t1", name: "t1", title: "Term 1", cwd: opts.cwd }
+    },
+  })
+
+  await createTerminalCreateTool(state, client, logger).execute({ cwd: null, name: null, agentId: null }, mockContext())
+
+  assert.deepEqual(received, { cwd: "/tmp" })
 })

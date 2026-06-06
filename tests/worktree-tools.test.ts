@@ -33,6 +33,21 @@ test("paseo_worktree_list", async (t) => {
 
     assert.deepEqual(receivedOptions, { cwd: "/repo" })
   })
+
+  await t.test("treats null repoRoot like omission", async () => {
+    const state = createPluginState()
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      listWorktrees: async (opts) => {
+        receivedOptions = opts
+        return { requestId: "req", worktrees: [], error: null }
+      },
+    })
+
+    await createWorktreeListTool(state, client, logger).execute({ cwd: null, repoRoot: null }, mockContext())
+
+    assert.deepEqual(receivedOptions, { cwd: "/tmp" })
+  })
 })
 
 function seedWorker(state: ReturnType<typeof createPluginState>, id: string): WorkerSummary {
@@ -142,5 +157,23 @@ test("paseo_worktree_archive", async (t) => {
     await toolDef.execute({ worktreePath: "/tmp/wt" }, mockContext())
 
     assert.equal(state.workers.has("w-keep"), true)
+  })
+
+  await t.test("treats null optional archive args as omitted", async () => {
+    const state = createPluginState()
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      archiveWorktree: async (opts) => {
+        receivedOptions = opts
+        return { requestId: "req", success: true, error: null }
+      },
+    })
+
+    await createWorktreeArchiveTool(state, client, logger).execute(
+      { worktreePath: "/tmp/wt", repoRoot: null, branchName: null, cwd: null },
+      mockContext(),
+    )
+
+    assert.deepEqual(receivedOptions, { worktreePath: "/tmp/wt", repoRoot: "/tmp" })
   })
 })

@@ -486,6 +486,37 @@ test("paseo_schedule_update", async (t) => {
     assert.deepEqual(receivedOptions, { id: "sched-3", name: "Renamed" })
   })
 
+  await t.test("treats null optional update args as omitted", async () => {
+    const state = createPluginState()
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      scheduleUpdate: async (opts) => {
+        receivedOptions = opts
+        return { requestId: "req", schedule: null, error: null }
+      },
+    })
+    const opencode = mockOpencodeClient()
+
+    await createScheduleUpdateTool(state, client, opencode, logger).execute(
+      {
+        id: "sched-null",
+        name: null,
+        prompt: null,
+        cadenceType: null,
+        everyMs: null,
+        cronExpression: null,
+        timezone: null,
+        profile: null,
+        cwd: null,
+        maxRuns: null,
+        expiresAt: null,
+      },
+      mockContext(),
+    )
+
+    assert.deepEqual(receivedOptions, { id: "sched-null" })
+  })
+
   await t.test("throws clear error for unknown profile", async () => {
     const state = createPluginState()
     const client = createMockTransport()

@@ -990,6 +990,46 @@ test("paseo_worker_update", async (t) => {
     })
   })
 
+  await t.test("treats ordinary null optionals as omitted but preserves nested clear nulls", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      updateWorker: async (opts) => {
+        receivedOptions = opts
+        return {
+          workerId: opts.workerId,
+          updated: true,
+          metadataUpdated: false,
+          settingsUpdated: true,
+          errors: [],
+        }
+      },
+    })
+
+    await createWorkerUpdateTool(state, client, logger).execute(
+      {
+        workerId: "w1",
+        name: null,
+        labels: null,
+        settings: {
+          modeId: null,
+          model: null,
+          thinkingOptionId: null,
+        },
+      },
+      mockContext(),
+    )
+
+    assert.deepEqual(receivedOptions, {
+      workerId: "w1",
+      settings: {
+        model: null,
+        thinkingOptionId: null,
+      },
+    })
+  })
+
   // ─── Worker Create Tool Tests ──────────────────────────────────────────────
 
   function mockOpencodeClient(
@@ -1101,6 +1141,50 @@ test("paseo_worker_update", async (t) => {
       assert.equal(options.cwd, "/tmp")
       assert.equal(options.initialPrompt, "Solve it")
       assert.equal(options.modeId, "build")
+      assert.equal("worktreeName" in options, false)
+    })
+
+    await t.test("treats null optional metadata like omission", async () => {
+      const state = createPluginState()
+      const opencode = mockOpencodeClient()
+      let receivedOptions: RunWorkerOptions | null = null
+      const client = createMockTransport({
+        runWorker: async (opts) => {
+          receivedOptions = opts
+          return {
+            id: "w-run-null",
+            provider: "opencode",
+            cwd: "/tmp",
+            model: null,
+            status: "running",
+            title: null,
+          }
+        },
+      })
+
+      await createWorkerRunTool(state, client, opencode, logger).execute(
+        {
+          prompt: "Solve it",
+          chatRoom: null,
+          profile: null,
+          cwd: null,
+          worktreeName: null,
+          background: null,
+          labels: null,
+          timeout: null,
+        },
+        mockContext(),
+      )
+
+      assert.ok(receivedOptions)
+      const options = receivedOptions as RunWorkerOptions
+      assert.equal(options.cwd, "/tmp")
+      assert.equal(options.provider, "opencode")
+      assert.equal(options.model, "openai/gpt-5.4")
+      assert.equal(options.modeId, "build")
+      assert.equal(options.initialPrompt, "Solve it")
+      assert.equal(options.background, false)
+      assert.equal("chatRoom" in options, false)
       assert.equal("worktreeName" in options, false)
     })
 
@@ -1604,6 +1688,41 @@ test("paseo_worker_update", async (t) => {
       assert.equal("worktreeName" in receivedOptions, false)
     })
 
+    await t.test("treats null optional create args as omitted", async () => {
+      const state = createPluginState()
+      let receivedOptions: any = null
+      const client = createMockTransport({
+        createWorker: async (opts) => {
+          receivedOptions = opts
+          return {
+            id: "w-null-options",
+            provider: "opencode",
+            cwd: "/tmp",
+            model: null,
+            status: "running" as const,
+            title: null,
+          }
+        },
+      })
+      const opencode = mockOpencodeClient()
+      const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
+
+      await createWorkerCreateTool(opencode, workerLaunchQueue, logger).execute(
+        { chatRoom: null, worktreeName: null, cwd: null, profile: null, initialPrompt: null, labels: null },
+        mockContext(),
+      )
+      await flushAsyncWork()
+
+      assert.equal(receivedOptions.cwd, "/tmp")
+      assert.equal(receivedOptions.profile, "build")
+      assert.equal(receivedOptions.provider, "opencode")
+      assert.equal(receivedOptions.model, "openai/gpt-5.4")
+      assert.equal(receivedOptions.modeId, "build")
+      assert.equal("chatRoom" in receivedOptions, false)
+      assert.equal("worktreeName" in receivedOptions, false)
+      assert.equal("initialPrompt" in receivedOptions, false)
+    })
+
     await t.test("uses coordination block alone when no initial prompt exists", async () => {
       const state = createPluginState()
       let receivedOptions: any = null
@@ -1855,6 +1974,49 @@ test("paseo_worker_update", async (t) => {
     assert.equal(worker.model, "gpt-5")
   })
 
+  await t.test("worker wait defaults survive null optional args", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const client = createMockTransport({
+      waitForWorker: async (workerId) => ({
+        status: "idle",
+        workerId,
+        error: null,
+        lastMessage: null,
+        finalSnapshot: null,
+      }),
+    })
+
+    const result = await createWorkerWaitTool(state, client, TEST_CONFIG, logger).execute(
+      { workerIds: ["w1"], waitFor: null, timeout: null },
+      mockContext(),
+    )
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.waitFor, "all")
+    assert.equal(output.timedOut, false)
+  })
+
+  await t.test("worker cancel treats null forceKill like omission", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    let cancelCalls = 0
+    let killCalls = 0
+    const client = createMockTransport({
+      cancelWorker: async () => {
+        cancelCalls += 1
+      },
+      killWorker: async () => {
+        killCalls += 1
+      },
+    })
+
+    await createWorkerCancelTool(state, client, logger).execute({ workerId: "w1", forceKill: null }, mockContext())
+
+    assert.equal(cancelCalls, 1)
+    assert.equal(killCalls, 0)
+  })
+
   await t.test("handles update with only workerId (no changes)", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
@@ -1888,6 +2050,37 @@ test("paseo_worker_update", async (t) => {
 
 test("paseo_worker_inspect", async (t) => {
   const logger = new Logger(false)
+
+  await t.test("treats null activity options as omitted", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    let activityCalls = 0
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
+      fetchWorkerActivity: async () => {
+        activityCalls += 1
+        return { workerId: "w1", activity: null }
+      },
+    })
+
+    await createWorkerInspectTool(state, client, logger).execute(
+      { workerId: "w1", includeActivity: null, activityLimit: null },
+      mockContext(),
+    )
+
+    assert.equal(activityCalls, 0)
+  })
 
   await t.test("returns snapshot without activity by default", async () => {
     const state = createPluginState()

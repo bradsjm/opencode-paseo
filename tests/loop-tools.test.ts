@@ -252,6 +252,47 @@ test("paseo_loop_run", async (t) => {
     assert.equal(receivedCwd, "/from-context")
   })
 
+  await t.test("treats null optional args as omitted", async () => {
+    let received: Record<string, unknown> | undefined
+    const client = createMockTransport({
+      loopRun: async (options) => {
+        received = options as unknown as Record<string, unknown>
+        return {
+          requestId: "req",
+          loop: { id: "loop-1", iterations: [] },
+          error: null,
+        }
+      },
+    })
+
+    await createLoopRunTool(client, logger).execute(
+      {
+        prompt: "loop",
+        cwd: null,
+        provider: null,
+        model: null,
+        modeId: null,
+        verifierProvider: null,
+        verifierModel: null,
+        verifierModeId: null,
+        verifyPrompt: null,
+        verifyChecks: ["pnpm test"],
+        name: null,
+        sleepMs: null,
+        maxIterations: 1,
+        maxTimeMs: null,
+      },
+      mockContext("/ctx"),
+    )
+
+    assert.deepEqual(received, {
+      prompt: "loop",
+      cwd: "/ctx",
+      verifyChecks: ["pnpm test"],
+      maxIterations: 1,
+    })
+  })
+
   await t.test("rejects missing verification mechanisms", async () => {
     const client = createMockTransport()
     await assert.rejects(

@@ -2,6 +2,7 @@ import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
 import type { Logger } from "../logger.js"
 import { readInbox, getInboxStatus } from "../inbox/inbox.js"
+import { collapseNull, compactDefined, nullableOptional, optionalNumber } from "./args.js"
 
 // ─── Inbox Read Tool ─────────────────────────────────────────────────────────
 
@@ -21,28 +22,27 @@ export function createInboxReadTool(state: PluginState, logger: Logger): ToolDef
     description:
       "Read Paseo inbox events with filtering and pagination. Returns unread events, blocking items, and permission requests.",
     args: {
-      unreadOnly: tool.schema.boolean().optional().describe("Only return unread events"),
-      kind: tool.schema.enum(inboxEventKinds).optional().describe("Filter by event kind"),
-      resourceId: tool.schema.string().optional().describe("Filter by resource ID (worker or terminal ID)"),
-      cursor: tool.schema.number().int().optional().describe("Pagination cursor (offset)"),
-      limit: tool.schema.number().int().optional().describe("Maximum events to return"),
-      markRead: tool.schema.boolean().optional().describe("Mark returned events as read"),
+      unreadOnly: nullableOptional(tool.schema.boolean()).describe("Only return unread events"),
+      kind: tool.schema.enum(inboxEventKinds).nullable().optional().describe("Filter by event kind"),
+      resourceId: nullableOptional(tool.schema.string()).describe("Filter by resource ID (worker or terminal ID)"),
+      cursor: nullableOptional(tool.schema.number().int()).describe("Pagination cursor (offset)"),
+      limit: nullableOptional(tool.schema.number().int()).describe("Maximum events to return"),
+      markRead: nullableOptional(tool.schema.boolean()).describe("Mark returned events as read"),
     },
     execute(args) {
       return Promise.resolve().then(() => {
+        const unreadOnly = collapseNull(args.unreadOnly)
+        const kind = collapseNull(args.kind)
+        const resourceId = collapseNull(args.resourceId)
+        const cursor = optionalNumber(args.cursor)
+        const limit = optionalNumber(args.limit)
+        const markRead = collapseNull(args.markRead)
         logger.info("Tool: paseo_inbox_read invoked", {
-          unreadOnly: args.unreadOnly,
-          kind: args.kind,
+          unreadOnly,
+          kind,
         })
 
-        const result = readInbox(state, {
-          ...(args.unreadOnly !== undefined ? { unreadOnly: args.unreadOnly } : {}),
-          ...(args.kind !== undefined ? { kind: args.kind } : {}),
-          ...(args.resourceId !== undefined ? { resourceId: args.resourceId } : {}),
-          ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
-          ...(args.limit !== undefined ? { limit: args.limit } : {}),
-          ...(args.markRead !== undefined ? { markRead: args.markRead } : {}),
-        })
+        const result = readInbox(state, compactDefined({ unreadOnly, kind, resourceId, cursor, limit, markRead }))
 
         return {
           title: "Paseo Inbox",

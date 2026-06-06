@@ -174,6 +174,55 @@ test("chat tools", async (t) => {
     assert.equal(output.message.authorAgentId, "manual")
   })
 
+  await t.test("treats null optional chat args as omitted while preserving defaults", async () => {
+    let postReceived: Record<string, unknown> | undefined
+    let readReceived: Record<string, unknown> | undefined
+    let waitReceived: Record<string, unknown> | undefined
+    const client = createMockTransport({
+      postChatMessage: async (options) => {
+        postReceived = options as unknown as Record<string, unknown>
+        return {
+          requestId: "req-post",
+          message: {
+            id: "msg-1",
+            roomId: options.room,
+            authorAgentId: options.authorAgentId ?? "manual",
+            body: options.body,
+            replyToMessageId: options.replyToMessageId ?? null,
+            mentionAgentIds: [],
+            createdAt: "2024-01-01T00:01:00Z",
+          },
+          error: null,
+        }
+      },
+      readChatMessages: async (options) => {
+        if ((options as { limit?: number }).limit === 1) {
+          return { requestId: "req-read", messages: [], error: null }
+        }
+        readReceived = options as unknown as Record<string, unknown>
+        return { requestId: "req-read", messages: [], error: null }
+      },
+      waitForChatMessages: async (options) => {
+        waitReceived = options as unknown as Record<string, unknown>
+        return { requestId: "req-wait", messages: [], timedOut: true, error: null }
+      },
+    })
+
+    await createChatPostTool(client, logger).execute(
+      { room: "ops", body: "hello", authorAgentId: null, replyToMessageId: null },
+      mockContext(),
+    )
+    await createChatReadTool(client, logger).execute(
+      { room: "ops", limit: null, since: null, authorAgentId: null },
+      mockContext(),
+    )
+    await createChatWaitTool(client, logger).execute({ room: "ops", timeoutMs: null }, mockContext())
+
+    assert.deepEqual(postReceived, { room: "ops", body: "hello", authorAgentId: "manual" })
+    assert.deepEqual(readReceived, { room: "ops" })
+    assert.deepEqual(waitReceived, { room: "ops", afterMessageId: null })
+  })
+
   await t.test("read passes filters through and includes count", async () => {
     let received: Record<string, unknown> | undefined
     const client = createMockTransport({

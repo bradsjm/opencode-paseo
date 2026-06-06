@@ -3,6 +3,7 @@ import type { PluginState } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { getOrCreateSession, recordCreatedTerminal, unbindTerminalFromSessions } from "../state/state.js"
+import { collapseNull, compactDefined, nullableOptional, optionalNumber } from "./args.js"
 
 // ─── Terminal List Tool ──────────────────────────────────────────────────────
 
@@ -12,12 +13,13 @@ export function createTerminalListTool(state: PluginState, client: PaseoTranspor
       "List daemon-reported Paseo terminals. By default lists terminals for the current working directory; " +
       "set all to true to request the daemon's unfiltered terminal list.",
     args: {
-      cwd: tool.schema.string().optional().describe("Filter terminals by working directory"),
-      all: tool.schema.boolean().optional().describe("List all daemon-reported terminals without a cwd filter"),
+      cwd: nullableOptional(tool.schema.string()).describe("Filter terminals by working directory"),
+      all: nullableOptional(tool.schema.boolean()).describe("List all daemon-reported terminals without a cwd filter"),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.all ? undefined : (args.cwd ?? context.directory)
-      logger.info("Tool: paseo_terminal_list invoked", { cwd, all: args.all })
+      const all = collapseNull(args.all)
+      const cwd = all ? undefined : (collapseNull(args.cwd) ?? context.directory)
+      logger.info("Tool: paseo_terminal_list invoked", { cwd, all })
 
       const terminals = await client.listTerminals(cwd)
 
@@ -37,20 +39,19 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
     args: {
       cwd: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe("Working directory for the terminal (defaults to session directory)"),
-      name: tool.schema.string().optional().describe("Human-readable name for the terminal"),
-      agentId: tool.schema.string().optional().describe("Associate terminal with a specific agent"),
+      name: nullableOptional(tool.schema.string()).describe("Human-readable name for the terminal"),
+      agentId: nullableOptional(tool.schema.string()).describe("Associate terminal with a specific agent"),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd ?? context.directory
-      logger.info("Tool: paseo_terminal_create invoked", { cwd, name: args.name })
+      const cwd = collapseNull(args.cwd) ?? context.directory
+      const name = collapseNull(args.name)
+      const agentId = collapseNull(args.agentId)
+      logger.info("Tool: paseo_terminal_create invoked", { cwd, name })
 
-      const result = await client.createTerminal({
-        cwd,
-        ...(args.name !== undefined ? { name: args.name } : {}),
-        ...(args.agentId !== undefined ? { agentId: args.agentId } : {}),
-      })
+      const result = await client.createTerminal({ cwd, ...compactDefined({ name, agentId }) })
 
       // Bind terminal to the session
       const session = getOrCreateSession(state, context.sessionID, context.worktree)
@@ -95,24 +96,32 @@ export function createTerminalCaptureTool(state: PluginState, client: PaseoTrans
       "Use scrollback to request capture from the start of the daemon buffer.",
     args: {
       terminalId: tool.schema.string().describe("ID of the terminal to capture"),
-      start: tool.schema.number().int().optional().describe("Start line/range passed to the daemon capture API"),
-      end: tool.schema.number().int().optional().describe("End line/range passed to the daemon capture API"),
-      scrollback: tool.schema.boolean().optional().describe("Capture from daemon scrollback by setting start to 0"),
-      stripAnsi: tool.schema.boolean().optional().describe("Strip ANSI escape codes from output (default: true)"),
+      start: nullableOptional(tool.schema.number().int()).describe("Start line/range passed to the daemon capture API"),
+      end: nullableOptional(tool.schema.number().int()).describe("End line/range passed to the daemon capture API"),
+      scrollback: nullableOptional(tool.schema.boolean()).describe(
+        "Capture from daemon scrollback by setting start to 0",
+      ),
+      stripAnsi: nullableOptional(tool.schema.boolean()).describe(
+        "Strip ANSI escape codes from output (default: true)",
+      ),
     },
     async execute(args) {
+      const start = optionalNumber(args.start)
+      const end = optionalNumber(args.end)
+      const scrollback = collapseNull(args.scrollback)
+      const stripAnsi = collapseNull(args.stripAnsi) ?? true
       logger.info("Tool: paseo_terminal_capture invoked", {
         terminalId: args.terminalId,
-        start: args.start,
-        end: args.end,
-        scrollback: args.scrollback,
+        start,
+        end,
+        scrollback,
       })
 
       const capture = await client.captureTerminal({
         terminalId: args.terminalId,
-        stripAnsi: args.stripAnsi ?? true,
-        ...(args.scrollback ? { start: 0 } : args.start !== undefined ? { start: args.start } : {}),
-        ...(args.end !== undefined ? { end: args.end } : {}),
+        stripAnsi,
+        ...(scrollback ? { start: 0 } : compactDefined({ start })),
+        ...compactDefined({ end }),
       })
 
       return {

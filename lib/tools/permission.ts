@@ -3,6 +3,7 @@ import type { PluginState } from "../state/types.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { markEventRead } from "../state/state.js"
+import { collapseNull, compactDefined, nullableOptional } from "./args.js"
 
 // ─── Permission Respond Tool ─────────────────────────────────────────────────
 
@@ -18,14 +19,20 @@ export function createPermissionRespondTool(
       workerId: tool.schema.string().describe("ID of the worker requesting permission"),
       permissionId: tool.schema.string().describe("ID of the permission request to respond to"),
       behavior: tool.schema.enum(["allow", "deny"] as const).describe("Whether to allow or deny the permission"),
-      message: tool.schema.string().optional().describe("Optional message to include with a deny response"),
-      interrupt: tool.schema.boolean().optional().describe("Whether to interrupt the worker on deny (default: false)"),
+      message: nullableOptional(tool.schema.string()).describe("Optional message to include with a deny response"),
+      interrupt: nullableOptional(tool.schema.boolean()).describe(
+        "Whether to interrupt the worker on deny (default: false)",
+      ),
       selectedActionId: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe("ID of a specific action to select from the permission request"),
     },
     async execute(args) {
+      const message = collapseNull(args.message)
+      const interrupt = collapseNull(args.interrupt)
+      const selectedActionId = collapseNull(args.selectedActionId)
       logger.info("Tool: paseo_permission_respond invoked", {
         workerId: args.workerId,
         permissionId: args.permissionId,
@@ -36,9 +43,7 @@ export function createPermissionRespondTool(
         workerId: args.workerId,
         permissionId: args.permissionId,
         behavior: args.behavior,
-        ...(args.message !== undefined ? { message: args.message } : {}),
-        ...(args.interrupt !== undefined ? { interrupt: args.interrupt } : {}),
-        ...(args.selectedActionId !== undefined ? { selectedActionId: args.selectedActionId } : {}),
+        ...compactDefined({ message, interrupt, selectedActionId }),
       })
 
       // Mark matching permission events as read

@@ -56,12 +56,7 @@ import {
   createLoopLogsTool,
   createLoopStopTool,
 } from "./lib/tools/loop.js"
-import {
-  createEventHandler,
-  createDaemonEventHandler,
-  createConfigHandler,
-  createToolDefinitionHandler,
-} from "./lib/hooks.js"
+import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 import { resetPluginState } from "./lib/state/state.js"
 import type { WorkerSummary } from "./lib/state/types.js"
 import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
@@ -185,7 +180,6 @@ const server: Plugin = (async (ctx) => {
     },
     event: createEventHandler(state, client, logger, config),
     config: createConfigHandler(config, logger),
-    "tool.definition": createToolDefinitionHandler(tools, logger),
     tool: tools,
   }
 }) satisfies Plugin

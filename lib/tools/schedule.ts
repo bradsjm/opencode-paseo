@@ -3,40 +3,42 @@ import type { PluginState } from "../state/types.js"
 import type { PaseoTransport, ScheduleCadence, ScheduleTarget } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { listProfiles, profileToWorkerFields, resolveProfile, type OpencodeClient } from "../profile.js"
+import {
+  collapseNull,
+  compactDefined,
+  nullableOptional,
+  optionalNonBlankString,
+  optionalNumber,
+  requiredTrimmedString,
+} from "./args.js"
 
 async function resolveScheduleProfileConfig(
   opencodeClient: OpencodeClient,
   profileName: string,
   cwd: string,
 ): Promise<{ provider: string; model?: string; modeId: string }> {
-  const trimmedProfile = profileName.trim()
-  if (!trimmedProfile) {
-    throw new Error("profile must not be empty for 'new-agent' target")
-  }
+  const trimmedProfile = requiredTrimmedString(profileName, "profile")
 
   const profiles = await listProfiles(opencodeClient, cwd)
   const profile = resolveProfile(profiles, trimmedProfile)
   return profileToWorkerFields(profile)
 }
 
-function ensureNonEmptyPrompt(prompt: string | undefined): string | undefined {
-  if (prompt === undefined) {
+function ensureNonEmptyPrompt(prompt: string | null | undefined): string | undefined {
+  if (prompt === undefined || prompt === null) {
     return undefined
   }
-  if (!prompt.trim()) {
-    throw new Error("prompt must not be empty")
-  }
+  requiredTrimmedString(prompt, "prompt")
   return prompt
 }
 
-function optionalNonEmptyString(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  const trimmed = value.trim()
-  return trimmed ? value : undefined
+function optionalNonEmptyString(value: string | null | undefined): string | undefined {
+  return optionalNonBlankString(value)
 }
 
-function optionalPositiveInteger(value: number | undefined): number | undefined {
-  return value !== undefined && value > 0 ? value : undefined
+function optionalPositiveInteger(value: number | null | undefined): number | undefined {
+  const normalized = optionalNumber(value)
+  return normalized !== undefined && normalized > 0 ? normalized : undefined
 }
 
 function buildScheduleCadence(args: {
@@ -60,7 +62,7 @@ function buildScheduleCadence(args: {
   return {
     type: "cron",
     expression: args.cronExpression,
-    ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
+    ...compactDefined({ timezone: args.timezone }),
   }
 }
 
@@ -148,46 +150,66 @@ export function createScheduleCreateTool(
       "cannot currently be parent-linked by this plugin because the upstream schedule payload exposes no labels field.",
     args: {
       prompt: tool.schema.string().describe("Prompt to execute on each scheduled run"),
-      name: tool.schema.string().optional().describe("Human-readable name for the schedule"),
+      name: nullableOptional(tool.schema.string()).describe("Human-readable name for the schedule"),
       cadenceType: tool.schema
         .enum(["every", "cron"])
         .describe("Cadence type: 'every' for interval-based, 'cron' for cron expression"),
       everyMs: tool.schema
         .number()
         .int()
+        .nullable()
         .optional()
         .describe("Interval in milliseconds (required when cadenceType is 'every')"),
-      cronExpression: tool.schema.string().optional().describe("Cron expression (required when cadenceType is 'cron')"),
-      timezone: tool.schema.string().optional().describe("IANA timezone for cron schedules (e.g. 'America/New_York')"),
+      cronExpression: nullableOptional(tool.schema.string()).describe(
+        "Cron expression (required when cadenceType is 'cron')",
+      ),
+      timezone: nullableOptional(tool.schema.string()).describe(
+        "IANA timezone for cron schedules (e.g. 'America/New_York')",
+      ),
       targetType: tool.schema
         .enum(["agent", "new-agent"])
         .describe("Target type: 'agent' (existing) or 'new-agent' (spawn new)"),
-      agentId: tool.schema.string().optional().describe("Agent ID (required for 'agent' target type)"),
+      agentId: nullableOptional(tool.schema.string()).describe("Agent ID (required for 'agent' target type)"),
       profile: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe("OpenCode profile name for 'new-agent' target. Required for scheduled new-agent runs."),
       cwd: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe("Working directory (required for 'new-agent' target, defaults to session directory)"),
-      maxRuns: tool.schema.number().int().optional().describe("Maximum number of executions before the schedule stops"),
-      expiresAt: tool.schema.string().optional().describe("ISO 8601 timestamp after which the schedule stops"),
-      runOnCreate: tool.schema.boolean().optional().describe("Whether to execute immediately upon creation"),
+      maxRuns: nullableOptional(tool.schema.number().int()).describe(
+        "Maximum number of executions before the schedule stops",
+      ),
+      expiresAt: nullableOptional(tool.schema.string()).describe("ISO 8601 timestamp after which the schedule stops"),
+      runOnCreate: nullableOptional(tool.schema.boolean()).describe("Whether to execute immediately upon creation"),
     },
     async execute(args, context: ToolContext) {
+      const prompt = ensureNonEmptyPrompt(args.prompt)
+      if (!prompt) {
+        throw new Error("prompt must not be empty")
+      }
+      const name = collapseNull(args.name)
+      const everyMs = optionalNumber(args.everyMs)
+      const cronExpression = collapseNull(args.cronExpression)
+      const timezone = collapseNull(args.timezone)
+      const agentId = collapseNull(args.agentId)
+      const profile = optionalNonEmptyString(args.profile)
+      const cwd = collapseNull(args.cwd) ?? context.directory
+      const maxRuns = optionalNumber(args.maxRuns)
+      const expiresAt = collapseNull(args.expiresAt)
+      const runOnCreate = collapseNull(args.runOnCreate)
       logger.info("Tool: paseo_schedule_create invoked", {
-        name: args.name,
+        name,
         cadenceType: args.cadenceType,
         targetType: args.targetType,
       })
 
-      ensureNonEmptyPrompt(args.prompt)
       const cadence = buildScheduleCadence({
         cadenceType: args.cadenceType,
-        ...(args.everyMs !== undefined ? { everyMs: args.everyMs } : {}),
-        ...(args.cronExpression !== undefined ? { cronExpression: args.cronExpression } : {}),
-        ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
+        ...compactDefined({ everyMs, cronExpression, timezone }),
       })
       if (!cadence) {
         throw new Error("cadenceType is required")
@@ -197,38 +219,31 @@ export function createScheduleCreateTool(
 
       switch (args.targetType) {
         case "agent":
-          if (args.profile?.trim()) {
+          if (profile) {
             throw new Error(`profile is only supported for target type 'new-agent'`)
           }
-          if (!args.agentId) {
+          if (!agentId) {
             throw new Error(`agentId is required for target type '${args.targetType}'`)
           }
-          target = { type: args.targetType, agentId: args.agentId }
+          target = { type: args.targetType, agentId }
           break
         case "new-agent": {
-          const cwd = args.cwd ?? context.directory
           if (!cwd) {
             throw new Error("cwd is required for 'new-agent' target")
           }
-          if (!args.profile?.trim()) {
+          if (!profile) {
             throw new Error("profile is required for 'new-agent' target")
           }
 
-          const resolvedProfile = await resolveValidatedScheduleProfile(
-            client,
-            opencodeClient,
-            logger,
-            args.profile,
-            cwd,
-          )
+          const resolvedProfile = await resolveValidatedScheduleProfile(client, opencodeClient, logger, profile, cwd)
 
           target = {
             type: "new-agent",
             config: {
               provider: resolvedProfile.provider,
               cwd,
-              ...(resolvedProfile.model !== undefined ? { model: resolvedProfile.model } : {}),
               modeId: resolvedProfile.modeId,
+              ...compactDefined({ model: resolvedProfile.model }),
             },
           }
           break
@@ -236,13 +251,10 @@ export function createScheduleCreateTool(
       }
 
       const result = await client.scheduleCreate({
-        prompt: args.prompt,
-        ...(args.name !== undefined ? { name: args.name } : {}),
+        prompt,
         cadence,
         target,
-        ...(args.maxRuns !== undefined ? { maxRuns: args.maxRuns } : {}),
-        ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
-        ...(args.runOnCreate !== undefined ? { runOnCreate: args.runOnCreate } : {}),
+        ...compactDefined({ name, maxRuns, expiresAt, runOnCreate }),
       })
 
       return {
@@ -277,20 +289,23 @@ export function createScheduleUpdateTool(
       "exposes no labels field.",
     args: {
       id: tool.schema.string().describe("ID of the schedule to update"),
-      name: tool.schema.string().optional().describe("New human-readable name"),
-      prompt: tool.schema.string().optional().describe("New prompt for scheduled runs"),
-      cadenceType: tool.schema.enum(["every", "cron"]).optional().describe("New cadence type"),
-      everyMs: tool.schema.number().int().optional().describe("New interval in milliseconds (for 'every' cadence)"),
-      cronExpression: tool.schema.string().optional().describe("New cron expression (for 'cron' cadence)"),
-      timezone: tool.schema.string().optional().describe("New IANA timezone (for 'cron' cadence)"),
-      profile: tool.schema.string().optional().describe("New OpenCode profile for new-agent schedules"),
-      cwd: tool.schema.string().optional().describe("New working directory for new-agent schedules"),
-      maxRuns: tool.schema.number().int().optional().describe("New maximum number of executions"),
-      expiresAt: tool.schema.string().optional().describe("New ISO 8601 expiration timestamp"),
+      name: nullableOptional(tool.schema.string()).describe("New human-readable name"),
+      prompt: nullableOptional(tool.schema.string()).describe("New prompt for scheduled runs"),
+      cadenceType: tool.schema.enum(["every", "cron"]).nullable().optional().describe("New cadence type"),
+      everyMs: nullableOptional(tool.schema.number().int()).describe(
+        "New interval in milliseconds (for 'every' cadence)",
+      ),
+      cronExpression: nullableOptional(tool.schema.string()).describe("New cron expression (for 'cron' cadence)"),
+      timezone: nullableOptional(tool.schema.string()).describe("New IANA timezone (for 'cron' cadence)"),
+      profile: nullableOptional(tool.schema.string()).describe("New OpenCode profile for new-agent schedules"),
+      cwd: nullableOptional(tool.schema.string()).describe("New working directory for new-agent schedules"),
+      maxRuns: nullableOptional(tool.schema.number().int()).describe("New maximum number of executions"),
+      expiresAt: nullableOptional(tool.schema.string()).describe("New ISO 8601 expiration timestamp"),
     },
     async execute(args, context: ToolContext) {
       logger.info("Tool: paseo_schedule_update invoked", { id: args.id })
 
+      const name = collapseNull(args.name)
       const prompt = optionalNonEmptyString(args.prompt)
       const cronExpression = optionalNonEmptyString(args.cronExpression)
       const timezone = optionalNonEmptyString(args.timezone)
@@ -301,19 +316,14 @@ export function createScheduleUpdateTool(
       const maxRuns = optionalPositiveInteger(args.maxRuns)
 
       const cadence = buildScheduleCadence({
-        ...(args.cadenceType !== undefined ? { cadenceType: args.cadenceType } : {}),
-        ...(everyMs !== undefined ? { everyMs } : {}),
-        ...(cronExpression !== undefined ? { cronExpression } : {}),
-        ...(timezone !== undefined ? { timezone } : {}),
+        ...compactDefined({ cadenceType: args.cadenceType ?? undefined, everyMs, cronExpression, timezone }),
       })
 
       // Build optional newAgentConfig
       let newAgentConfig: { provider?: string; model?: string | null; modeId?: string | null; cwd?: string } | undefined
 
       if (profile || cwd) {
-        newAgentConfig = {
-          ...(cwd !== undefined ? { cwd } : {}),
-        }
+        newAgentConfig = compactDefined({ cwd })
       }
 
       ensureNonEmptyPrompt(prompt)
@@ -329,12 +339,7 @@ export function createScheduleUpdateTool(
 
       const result = await client.scheduleUpdate({
         id: args.id,
-        ...(args.name !== undefined ? { name: args.name } : {}),
-        ...(prompt !== undefined ? { prompt } : {}),
-        ...(cadence !== undefined ? { cadence } : {}),
-        ...(newAgentConfig !== undefined ? { newAgentConfig } : {}),
-        ...(maxRuns !== undefined ? { maxRuns } : {}),
-        ...(expiresAt !== undefined ? { expiresAt } : {}),
+        ...compactDefined({ name, prompt, cadence, newAgentConfig, maxRuns, expiresAt }),
       })
 
       return {

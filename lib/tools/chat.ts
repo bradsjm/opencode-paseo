@@ -2,6 +2,7 @@ import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { normalizeChatRoom } from "../chat/worker-room.js"
+import { collapseNull, compactDefined, nullableOptional, optionalNumber } from "./args.js"
 
 function requireChatRoom(room: string): string {
   const normalized = normalizeChatRoom(room)
@@ -16,15 +17,13 @@ export function createChatCreateTool(client: PaseoTransport, logger: Logger): To
     description: "Create a new Paseo chat room.",
     args: {
       name: tool.schema.string().describe("Name of the chat room to create"),
-      purpose: tool.schema.string().optional().describe("Optional room purpose"),
+      purpose: nullableOptional(tool.schema.string()).describe("Optional room purpose"),
     },
     async execute(args) {
       const name = requireChatRoom(args.name)
+      const purpose = collapseNull(args.purpose)
       logger.info("Tool: paseo_chat_create invoked", { name })
-      const result = await client.createChatRoom({
-        name,
-        ...(args.purpose !== undefined ? { purpose: args.purpose } : {}),
-      })
+      const result = await client.createChatRoom({ name, ...compactDefined({ purpose }) })
       return {
         title: `Chat Room Created: ${name}`,
         output: JSON.stringify(result, null, 2),
@@ -90,21 +89,23 @@ export function createChatPostTool(client: PaseoTransport, logger: Logger): Tool
     args: {
       room: tool.schema.string().describe("Name of the chat room to post into"),
       body: tool.schema.string().describe("Message body to post"),
-      authorAgentId: tool.schema.string().optional().describe('Optional author agent ID. Defaults to "manual".'),
-      replyToMessageId: tool.schema.string().optional().describe("Optional message ID to reply to"),
+      authorAgentId: nullableOptional(tool.schema.string()).describe('Optional author agent ID. Defaults to "manual".'),
+      replyToMessageId: nullableOptional(tool.schema.string()).describe("Optional message ID to reply to"),
     },
     async execute(args) {
       const room = requireChatRoom(args.room)
+      const authorAgentId = collapseNull(args.authorAgentId) ?? "manual"
+      const replyToMessageId = collapseNull(args.replyToMessageId)
       logger.info("Tool: paseo_chat_post invoked", {
         room,
         bodyLength: args.body.length,
-        authorAgentId: args.authorAgentId ?? "manual",
+        authorAgentId,
       })
       const result = await client.postChatMessage({
         room,
         body: args.body,
-        authorAgentId: args.authorAgentId ?? "manual",
-        ...(args.replyToMessageId !== undefined ? { replyToMessageId: args.replyToMessageId } : {}),
+        authorAgentId,
+        ...compactDefined({ replyToMessageId }),
       })
       return {
         title: `Chat Message Posted: ${room}`,
@@ -119,24 +120,22 @@ export function createChatReadTool(client: PaseoTransport, logger: Logger): Tool
     description: "Read chat messages from a Paseo room.",
     args: {
       room: tool.schema.string().describe("Name of the chat room to read"),
-      limit: tool.schema.number().int().optional().describe("Maximum number of messages"),
-      since: tool.schema.string().optional().describe("Only return messages created after this timestamp"),
-      authorAgentId: tool.schema.string().optional().describe("Optional author agent ID filter"),
+      limit: nullableOptional(tool.schema.number().int()).describe("Maximum number of messages"),
+      since: nullableOptional(tool.schema.string()).describe("Only return messages created after this timestamp"),
+      authorAgentId: nullableOptional(tool.schema.string()).describe("Optional author agent ID filter"),
     },
     async execute(args) {
       const room = requireChatRoom(args.room)
+      const limit = optionalNumber(args.limit)
+      const since = collapseNull(args.since)
+      const authorAgentId = collapseNull(args.authorAgentId)
       logger.info("Tool: paseo_chat_read invoked", {
         room,
-        limit: args.limit,
-        since: args.since,
-        authorAgentId: args.authorAgentId,
+        limit,
+        since,
+        authorAgentId,
       })
-      const result = await client.readChatMessages({
-        room,
-        ...(args.limit !== undefined ? { limit: args.limit } : {}),
-        ...(args.since !== undefined ? { since: args.since } : {}),
-        ...(args.authorAgentId !== undefined ? { authorAgentId: args.authorAgentId } : {}),
-      })
+      const result = await client.readChatMessages({ room, ...compactDefined({ limit, since, authorAgentId }) })
       return {
         title: `Chat Messages: ${room}`,
         output: JSON.stringify({ ...result, count: result.messages.length }, null, 2),
@@ -151,19 +150,16 @@ export function createChatWaitTool(client: PaseoTransport, logger: Logger): Tool
       "Wait for new chat messages in a Paseo room. Reads the latest message first and waits for anything newer.",
     args: {
       room: tool.schema.string().describe("Name of the chat room to wait on"),
-      timeoutMs: tool.schema.number().int().optional().describe("Maximum time to wait in milliseconds"),
+      timeoutMs: nullableOptional(tool.schema.number().int()).describe("Maximum time to wait in milliseconds"),
     },
     async execute(args) {
       const room = requireChatRoom(args.room)
-      logger.info("Tool: paseo_chat_wait invoked", { room, timeoutMs: args.timeoutMs })
+      const timeoutMs = optionalNumber(args.timeoutMs)
+      logger.info("Tool: paseo_chat_wait invoked", { room, timeoutMs })
 
       const latest = await client.readChatMessages({ room, limit: 1 })
       const afterMessageId = latest.messages[0]?.id ?? null
-      const result = await client.waitForChatMessages({
-        room,
-        afterMessageId,
-        ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
-      })
+      const result = await client.waitForChatMessages({ room, afterMessageId, ...compactDefined({ timeoutMs }) })
 
       return {
         title: `Chat Wait: ${room}`,

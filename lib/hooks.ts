@@ -5,7 +5,6 @@ import type { PaseoTransport } from "./transport/types.js"
 import type { Config } from "@opencode-ai/plugin"
 import { listEphemeralWorkerIdsForSession, removeEphemeralWorkerRun, removeSession } from "./state/state.js"
 export { createDaemonEventHandler } from "./hooks/daemon-events.js"
-export { createToolDefinitionHandler } from "./hooks/tool-definition.js"
 
 // ─── Event Handler Factory ───────────────────────────────────────────────────
 

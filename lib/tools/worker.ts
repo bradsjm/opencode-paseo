@@ -33,11 +33,10 @@ import {
   markResourceEventsRead,
 } from "../state/state.js"
 import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
+import { collapseNull, compactDefined, nullableOptional, optionalNonBlankString, optionalNumber } from "./args.js"
 
-function optionalNonEmptyString(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  const trimmed = value.trim()
-  return trimmed ? value : undefined
+function optionalNonEmptyString(value: string | null | undefined): string | undefined {
+  return optionalNonBlankString(value)
 }
 
 type WorkerRefreshObserver = (worker: WorkerSummary, observedLaunchId?: string) => void
@@ -139,25 +138,37 @@ export function createWorkerCreateTool(
       "Use paseo_worker_launch_status to check launch progress and worker ID once created. When the plugin runs inside " +
       "a Paseo agent environment, it also sets the reserved paseo.parent-agent-id label automatically.",
     args: {
-      cwd: tool.schema.string().optional().describe("Working directory for the worker (defaults to session directory)"),
+      cwd: nullableOptional(tool.schema.string()).describe(
+        "Working directory for the worker (defaults to session directory)",
+      ),
       profile: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe(
           `OpenCode profile name to use (default: "${DEFAULT_PROFILE}"). Use paseo_profile_list to see available profiles.`,
         ),
-      initialPrompt: tool.schema.string().optional().describe("Initial prompt to send to the worker on creation"),
+      initialPrompt: nullableOptional(tool.schema.string()).describe(
+        "Initial prompt to send to the worker on creation",
+      ),
       labels: tool.schema
         .record(tool.schema.string(), tool.schema.string())
+        .nullable()
         .optional()
         .describe("Key-value labels to attach to the worker"),
-      worktreeName: tool.schema.string().optional().describe("Name for a git worktree to create for this worker"),
-      chatRoom: tool.schema.string().optional().describe("Optional Paseo chat room to coordinate this worker through"),
+      worktreeName: nullableOptional(tool.schema.string()).describe(
+        "Name for a git worktree to create for this worker",
+      ),
+      chatRoom: nullableOptional(tool.schema.string()).describe(
+        "Optional Paseo chat room to coordinate this worker through",
+      ),
     },
     async execute(args, context: ToolContext) {
       const cwd = optionalNonEmptyString(args.cwd) ?? context.directory
       const chatRoom = normalizeChatRoom(optionalNonEmptyString(args.chatRoom))
       const worktreeName = optionalNonEmptyString(args.worktreeName)
+      const initialPrompt = collapseNull(args.initialPrompt)
+      const labels = collapseNull(args.labels)
       const { profileName, workerFields } = await resolveWorkerProfileFields(
         opencodeClient,
         cwd,
@@ -169,25 +180,21 @@ export function createWorkerCreateTool(
         profile: profileName,
       })
 
+      const queuedPrompt = chatRoom ? appendChatRoomCoordinationPrompt(initialPrompt, chatRoom) : initialPrompt
       const receipt = workerLaunchQueue.enqueueWorkerLaunch({
         sessionId: context.sessionID,
         projectRoot: context.worktree ?? context.directory,
         profile: profileName,
         provider: workerFields.provider,
-        ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
+        ...compactDefined({ model: workerFields.model }),
         modeId: workerFields.modeId,
         cwd,
-        ...((chatRoom ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom) : args.initialPrompt) !==
-        undefined
-          ? {
-              initialPrompt: chatRoom
-                ? appendChatRoomCoordinationPrompt(args.initialPrompt, chatRoom)
-                : args.initialPrompt,
-            }
-          : {}),
-        ...(chatRoom !== undefined ? { chatRoom } : {}),
-        ...(args.labels !== undefined ? { labels: args.labels } : {}),
-        ...(worktreeName !== undefined ? { worktreeName } : {}),
+        ...compactDefined({
+          initialPrompt: queuedPrompt,
+          chatRoom,
+          labels,
+          worktreeName,
+        }),
       })
 
       void workerLaunchQueue.drainWorkerLaunchQueue()
@@ -278,26 +285,36 @@ export function createWorkerRunTool(
       "it also sets the reserved paseo.parent-agent-id label automatically.",
     args: {
       prompt: tool.schema.string().describe("Prompt to execute on the worker"),
-      cwd: tool.schema.string().optional().describe("Working directory for the worker (defaults to session directory)"),
+      cwd: nullableOptional(tool.schema.string()).describe(
+        "Working directory for the worker (defaults to session directory)",
+      ),
       profile: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe(
           `OpenCode profile name to use (default: "${DEFAULT_PROFILE}"). Use paseo_profile_list to see available profiles.`,
         ),
       background: tool.schema
         .boolean()
+        .nullable()
         .optional()
         .describe("If true, return immediately instead of waiting for completion"),
-      worktreeName: tool.schema.string().optional().describe("Name for a git worktree to create for this worker"),
-      chatRoom: tool.schema.string().optional().describe("Optional Paseo chat room to coordinate this worker through"),
+      worktreeName: nullableOptional(tool.schema.string()).describe(
+        "Name for a git worktree to create for this worker",
+      ),
+      chatRoom: nullableOptional(tool.schema.string()).describe(
+        "Optional Paseo chat room to coordinate this worker through",
+      ),
       labels: tool.schema
         .record(tool.schema.string(), tool.schema.string())
+        .nullable()
         .optional()
         .describe("Key-value labels to attach to the worker"),
       timeout: tool.schema
         .number()
         .int()
+        .nullable()
         .optional()
         .describe(
           `Maximum time to wait in milliseconds when background is false (default: ${DEFAULT_WAIT_TIMEOUT_MS})`,
@@ -305,8 +322,8 @@ export function createWorkerRunTool(
     },
     async execute(args, context: ToolContext) {
       const cwd = optionalNonEmptyString(args.cwd) ?? context.directory
-      const background = args.background === true
-      const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
+      const background = collapseNull(args.background) === true
+      const timeout = optionalNumber(args.timeout) ?? DEFAULT_WAIT_TIMEOUT_MS
       const chatRoom = normalizeChatRoom(optionalNonEmptyString(args.chatRoom))
       const worktreeName = optionalNonEmptyString(args.worktreeName)
       const { profileName, workerFields } = await resolveWorkerProfileFields(
@@ -323,17 +340,19 @@ export function createWorkerRunTool(
         timeout,
       })
 
-      const labels = mergePaseoParentAgentLabel(args.labels)
+      const labels = mergePaseoParentAgentLabel(collapseNull(args.labels))
 
       const createdWorker = await client.runWorker({
         cwd,
         provider: workerFields.provider,
-        ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
         modeId: workerFields.modeId,
         initialPrompt: chatRoom ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom) : args.prompt,
-        ...(labels !== undefined ? { labels } : {}),
-        ...(worktreeName !== undefined ? { worktreeName } : {}),
         background,
+        ...compactDefined({
+          model: workerFields.model,
+          labels,
+          worktreeName,
+        }),
       })
 
       registerEphemeralWorkerRun(state, context.sessionID, createdWorker.id, { background })
@@ -723,6 +742,7 @@ export function createWorkerWaitTool(
       workerIds: tool.schema.array(tool.schema.string()).min(1).describe("IDs of one or more workers to wait on"),
       waitFor: tool.schema
         .enum(["any", "all"])
+        .nullable()
         .optional()
         .describe(
           'Wait mode: "any" returns after the first target completes; "all" waits for every target. Defaults to "all".',
@@ -730,12 +750,13 @@ export function createWorkerWaitTool(
       timeout: tool.schema
         .number()
         .int()
+        .nullable()
         .optional()
         .describe(`Maximum time to wait in milliseconds (default: ${DEFAULT_WAIT_TIMEOUT_MS})`),
     },
     async execute(args, context: ToolContext) {
-      const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
-      const waitFor = args.waitFor ?? "all"
+      const timeout = optionalNumber(args.timeout) ?? DEFAULT_WAIT_TIMEOUT_MS
+      const waitFor = collapseNull(args.waitFor) ?? "all"
       const workerIds = Array.from(new Set(args.workerIds.map((id) => id.trim()).filter(Boolean)))
       logger.info("Tool: paseo_worker_wait invoked", {
         workerIds,
@@ -883,6 +904,7 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
       workerId: tool.schema.string().describe("ID of the worker to cancel"),
       forceKill: tool.schema
         .boolean()
+        .nullable()
         .optional()
         .describe(
           "If true, permanently terminate the worker and remove it from state. " +
@@ -891,7 +913,7 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
         ),
     },
     async execute(args) {
-      const isKill = args.forceKill === true
+      const isKill = collapseNull(args.forceKill) === true
       logger.info("Tool: paseo_worker_cancel invoked", {
         workerId: args.workerId,
         forceKill: isKill,
@@ -1012,14 +1034,15 @@ export function createWorkerUpdateTool(
       "Pass null for model or thinkingOptionId to clear them.",
     args: {
       workerId: tool.schema.string().describe("ID of the worker to update"),
-      name: tool.schema.string().optional().describe("New display name for the worker"),
+      name: nullableOptional(tool.schema.string()).describe("New display name for the worker"),
       labels: tool.schema
         .record(tool.schema.string(), tool.schema.string())
+        .nullable()
         .optional()
         .describe("Replacement label map"),
       settings: tool.schema
         .object({
-          modeId: tool.schema.string().optional().describe("Mode to switch the worker to"),
+          modeId: nullableOptional(tool.schema.string()).describe("Mode to switch the worker to"),
           model: tool.schema.string().nullable().optional().describe("Model ID to set, or null to clear"),
           thinkingOptionId: tool.schema
             .string()
@@ -1031,6 +1054,7 @@ export function createWorkerUpdateTool(
             .optional()
             .describe("Map of feature ID to value"),
         })
+        .nullable()
         .optional()
         .describe("Runtime settings to apply"),
     },
@@ -1043,11 +1067,23 @@ export function createWorkerUpdateTool(
         throw new Error(`Worker "${args.workerId}" not found in local state`)
       }
 
+      const name = collapseNull(args.name)
+      const labels = collapseNull(args.labels)
+      const settingsInput = collapseNull(args.settings)
+      // Preserve nested null clear semantics for model/thinkingOptionId; only collapse ordinary top-level nulls here.
+      const settings =
+        settingsInput === undefined
+          ? undefined
+          : compactDefined({
+              modeId: collapseNull(settingsInput.modeId),
+              model: settingsInput.model,
+              thinkingOptionId: settingsInput.thinkingOptionId,
+              features: settingsInput.features,
+            })
+
       const result = await client.updateWorker({
         workerId: args.workerId,
-        ...(args.name !== undefined ? { name: args.name } : {}),
-        ...(args.labels !== undefined ? { labels: args.labels } : {}),
-        ...(args.settings !== undefined ? { settings: args.settings } : {}),
+        ...compactDefined({ labels, name, settings }),
       })
 
       // Refresh local state from daemon if update succeeded
@@ -1085,14 +1121,19 @@ export function createWorkerInspectTool(
       workerId: tool.schema.string().describe("ID of the worker to inspect"),
       includeActivity: tool.schema
         .boolean()
+        .nullable()
         .optional()
         .describe("If true, include the worker's recent projected activity summary"),
-      activityLimit: tool.schema.number().optional().describe("Maximum number of projected activity entries to return"),
+      activityLimit: nullableOptional(tool.schema.number()).describe(
+        "Maximum number of projected activity entries to return",
+      ),
     },
     async execute(args) {
+      const includeActivity = collapseNull(args.includeActivity)
+      const activityLimit = optionalNumber(args.activityLimit)
       logger.info("Tool: paseo_worker_inspect invoked", {
         workerId: args.workerId,
-        includeActivity: args.includeActivity,
+        includeActivity,
       })
 
       let snapshot: WorkerInspectResponse["worker"] | null = null
@@ -1150,11 +1191,11 @@ export function createWorkerInspectTool(
 
       // Optional activity fetch
       let activity: WorkerActivitySummary | null = null
-      const activityFetched = Boolean(args.includeActivity)
+      const activityFetched = Boolean(includeActivity)
       if (activityFetched) {
         const activityResult = await client.fetchWorkerActivity({
           workerId: args.workerId,
-          ...(args.activityLimit !== undefined ? { limit: args.activityLimit } : {}),
+          ...compactDefined({ limit: activityLimit }),
         })
         activity = activityResult.activity
       }
@@ -1177,7 +1218,7 @@ export function createWorkerInspectTool(
           readyForDependentWork: deriveReadyForDependentWork(worker.status),
         },
       }
-      if (args.includeActivity) {
+      if (includeActivity) {
         output.activity = activity
       }
 

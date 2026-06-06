@@ -28,6 +28,7 @@ This is a single-package ESM TypeScript OpenCode plugin repo.
 - Lint check: `pnpm lint`
 
 ## Post-edit verification
+
 - `pnpm typecheck`
 - `pnpm lint`
 - `pnpm test`

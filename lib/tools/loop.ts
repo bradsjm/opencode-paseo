@@ -1,48 +1,53 @@
 import { tool, type ToolContext, type ToolDefinition } from "@opencode-ai/plugin/tool"
 import type { Logger } from "../logger.js"
 import type { PaseoTransport } from "../transport/types.js"
+import {
+  compactDefined,
+  nullableOptional,
+  optionalNumber,
+  optionalTrimmedString,
+  requiredTrimmedString,
+} from "./args.js"
 
-function normalizeRequiredString(value: string, field: string): string {
-  const normalized = value.trim()
-  if (!normalized) {
+function normalizeOptionalString(value: string | null | undefined, field: string): string | undefined {
+  const normalized = optionalTrimmedString(value)
+  if (normalized !== undefined) {
+    return normalized
+  }
+  if (value !== undefined && value !== null) {
     throw new Error(`${field} must not be empty`)
+  }
+  return undefined
+}
+
+function normalizePositiveInteger(value: number | null | undefined, field: string): number | undefined {
+  const normalized = optionalNumber(value)
+  if (normalized === undefined) {
+    return undefined
+  }
+  if (!Number.isSafeInteger(normalized) || normalized <= 0) {
+    throw new Error(`${field} must be a positive integer`)
   }
   return normalized
 }
 
-function normalizeOptionalString(value: string | undefined, field: string): string | undefined {
-  if (value === undefined) {
+function normalizeNonNegativeInteger(value: number | null | undefined, field: string): number | undefined {
+  const normalized = optionalNumber(value)
+  if (normalized === undefined) {
     return undefined
   }
-  return normalizeRequiredString(value, field)
-}
-
-function normalizePositiveInteger(value: number | undefined, field: string): number | undefined {
-  if (value === undefined) {
-    return undefined
-  }
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`${field} must be a positive integer`)
-  }
-  return value
-}
-
-function normalizeNonNegativeInteger(value: number | undefined, field: string): number | undefined {
-  if (value === undefined) {
-    return undefined
-  }
-  if (!Number.isSafeInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(normalized) || normalized < 0) {
     throw new Error(`${field} must be a non-negative integer`)
   }
-  return value
+  return normalized
 }
 
 function normalizeLoopId(id: string): string {
-  return normalizeRequiredString(id, "id")
+  return requiredTrimmedString(id, "id")
 }
 
-function normalizeVerifyChecks(verifyChecks: string[] | undefined): string[] | undefined {
-  if (verifyChecks === undefined) {
+function normalizeVerifyChecks(verifyChecks: string[] | null | undefined): string[] | undefined {
+  if (verifyChecks === undefined || verifyChecks === null) {
     return undefined
   }
 
@@ -66,28 +71,37 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
       "the upstream loop payload exposes no labels field.",
     args: {
       prompt: tool.schema.string().describe("Prompt for the loop worker"),
-      cwd: tool.schema.string().optional().describe("Working directory for the loop (defaults to session directory)"),
-      provider: tool.schema.string().optional().describe("Provider override for the loop worker"),
-      model: tool.schema.string().optional().describe("Model override for the loop worker"),
-      modeId: tool.schema.string().optional().describe("Mode override for the loop worker"),
-      verifierProvider: tool.schema.string().optional().describe("Provider override for the verifier worker"),
-      verifierModel: tool.schema.string().optional().describe("Model override for the verifier worker"),
-      verifierModeId: tool.schema.string().optional().describe("Mode override for the verifier worker"),
-      verifyPrompt: tool.schema.string().optional().describe("Verifier prompt. Must be non-empty when provided."),
+      cwd: nullableOptional(tool.schema.string()).describe(
+        "Working directory for the loop (defaults to session directory)",
+      ),
+      provider: nullableOptional(tool.schema.string()).describe("Provider override for the loop worker"),
+      model: nullableOptional(tool.schema.string()).describe("Model override for the loop worker"),
+      modeId: nullableOptional(tool.schema.string()).describe("Mode override for the loop worker"),
+      verifierProvider: nullableOptional(tool.schema.string()).describe("Provider override for the verifier worker"),
+      verifierModel: nullableOptional(tool.schema.string()).describe("Model override for the verifier worker"),
+      verifierModeId: nullableOptional(tool.schema.string()).describe("Mode override for the verifier worker"),
+      verifyPrompt: nullableOptional(tool.schema.string()).describe(
+        "Verifier prompt. Must be non-empty when provided.",
+      ),
       verifyChecks: tool.schema
         .array(tool.schema.string())
+        .nullable()
         .optional()
         .describe("Verifier commands. Must contain at least one non-empty command when provided."),
-      name: tool.schema.string().optional().describe("Optional human-readable loop name"),
-      sleepMs: tool.schema.number().int().optional().describe("Sleep interval between loop iterations in milliseconds"),
+      name: nullableOptional(tool.schema.string()).describe("Optional human-readable loop name"),
+      sleepMs: nullableOptional(tool.schema.number().int()).describe(
+        "Sleep interval between loop iterations in milliseconds",
+      ),
       maxIterations: tool.schema
         .number()
         .int()
+        .nullable()
         .optional()
         .describe("Positive maximum iteration count before the loop stops"),
       maxTimeMs: tool.schema
         .number()
         .int()
+        .nullable()
         .optional()
         .describe("Positive maximum runtime in milliseconds before the loop stops"),
     },
@@ -97,7 +111,7 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
         throw new Error("cwd is required")
       }
 
-      const prompt = normalizeRequiredString(args.prompt, "prompt")
+      const prompt = requiredTrimmedString(args.prompt, "prompt")
       const provider = normalizeOptionalString(args.provider, "provider")
       const model = normalizeOptionalString(args.model, "model")
       const modeId = normalizeOptionalString(args.modeId, "modeId")
@@ -129,18 +143,20 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
       const result = await client.loopRun({
         prompt,
         cwd,
-        ...(provider !== undefined ? { provider } : {}),
-        ...(model !== undefined ? { model } : {}),
-        ...(modeId !== undefined ? { modeId } : {}),
-        ...(verifierProvider !== undefined ? { verifierProvider } : {}),
-        ...(verifierModel !== undefined ? { verifierModel } : {}),
-        ...(verifierModeId !== undefined ? { verifierModeId } : {}),
-        ...(verifyPrompt !== undefined ? { verifyPrompt } : {}),
-        ...(verifyChecks !== undefined ? { verifyChecks } : {}),
-        ...(name !== undefined ? { name } : {}),
-        ...(sleepMs !== undefined ? { sleepMs } : {}),
-        ...(maxIterations !== undefined ? { maxIterations } : {}),
-        ...(maxTimeMs !== undefined ? { maxTimeMs } : {}),
+        ...compactDefined({
+          provider,
+          model,
+          modeId,
+          verifierProvider,
+          verifierModel,
+          verifierModeId,
+          verifyPrompt,
+          verifyChecks,
+          name,
+          sleepMs,
+          maxIterations,
+          maxTimeMs,
+        }),
       })
 
       return {
@@ -195,16 +211,15 @@ export function createLoopLogsTool(client: PaseoTransport, logger: Logger): Tool
     description: "Read snapshot/cursor-based daemon-native loop logs for a specific loop by ID.",
     args: {
       id: tool.schema.string().describe("ID of the loop to read logs for"),
-      afterSeq: tool.schema.number().int().optional().describe("Only return log entries after this sequence number"),
+      afterSeq: nullableOptional(tool.schema.number().int()).describe(
+        "Only return log entries after this sequence number",
+      ),
     },
     async execute(args) {
       const id = normalizeLoopId(args.id)
       const afterSeq = normalizeNonNegativeInteger(args.afterSeq, "afterSeq")
       logger.info("Tool: paseo_loop_logs invoked", { id, afterSeq })
-      const result = await client.loopLogs({
-        id,
-        ...(afterSeq !== undefined ? { afterSeq } : {}),
-      })
+      const result = await client.loopLogs({ id, ...compactDefined({ afterSeq }) })
       return {
         title: `Loop Logs: ${id}`,
         output: JSON.stringify(result, null, 2),

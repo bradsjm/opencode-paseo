@@ -3,6 +3,7 @@ import type { PluginState } from "../state/types.js"
 import { markResourceEventsRead, removeWorkerFromState } from "../state/state.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
+import { collapseNull, compactDefined, nullableOptional, optionalNonBlankString, optionalNumber } from "./args.js"
 
 // ─── Worktree List Tool ──────────────────────────────────────────────────────
 
@@ -10,22 +11,21 @@ export function createWorktreeListTool(state: PluginState, client: PaseoTranspor
   return tool({
     description: "List Paseo worktrees for a project. Requires explicit directory context via cwd or repoRoot.",
     args: {
-      cwd: tool.schema.string().optional().describe("Working directory of the project (defaults to session directory)"),
-      repoRoot: tool.schema.string().optional().describe("Repository root path (alternative to cwd)"),
+      cwd: nullableOptional(tool.schema.string()).describe(
+        "Working directory of the project (defaults to session directory)",
+      ),
+      repoRoot: nullableOptional(tool.schema.string()).describe("Repository root path (alternative to cwd)"),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd?.trim() ? args.cwd : context.directory
-      const repoRoot = args.repoRoot?.trim() ? args.repoRoot : undefined
+      const cwd = optionalNonBlankString(args.cwd) ?? context.directory
+      const repoRoot = optionalNonBlankString(args.repoRoot)
       logger.info("Tool: paseo_worktree_list invoked", { cwd, repoRoot })
 
       if (!cwd && !repoRoot) {
         throw new Error("Either cwd or repoRoot must be provided")
       }
 
-      const result = await client.listWorktrees({
-        ...(cwd !== undefined ? { cwd } : {}),
-        ...(repoRoot !== undefined ? { repoRoot } : {}),
-      })
+      const result = await client.listWorktrees({ ...compactDefined({ cwd, repoRoot }) })
 
       return {
         title: "Paseo Worktrees",
@@ -41,18 +41,27 @@ export function createWorktreeCreateTool(state: PluginState, client: PaseoTransp
   return tool({
     description: "Create a new Paseo worktree. Requires explicit directory context for the project.",
     args: {
-      cwd: tool.schema.string().optional().describe("Working directory of the project (defaults to session directory)"),
-      projectId: tool.schema.string().optional().describe("Project ID to create the worktree under"),
-      worktreeSlug: tool.schema.string().optional().describe("Slug/name for the worktree"),
-      refName: tool.schema.string().optional().describe("Git ref (branch/tag/commit) to base the worktree on"),
-      action: tool.schema.string().optional().describe("Action to perform on worktree creation"),
-      githubPrNumber: tool.schema.number().int().optional().describe("GitHub PR number to associate with the worktree"),
+      cwd: nullableOptional(tool.schema.string()).describe(
+        "Working directory of the project (defaults to session directory)",
+      ),
+      projectId: nullableOptional(tool.schema.string()).describe("Project ID to create the worktree under"),
+      worktreeSlug: nullableOptional(tool.schema.string()).describe("Slug/name for the worktree"),
+      refName: nullableOptional(tool.schema.string()).describe("Git ref (branch/tag/commit) to base the worktree on"),
+      action: nullableOptional(tool.schema.string()).describe("Action to perform on worktree creation"),
+      githubPrNumber: nullableOptional(tool.schema.number().int()).describe(
+        "GitHub PR number to associate with the worktree",
+      ),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd ?? context.directory
+      const cwd = collapseNull(args.cwd) ?? context.directory
+      const projectId = collapseNull(args.projectId)
+      const worktreeSlug = collapseNull(args.worktreeSlug)
+      const refName = collapseNull(args.refName)
+      const action = collapseNull(args.action)
+      const githubPrNumber = optionalNumber(args.githubPrNumber)
       logger.info("Tool: paseo_worktree_create invoked", {
         cwd,
-        worktreeSlug: args.worktreeSlug,
+        worktreeSlug,
       })
 
       if (!cwd) {
@@ -61,11 +70,7 @@ export function createWorktreeCreateTool(state: PluginState, client: PaseoTransp
 
       const result = await client.createWorktree({
         cwd,
-        ...(args.projectId !== undefined ? { projectId: args.projectId } : {}),
-        ...(args.worktreeSlug !== undefined ? { worktreeSlug: args.worktreeSlug } : {}),
-        ...(args.refName !== undefined ? { refName: args.refName } : {}),
-        ...(args.action !== undefined ? { action: args.action } : {}),
-        ...(args.githubPrNumber !== undefined ? { githubPrNumber: args.githubPrNumber } : {}),
+        ...compactDefined({ projectId, worktreeSlug, refName, action, githubPrNumber }),
       })
 
       return {
@@ -82,29 +87,32 @@ export function createWorktreeArchiveTool(state: PluginState, client: PaseoTrans
   return tool({
     description: "Archive a Paseo worktree. Requires explicit directory context or worktree identification.",
     args: {
-      worktreePath: tool.schema.string().optional().describe("Path to the worktree to archive"),
-      repoRoot: tool.schema.string().optional().describe("Repository root path"),
-      branchName: tool.schema.string().optional().describe("Branch name of the worktree to archive"),
+      worktreePath: nullableOptional(tool.schema.string()).describe("Path to the worktree to archive"),
+      repoRoot: nullableOptional(tool.schema.string()).describe("Repository root path"),
+      branchName: nullableOptional(tool.schema.string()).describe("Branch name of the worktree to archive"),
       cwd: tool.schema
         .string()
+        .nullable()
         .optional()
         .describe("Working directory (defaults to session directory, used as repoRoot fallback)"),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd ?? context.directory
+      const cwd = collapseNull(args.cwd) ?? context.directory
+      const worktreePath = collapseNull(args.worktreePath)
+      const repoRoot = collapseNull(args.repoRoot)
+      const branchName = collapseNull(args.branchName)
       logger.info("Tool: paseo_worktree_archive invoked", {
-        worktreePath: args.worktreePath,
-        branchName: args.branchName,
+        worktreePath,
+        branchName,
       })
 
-      if (!args.worktreePath && !args.branchName && !args.repoRoot) {
+      if (!worktreePath && !branchName && !repoRoot) {
         throw new Error("At least one of worktreePath, branchName, or repoRoot must be provided")
       }
 
       const result = await client.archiveWorktree({
-        ...(args.worktreePath !== undefined ? { worktreePath: args.worktreePath } : {}),
-        repoRoot: args.repoRoot ?? cwd,
-        ...(args.branchName !== undefined ? { branchName: args.branchName } : {}),
+        repoRoot: repoRoot ?? cwd,
+        ...compactDefined({ worktreePath, branchName }),
       })
 
       for (const workerId of result.removedAgents ?? []) {
