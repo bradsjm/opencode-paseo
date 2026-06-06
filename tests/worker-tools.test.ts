@@ -597,6 +597,28 @@ test("paseo_worker_cancel", async (t) => {
     assert.equal(output.action, "killed")
   })
 
+  await t.test("forceKill marks removed worker inbox events read", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    insertInboxEvent(state, {
+      id: "evt-kill",
+      kind: "worker.blocked",
+      resourceId: "w1",
+      blocking: true,
+      summary: "needs approval",
+      read: false,
+      timestamp: Date.now(),
+    })
+
+    const toolDef = createWorkerCancelTool(state, createMockTransport(), logger)
+    await toolDef.execute({ workerId: "w1", forceKill: true }, mockContext())
+
+    assert.equal(state.inbox.has("evt-kill"), true)
+    assert.equal(state.inbox.get("evt-kill")?.read, true)
+    assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-kill"), false)
+    assert.equal(state.sessions.get("sess-1")?.pendingPermissions.has("evt-kill"), false)
+  })
+
   await t.test("forceKill false behaves like normal cancel", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
@@ -668,6 +690,7 @@ test("paseo_worker_archive", async (t) => {
     assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-1"), false)
     assert.equal(state.sessions.get("sess-1")?.pendingPermissions.has("evt-1"), false)
     assert.equal(state.inbox.has("evt-1"), true)
+    assert.equal(state.inbox.get("evt-1")?.read, true)
     assert.equal(output.workerId, "w1")
     assert.equal(output.alreadyRemovedUpstream, false)
     assert.equal(typeof output.archivedAt, "string")
@@ -699,6 +722,7 @@ test("paseo_worker_archive", async (t) => {
     assert.equal(state.sessions.get("sess-1")?.createdWorkerIds.has("w1"), false)
     assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-1"), false)
     assert.equal(state.inbox.has("evt-1"), true)
+    assert.equal(state.inbox.get("evt-1")?.read, true)
     assert.equal(output.workerId, "w1")
     assert.equal(output.archivedAt, null)
     assert.equal(output.alreadyRemovedUpstream, true)
@@ -798,6 +822,47 @@ test("paseo_worker_list", async (t) => {
     assert.equal(state.workers.has("w1"), true)
     assert.equal(output.count, 1)
     assert.equal(output.workers[0].id, "w1")
+  })
+
+  await t.test("recalculates unread counts and exposes observed launch ids from raw labels", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w-live")
+    state.workers.get("w-live")!.unreadEventCount = 99
+    state.inbox.set("evt-1", {
+      id: "evt-1",
+      kind: "worker.finished",
+      resourceId: "w-live",
+      blocking: false,
+      summary: "done",
+      read: false,
+      timestamp: Date.now(),
+    })
+
+    let observedLaunchId: string | undefined
+    const client = createMockTransport({
+      fetchAgents: async () => [
+        {
+          id: "w-live",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Live Worker",
+          labels: { "opencodePaseo.launchId": "launch-123" },
+          pendingPermissions: [],
+        },
+      ],
+    })
+
+    const toolDef = createWorkerListTool(state, client, logger, (_worker, launchId) => {
+      observedLaunchId = launchId
+    })
+    const result = await toolDef.execute({}, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(observedLaunchId, "launch-123")
+    assert.equal(state.workers.get("w-live")?.unreadEventCount, 1)
+    assert.equal(output.workers[0]?.unreadEventCount, 1)
   })
 })
 
@@ -953,6 +1018,38 @@ test("paseo_worker_update", async (t) => {
       assert.equal(output.result.workerId, "w-run-1")
       assert.equal(state.ephemeralWorkerRuns.size, 0)
       assert.equal(state.workers.get("w-run-1")?.status, "idle")
+    })
+
+    await t.test("ignores empty optional metadata for wrapper defaults", async () => {
+      const state = createPluginState()
+      const opencode = mockOpencodeClient()
+      let receivedOptions: RunWorkerOptions | null = null
+      const client = createMockTransport({
+        runWorker: async (opts) => {
+          receivedOptions = opts
+          return {
+            id: "w-run-empty",
+            provider: "opencode",
+            cwd: "/tmp",
+            model: null,
+            status: "running",
+            title: null,
+          }
+        },
+      })
+
+      const toolDef = createWorkerRunTool(state, client, opencode, logger)
+      await toolDef.execute(
+        { prompt: "Solve it", chatRoom: "", profile: "", cwd: "", worktreeName: "   ", background: true },
+        mockContext(),
+      )
+
+      const options = receivedOptions as RunWorkerOptions | null
+      assert.ok(options)
+      assert.equal(options.cwd, "/tmp")
+      assert.equal(options.initialPrompt, "Solve it")
+      assert.equal(options.modeId, "build")
+      assert.equal("worktreeName" in options, false)
     })
 
     await t.test("background run returns immediately and keeps ephemeral tracking", async () => {
@@ -1306,6 +1403,34 @@ test("paseo_worker_update", async (t) => {
       })
     })
 
+    await t.test("ignores empty optional chatRoom and worktreeName", async () => {
+      const state = createPluginState()
+      let receivedOptions: any = null
+      const client = createMockTransport({
+        createWorker: async (opts) => {
+          receivedOptions = opts
+          return {
+            id: "w-empty-options",
+            provider: "opencode",
+            cwd: "/tmp",
+            model: null,
+            status: "running" as const,
+            title: null,
+          }
+        },
+      })
+      const opencode = mockOpencodeClient()
+      const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
+
+      const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+      await toolDef.execute({ chatRoom: "", worktreeName: "   ", cwd: "" }, mockContext())
+      await flushAsyncWork()
+
+      assert.equal(receivedOptions.cwd, "/tmp")
+      assert.equal("chatRoom" in receivedOptions, false)
+      assert.equal("worktreeName" in receivedOptions, false)
+    })
+
     await t.test("uses coordination block alone when no initial prompt exists", async () => {
       const state = createPluginState()
       let receivedOptions: any = null
@@ -1331,19 +1456,6 @@ test("paseo_worker_update", async (t) => {
 
       assert.match(receivedOptions.initialPrompt, /^Paseo chat coordination instructions:/)
       assert.match(receivedOptions.initialPrompt, /room-beta/)
-    })
-
-    await t.test("rejects empty chatRoom", async () => {
-      const state = createPluginState()
-      const client = createMockTransport()
-      const opencode = mockOpencodeClient()
-      const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
-
-      const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
-      await assert.rejects(
-        () => toolDef.execute({ chatRoom: "   " }, mockContext()),
-        /chatRoom must be a non-empty string when provided/,
-      )
     })
 
     await t.test("reports queued position behind an active launch", async () => {

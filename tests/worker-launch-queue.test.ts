@@ -303,6 +303,80 @@ test("worker launch queue controller", async (t) => {
     assert.match(at(promptMessages, 1), /w-success/)
   })
 
+  await t.test("observed worker reconciles a starting launch before createWorker resolves", async () => {
+    const state = createPluginState()
+    const promptMessages: string[] = []
+    const createDeferredWorker = createDeferred<{
+      id: string
+      provider: string
+      cwd: string
+      model: string | null
+      status: "running"
+      title: null
+    }>()
+    const client = createMockTransport({
+      createWorker: async () => createDeferredWorker.promise,
+    })
+    const controller = createWorkerLaunchQueueController(
+      state,
+      client,
+      createMockOpencodeClient(promptMessages),
+      logger,
+    )
+
+    const receipt = controller.enqueueWorkerLaunch({
+      sessionId: "sess-1",
+      projectRoot: "/project",
+      profile: "build",
+      cwd: "/project",
+      provider: "opencode",
+      modeId: "build",
+    })
+
+    const drainPromise = controller.drainWorkerLaunchQueue()
+    await flushAsyncWork()
+
+    controller.observeWorker(
+      {
+        id: "w-observed",
+        title: "Observed Worker",
+        agent: "opencode",
+        status: "running",
+        cwd: "/project",
+        provider: "opencode",
+        model: null,
+        currentModeId: "build",
+        labels: [],
+        pendingPermissions: [],
+        pendingPermissionIds: [],
+        requiresAttention: false,
+        attentionReason: null,
+        runtimeInfo: null,
+        persistence: null,
+        unreadEventCount: 0,
+      },
+      receipt.launchId,
+    )
+
+    const observedStatus = controller.getWorkerLaunchStatus(receipt.launchId)
+    assert.equal(observedStatus.status, "created")
+    assert.equal(observedStatus.workerId, "w-observed")
+
+    createDeferredWorker.resolve({
+      id: "w-observed",
+      provider: "opencode",
+      cwd: "/project",
+      model: null,
+      status: "running",
+      title: null,
+    })
+    await drainPromise
+
+    const finalStatus = controller.getWorkerLaunchStatus(receipt.launchId)
+    assert.equal(finalStatus.status, "created")
+    assert.equal(finalStatus.workerId, "w-observed")
+  })
+
   await t.test(
     "fetchWorker failure does not flip created launch to failed and success nudge includes launchId and workerId",
     async () => {

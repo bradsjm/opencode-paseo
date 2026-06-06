@@ -22,15 +22,24 @@ import {
   DEFAULT_PROFILE,
 } from "../profile.js"
 import {
+  getUnreadEventCountForResource,
   upsertWorker,
   mapAgentToWorkerSummary,
   registerEphemeralWorkerRun,
   removeEphemeralWorkerRun,
   removeWorkerFromState,
   getBlockingAction,
+  markResourceEventsRead,
 } from "../state/state.js"
+import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
 
-type WorkerRefreshObserver = (worker: WorkerSummary) => void
+function optionalNonEmptyString(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  return trimmed ? value : undefined
+}
+
+type WorkerRefreshObserver = (worker: WorkerSummary, observedLaunchId?: string) => void
 
 async function resolveWorkerProfileFields(
   opencodeClient: OpencodeClient,
@@ -74,12 +83,9 @@ export function createWorkerListTool(
         for (const a of agents) {
           fetchedWorkerIds.add(a.id)
           const worker = mapAgentToWorkerSummary(a)
-          const existing = state.workers.get(a.id)
-          if (existing) {
-            worker.unreadEventCount = existing.unreadEventCount
-          }
+          worker.unreadEventCount = getUnreadEventCountForResource(state, worker.id)
           upsertWorker(state, worker)
-          onWorkerObserved?.(worker)
+          onWorkerObserved?.(worker, getWorkerLaunchIdFromLabels(a.labels))
         }
 
         for (const workerId of preexistingWorkerIds) {
@@ -147,9 +153,14 @@ export function createWorkerCreateTool(
       chatRoom: tool.schema.string().optional().describe("Optional Paseo chat room to coordinate this worker through"),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd ?? context.directory
-      const chatRoom = normalizeChatRoom(args.chatRoom)
-      const { profileName, workerFields } = await resolveWorkerProfileFields(opencodeClient, cwd, args.profile)
+      const cwd = optionalNonEmptyString(args.cwd) ?? context.directory
+      const chatRoom = normalizeChatRoom(optionalNonEmptyString(args.chatRoom))
+      const worktreeName = optionalNonEmptyString(args.worktreeName)
+      const { profileName, workerFields } = await resolveWorkerProfileFields(
+        opencodeClient,
+        cwd,
+        optionalNonEmptyString(args.profile),
+      )
 
       logger.info("Tool: paseo_worker_create invoked", {
         cwd,
@@ -174,7 +185,7 @@ export function createWorkerCreateTool(
           : {}),
         ...(chatRoom !== undefined ? { chatRoom } : {}),
         ...(args.labels !== undefined ? { labels: args.labels } : {}),
-        ...(args.worktreeName !== undefined ? { worktreeName: args.worktreeName } : {}),
+        ...(worktreeName !== undefined ? { worktreeName } : {}),
       })
 
       void workerLaunchQueue.drainWorkerLaunchQueue()
@@ -290,11 +301,16 @@ export function createWorkerRunTool(
         ),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd ?? context.directory
+      const cwd = optionalNonEmptyString(args.cwd) ?? context.directory
       const background = args.background === true
       const timeout = args.timeout ?? DEFAULT_WAIT_TIMEOUT_MS
-      const chatRoom = normalizeChatRoom(args.chatRoom)
-      const { profileName, workerFields } = await resolveWorkerProfileFields(opencodeClient, cwd, args.profile)
+      const chatRoom = normalizeChatRoom(optionalNonEmptyString(args.chatRoom))
+      const worktreeName = optionalNonEmptyString(args.worktreeName)
+      const { profileName, workerFields } = await resolveWorkerProfileFields(
+        opencodeClient,
+        cwd,
+        optionalNonEmptyString(args.profile),
+      )
 
       logger.info("Tool: paseo_worker_run invoked", {
         cwd,
@@ -311,7 +327,7 @@ export function createWorkerRunTool(
         modeId: workerFields.modeId,
         initialPrompt: chatRoom ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom) : args.prompt,
         ...(args.labels !== undefined ? { labels: args.labels } : {}),
-        ...(args.worktreeName !== undefined ? { worktreeName: args.worktreeName } : {}),
+        ...(worktreeName !== undefined ? { worktreeName } : {}),
         background,
       })
 
@@ -886,6 +902,7 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
         await client.killWorker(args.workerId)
 
         // Permanent removal: delete from state and unbind sessions
+        markResourceEventsRead(state, args.workerId)
         removeWorkerFromState(state, args.workerId)
 
         return {
@@ -954,6 +971,7 @@ export function createWorkerArchiveTool(state: PluginState, client: PaseoTranspo
       }
 
       // Remove from local state and clean up session bindings
+      markResourceEventsRead(state, args.workerId)
       removeWorkerFromState(state, args.workerId)
 
       return {

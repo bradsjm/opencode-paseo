@@ -1,6 +1,12 @@
 import { sendNudge } from "../notifier.js"
 import { RESERVED_CHAT_ROOM_LABEL } from "../chat/worker-room.js"
-import { getOrCreateSession, mapAgentToWorkerSummary, recordCreatedWorker, upsertWorker } from "../state/state.js"
+import {
+  getOrCreateSession,
+  getUnreadEventCountForResource,
+  mapAgentToWorkerSummary,
+  recordCreatedWorker,
+  upsertWorker,
+} from "../state/state.js"
 import type {
   PluginState,
   WorkerLaunchRecord,
@@ -68,6 +74,16 @@ export interface WorkerLaunchQueueController {
   enqueueWorkerLaunch(input: EnqueueWorkerLaunchInput): WorkerLaunchReceipt
   drainWorkerLaunchQueue(): Promise<void>
   getWorkerLaunchStatus(launchId: string): WorkerLaunchStatusSnapshot
+  observeWorker(worker: WorkerSummary, observedLaunchId?: string): void
+}
+
+export function getWorkerLaunchIdFromLabels(labels: unknown): string | undefined {
+  if (!labels || typeof labels !== "object" || Array.isArray(labels)) {
+    return undefined
+  }
+
+  const launchId = (labels as Record<string, unknown>)[RESERVED_LAUNCH_ID_LABEL]
+  return typeof launchId === "string" && launchId.trim() ? launchId : undefined
 }
 
 function generateLaunchId(): string {
@@ -214,6 +230,22 @@ export function createWorkerLaunchQueueController(
 ): WorkerLaunchQueueController {
   let draining = false
 
+  function observeWorker(worker: WorkerSummary, observedLaunchId?: string): void {
+    if (!observedLaunchId) {
+      return
+    }
+
+    const record = state.workerLaunches.get(observedLaunchId)
+    if (!record || (record.status !== "queued" && record.status !== "starting")) {
+      return
+    }
+
+    record.status = "created"
+    record.workerId = worker.id
+    record.startedAt ??= new Date().toISOString()
+    record.finishedAt ??= new Date().toISOString()
+  }
+
   async function drainWorkerLaunchQueue(): Promise<void> {
     if (draining) {
       return
@@ -290,7 +322,7 @@ export function createWorkerLaunchQueueController(
             const enriched = await client.fetchWorker(created.id)
             if (enriched?.agent) {
               const mapped = mapAgentToWorkerSummary(enriched.agent)
-              mapped.unreadEventCount = state.workers.get(created.id)?.unreadEventCount ?? 0
+              mapped.unreadEventCount = getUnreadEventCountForResource(state, created.id)
               upsertWorker(state, mapped)
               onWorkerObserved?.(mapped)
             }
@@ -435,6 +467,8 @@ export function createWorkerLaunchQueueController(
     async drainWorkerLaunchQueue() {
       await drainWorkerLaunchQueue()
     },
+
+    observeWorker,
 
     getWorkerLaunchStatus(launchId) {
       const record = state.workerLaunches.get(launchId)

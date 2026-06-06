@@ -82,6 +82,13 @@ import type {
 
 const APP_VERSION = packageJson.version
 
+type UpstreamTerminalExitEvent = {
+  type: "terminal_stream_exit"
+  payload: {
+    terminalId: string
+  }
+}
+
 // ─── Exported Pure Functions (for testing) ────────────────────────────────────
 
 export function buildDaemonConfig(config: DaemonConfig): DaemonClientConfig {
@@ -300,7 +307,7 @@ export function projectTimeline(timeline: unknown, requestedLimit?: number): Wor
   }
 }
 
-export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent | null {
+export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerminalExitEvent): DaemonEvent | null {
   switch (event.type) {
     case "agent_update": {
       const payload = event.payload as Record<string, unknown>
@@ -369,6 +376,12 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent): DaemonEvent 
       return {
         type: "worker.finished",
         payload: { workerId: event.agentId },
+      }
+
+    case "terminal_stream_exit":
+      return {
+        type: "terminal.exited",
+        payload: { terminalId: event.payload.terminalId },
       }
 
     case "agent_permission_request":
@@ -1236,8 +1249,25 @@ export class PaseoClient implements PaseoTransport {
   }
 
   async scheduleRunOnce(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
-    const result = await this.daemon.scheduleRunOnce({ id: options.id })
-    return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    try {
+      const result = await this.daemon.scheduleRunOnce({ id: options.id })
+      return mapScheduleMutationResult(result as unknown as Record<string, unknown>)
+    } catch (err: unknown) {
+      if (err instanceof Error && /Timeout waiting for message \(10000ms\)/.test(err.message)) {
+        return {
+          requestId: `schedule-run-once-timeout-${crypto.randomUUID()}`,
+          schedule: null,
+          error: null,
+          dispatched: true,
+          async: true,
+          warning:
+            `${err.message}. The run may still have been dispatched asynchronously; ` +
+            `use paseo_schedule_logs to confirm the outcome.`,
+          nextStep: "paseo_schedule_logs",
+        }
+      }
+      throw err
+    }
   }
 
   async scheduleLogs(options: ScheduleInspectOptions): Promise<ScheduleLogsResult> {

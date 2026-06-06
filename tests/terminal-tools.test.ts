@@ -6,6 +6,7 @@ import { Logger } from "../lib/logger.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 import {
   createTerminalKillTool,
+  createTerminalListTool,
   createTerminalSendInputTool,
   createTerminalSendLinesTool,
 } from "../lib/tools/terminal.js"
@@ -317,4 +318,51 @@ test("paseo_terminal_kill description warns to capture output first", () => {
   assert.match(toolDef.description, /capture any important output/i)
   assert.match(toolDef.description, /paseo_terminal_capture/i)
   assert.match(toolDef.description, /buffers may not remain available afterward/i)
+})
+
+test("paseo_terminal_list retains killed terminal history", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  state.terminals.set("t1", {
+    id: "t1",
+    title: "Term 1",
+    cwd: "/tmp",
+    status: "running",
+    lineCount: 3,
+    lastReadCursor: 0,
+  })
+  const client = createMockTransport({
+    killTerminal: async () => ({ id: "t1", exitCode: null }),
+    listTerminals: async () => [],
+  })
+
+  await createTerminalKillTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
+  const listResult = await createTerminalListTool(state, client, logger).execute({}, mockContext())
+  const output = JSON.parse((listResult as { output: string }).output)
+
+  assert.equal(output.count, 1)
+  assert.equal(output.terminals[0].id, "t1")
+  assert.equal(output.terminals[0].status, "killed")
+})
+
+test("paseo_terminal_list preserves exited status learned from daemon events", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  state.terminals.set("t1", {
+    id: "t1",
+    title: "Term 1",
+    cwd: "/tmp",
+    status: "exited",
+    lineCount: 3,
+    lastReadCursor: 0,
+  })
+  const client = createMockTransport({
+    listTerminals: async () => [{ id: "t1", name: "t1", title: "Term 1" }],
+  })
+
+  const listResult = await createTerminalListTool(state, client, logger).execute({}, mockContext())
+  const output = JSON.parse((listResult as { output: string }).output)
+
+  assert.equal(output.count, 1)
+  assert.equal(output.terminals[0].status, "exited")
 })

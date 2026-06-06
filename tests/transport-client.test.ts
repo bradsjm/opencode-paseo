@@ -279,6 +279,16 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
     assert.equal(result.payload.workerId, "a1")
   })
 
+  await t.test("terminal_stream_exit → terminal.exited", () => {
+    const result = translateUpstreamEvent({
+      type: "terminal_stream_exit",
+      payload: { terminalId: "term-1" },
+    } as any)
+    assert.ok(result)
+    assert.equal(result.type, "terminal.exited")
+    assert.equal(result.payload.terminalId, "term-1")
+  })
+
   await t.test("agent_permission_request → permission.requested", () => {
     const result = translateUpstreamEvent({
       type: "agent_permission_request",
@@ -703,4 +713,26 @@ test("PaseoClient maps schedule and worktree payloads to plugin-owned result sha
   const archivedWorktree = await client.archiveWorktree({ repoRoot: "/repo" })
   assert.equal(archivedWorktree.requestId, "wt-archive-req")
   assert.deepEqual(archivedWorktree.removedAgents, ["a1"])
+})
+
+test("PaseoClient.scheduleRunOnce maps daemon timeout to async dispatch acknowledgment", async () => {
+  const client = new PaseoClient({
+    host: "127.0.0.1",
+    port: 1,
+    connectionTimeoutMs: 100,
+  })
+  ;(client as any).daemon = {
+    scheduleRunOnce: async () => {
+      throw new Error("Timeout waiting for message (10000ms)")
+    },
+  }
+
+  const result = await client.scheduleRunOnce({ id: "sched-1" })
+
+  assert.equal(result.error, null)
+  assert.equal(result.schedule, null)
+  assert.equal(result.dispatched, true)
+  assert.equal(result.async, true)
+  assert.equal(result.nextStep, "paseo_schedule_logs")
+  assert.match(result.warning ?? "", /Timeout waiting for message \(10000ms\)/)
 })

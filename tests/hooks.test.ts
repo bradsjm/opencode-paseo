@@ -144,11 +144,10 @@ test("createDaemonEventHandler", async (t) => {
     assert.equal(event.resourceId, "daemon")
   })
 
-  await t.test("deduplicates events with same generated ID", () => {
+  await t.test("deduplicates repeated unread worker lifecycle events for the same resource", () => {
     const state = createPluginState()
     const handler = createDaemonEventHandler(state, logger, mockConfig)
 
-    // Same type + resourceId generates same ID pattern
     handler({
       type: "worker.started",
       payload: { workerId: "w1", summary: "started" },
@@ -158,8 +157,36 @@ test("createDaemonEventHandler", async (t) => {
       payload: { workerId: "w1", summary: "started" },
     })
 
-    // The second event gets a different counter-based ID, so both are inserted
-    assert.equal(state.inbox.size, 2)
+    assert.equal(state.inbox.size, 1)
+  })
+
+  await t.test("allows a later worker.finished after an intervening worker.started", () => {
+    const state = createPluginState()
+    const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+    handler({ type: "worker.finished", payload: { workerId: "w1", summary: "finished-1" } })
+    handler({ type: "worker.started", payload: { workerId: "w1", summary: "started-again" } })
+    handler({ type: "worker.finished", payload: { workerId: "w1", summary: "finished-2" } })
+
+    assert.equal(state.inbox.size, 3)
+  })
+
+  await t.test("updates terminal status on terminal.exited without creating inbox noise", () => {
+    const state = createPluginState()
+    state.terminals.set("t1", {
+      id: "t1",
+      title: "Term 1",
+      cwd: "/tmp",
+      status: "running",
+      lineCount: 0,
+      lastReadCursor: 0,
+    })
+    const handler = createDaemonEventHandler(state, logger, mockConfig)
+
+    handler({ type: "terminal.exited", payload: { terminalId: "t1" } })
+
+    assert.equal(state.terminals.get("t1")?.status, "exited")
+    assert.equal(state.inbox.size, 0)
   })
 
   await t.test("inserts daemon.disconnected event into inbox", () => {
@@ -615,6 +642,22 @@ test("nudge delivery", async (t) => {
 
     assert.equal(calls.length, 1)
     assert.ok(firstCall(calls).text.includes("[paseo:worker.finished]"))
+  })
+
+  await t.test("deduplicates repeated worker.finished nudges for the same unread completion", () => {
+    const state = createPluginState()
+    getOrCreateSession(state, "sess-1", "/project")
+    seedWorker(state, "w1")
+    state.sessions.get("sess-1")!.createdWorkerIds.add("w1")
+
+    const { client, calls } = createMockOpencodeClient()
+    const handler = createDaemonEventHandler(state, logger, mockConfig, client)
+
+    handler({ type: "worker.finished", payload: { workerId: "w1", summary: "Worker completed" } })
+    handler({ type: "worker.finished", payload: { workerId: "w1", summary: "Worker completed" } })
+
+    assert.equal(state.inbox.size, 1)
+    assert.equal(calls.length, 1)
   })
 
   await t.test("does not send nudge when notifications disabled", () => {

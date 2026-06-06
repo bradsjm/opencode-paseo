@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { createPluginState } from "../lib/state/state.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
-import { createScheduleCreateTool, createScheduleUpdateTool } from "../lib/tools/schedule.js"
+import { createScheduleCreateTool, createScheduleRunOnceTool, createScheduleUpdateTool } from "../lib/tools/schedule.js"
 import type { OpencodeClient } from "../lib/profile.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 
@@ -381,16 +381,35 @@ test("paseo_schedule_update", async (t) => {
     })
   })
 
-  await t.test("rejects empty profile", async () => {
+  await t.test("omits wrapper-default empty strings and zeroes", async () => {
     const state = createPluginState()
-    const client = createMockTransport()
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      scheduleUpdate: async (opts) => {
+        receivedOptions = opts
+        return { requestId: "req", schedule: null, error: null }
+      },
+    })
     const opencode = mockOpencodeClient()
 
     const toolDef = createScheduleUpdateTool(state, client, opencode, logger)
-    await assert.rejects(
-      () => toolDef.execute({ id: "sched-3", profile: "   " }, mockContext()),
-      /profile must not be empty/,
+    await toolDef.execute(
+      {
+        id: "sched-3",
+        name: "Renamed",
+        prompt: "",
+        everyMs: 0,
+        maxRuns: 0,
+        cronExpression: "   ",
+        timezone: "",
+        profile: "   ",
+        cwd: "",
+        expiresAt: "",
+      },
+      mockContext(),
     )
+
+    assert.deepEqual(receivedOptions, { id: "sched-3", name: "Renamed" })
   })
 
   await t.test("throws clear error for unknown profile", async () => {
@@ -403,5 +422,45 @@ test("paseo_schedule_update", async (t) => {
       () => toolDef.execute({ id: "sched-4", profile: "missing" }, mockContext()),
       /Profile "missing" not found\. Available profiles: build/,
     )
+  })
+})
+
+test("paseo_schedule_run_once", async (t) => {
+  const logger = new Logger(false)
+
+  await t.test("returns async dispatch acknowledgment when daemon response times out", async () => {
+    const state = createPluginState()
+    const client = createMockTransport({
+      scheduleRunOnce: async () => ({
+        requestId: "timeout-req",
+        schedule: null,
+        error: null,
+        dispatched: true,
+        async: true,
+        warning: "Timeout waiting for message (10000ms). Use paseo_schedule_logs.",
+        nextStep: "paseo_schedule_logs",
+      }),
+    })
+
+    const toolDef = createScheduleRunOnceTool(state, client, logger)
+    const result = await toolDef.execute({ id: "sched-timeout" }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.dispatched, true)
+    assert.equal(output.async, true)
+    assert.equal(output.nextStep, "paseo_schedule_logs")
+    assert.match(output.warning, /Timeout waiting for message \(10000ms\)/)
+  })
+
+  await t.test("surfaces non-timeout transport errors", async () => {
+    const state = createPluginState()
+    const client = createMockTransport({
+      scheduleRunOnce: async () => {
+        throw new Error("schedule not found")
+      },
+    })
+
+    const toolDef = createScheduleRunOnceTool(state, client, logger)
+    await assert.rejects(() => toolDef.execute({ id: "missing" }, mockContext()), /schedule not found/)
   })
 })

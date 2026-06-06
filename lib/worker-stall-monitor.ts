@@ -201,6 +201,7 @@ export function createWorkerStallMonitor(
           clearIfIneligible(event.payload.workerId, event.type)
           break
         case "worker.stalled":
+        case "terminal.exited":
         case "daemon.connected":
         case "daemon.disconnected":
         case "daemon.error":

@@ -20,7 +20,9 @@ export {
   findSessionsForResource,
   buildBlockingMetadata,
   getBlockingAction,
+  getUnreadEventCountForResource,
   markUnreadStallEventsRead,
+  markResourceEventsRead,
 } from "./inbox-state.js"
 
 export function createSessionMapping(opencodeSessionId: string, projectRoot: string): SessionMapping {

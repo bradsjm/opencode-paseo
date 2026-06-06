@@ -4,15 +4,36 @@ import type { ToolContext } from "@opencode-ai/plugin/tool"
 import { createPluginState, insertInboxEvent } from "../lib/state/state.js"
 import type { WorkerSummary } from "../lib/state/types.js"
 import { Logger } from "../lib/logger.js"
-import { createWorktreeArchiveTool } from "../lib/tools/worktree.js"
+import { createWorktreeArchiveTool, createWorktreeListTool } from "../lib/tools/worktree.js"
 import type { PaseoTransport } from "../lib/transport/types.js"
 
 function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTransport {
   return {
+    listWorktrees: async () => ({ requestId: "req", worktrees: [], error: null }),
     archiveWorktree: async () => ({ requestId: "req", success: true, error: null }),
     ...overrides,
   } as PaseoTransport
 }
+
+test("paseo_worktree_list", async (t) => {
+  const logger = new Logger(false)
+
+  await t.test("omits empty repoRoot and uses provided cwd", async () => {
+    const state = createPluginState()
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      listWorktrees: async (opts) => {
+        receivedOptions = opts
+        return { requestId: "req", worktrees: [], error: null }
+      },
+    })
+
+    const toolDef = createWorktreeListTool(state, client, logger)
+    await toolDef.execute({ cwd: "/repo", repoRoot: "" }, mockContext())
+
+    assert.deepEqual(receivedOptions, { cwd: "/repo" })
+  })
+})
 
 function seedWorker(state: ReturnType<typeof createPluginState>, id: string): WorkerSummary {
   const worker: WorkerSummary = {
@@ -108,6 +129,8 @@ test("paseo_worktree_archive", async (t) => {
     assert.equal(state.sessions.get("sess-1")?.pendingPermissions.has("evt-removed"), false)
     assert.equal(state.sessions.get("sess-1")?.unreadEvents.has("evt-keep"), true)
     assert.equal(state.inbox.has("evt-removed"), true)
+    assert.equal(state.inbox.get("evt-removed")?.read, true)
+    assert.equal(state.inbox.get("evt-keep")?.read, false)
     assert.deepEqual(output.removedAgents, ["w-removed"])
   })
 

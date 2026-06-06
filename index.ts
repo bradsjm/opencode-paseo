@@ -58,6 +58,7 @@ import {
 } from "./lib/tools/loop.js"
 import { createEventHandler, createDaemonEventHandler, createConfigHandler } from "./lib/hooks.js"
 import { resetPluginState } from "./lib/state/state.js"
+import type { WorkerSummary } from "./lib/state/types.js"
 import { createWorkerLaunchQueueController } from "./lib/worker-launch/queue.js"
 import { createWorkerStallMonitor } from "./lib/worker-stall-monitor.js"
 import { createChatWatcher } from "./lib/chat/watch.js"
@@ -99,11 +100,13 @@ const server: Plugin = (async (ctx) => {
   const workerLaunchQueue = createWorkerLaunchQueueController(state, client, ctx.client, logger, (worker) =>
     chatWatcher.observeWorker(worker),
   )
+  const observeWorker = (worker: WorkerSummary, observedLaunchId?: string) => {
+    chatWatcher.observeWorker(worker)
+    workerLaunchQueue.observeWorker(worker, observedLaunchId)
+  }
 
   // Attach live event listener
-  const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client, (worker) =>
-    chatWatcher.observeWorker(worker),
-  )
+  const daemonEventHandler = createDaemonEventHandler(state, logger, config, ctx.client, observeWorker)
   const stallMonitor = createWorkerStallMonitor(state, logger, config, daemonEventHandler)
   stallMonitor.seedFromWorkers()
   client.onEvent((event) => {
@@ -147,7 +150,7 @@ const server: Plugin = (async (ctx) => {
       paseo_terminal_kill: createTerminalKillTool(state, client, logger),
       paseo_permission_respond: createPermissionRespondTool(state, client, logger),
       paseo_profile_list: createProfileListTool(ctx.client, logger),
-      paseo_worker_list: createWorkerListTool(state, client, logger, (worker) => chatWatcher.observeWorker(worker)),
+      paseo_worker_list: createWorkerListTool(state, client, logger, observeWorker),
       paseo_worker_create: createWorkerCreateTool(ctx.client, workerLaunchQueue, logger),
       paseo_worker_run: createWorkerRunTool(state, client, ctx.client, logger),
       paseo_worker_launch_status: createWorkerLaunchStatusTool(workerLaunchQueue, logger),
@@ -155,10 +158,8 @@ const server: Plugin = (async (ctx) => {
       paseo_worker_wait: createWorkerWaitTool(state, client, config, logger),
       paseo_worker_cancel: createWorkerCancelTool(state, client, logger),
       paseo_worker_archive: createWorkerArchiveTool(state, client, logger),
-      paseo_worker_update: createWorkerUpdateTool(state, client, logger, (worker) => chatWatcher.observeWorker(worker)),
-      paseo_worker_inspect: createWorkerInspectTool(state, client, logger, (worker) =>
-        chatWatcher.observeWorker(worker),
-      ),
+      paseo_worker_update: createWorkerUpdateTool(state, client, logger, observeWorker),
+      paseo_worker_inspect: createWorkerInspectTool(state, client, logger, observeWorker),
       paseo_worktree_list: createWorktreeListTool(state, client, logger),
       paseo_worktree_create: createWorktreeCreateTool(state, client, logger),
       paseo_worktree_archive: createWorktreeArchiveTool(state, client, logger),

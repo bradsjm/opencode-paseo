@@ -6,6 +6,7 @@ import { shouldNudge, formatNudgeMessage, sendNudge } from "../notifier.js"
 import {
   buildBlockingMetadata,
   findSessionsForResource,
+  getUnreadEventCountForResource,
   insertInboxEvent,
   markEventRead,
   mapAgentToWorkerSummary,
@@ -25,6 +26,7 @@ import type {
   WorkerStartedEvent,
 } from "../transport/types.js"
 import type { OpencodeClient } from "../profile.js"
+import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
 
 function syncWorkerFromPayload(
   state: PluginState,
@@ -76,7 +78,7 @@ function syncWorkerFromPayload(
   }
 
   const worker = mapAgentToWorkerSummary(merged)
-  worker.unreadEventCount = current?.unreadEventCount ?? 0
+  worker.unreadEventCount = getUnreadEventCountForResource(state, workerId)
   if (!worker.chatRoom && current?.chatRoom) {
     worker.chatRoom = current.chatRoom
   }
@@ -170,12 +172,20 @@ export function createDaemonEventHandler(
   logger: Logger,
   config: PluginConfig,
   opencodeClient?: OpencodeClient,
-  onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
+  onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
 ) {
   return (daemonEvent: DaemonEvent) => {
     let inboxEvent: InboxEvent | null = null
 
     switch (daemonEvent.type) {
+      case "terminal.exited": {
+        const terminal = state.terminals.get(daemonEvent.payload.terminalId)
+        if (terminal) {
+          terminal.status = "exited"
+        }
+        break
+      }
+
       case "daemon.connected": {
         setConnectionStatus(state, "connected")
         logger.info("Daemon connected")
@@ -205,7 +215,10 @@ export function createDaemonEventHandler(
       case "worker.blocked": {
         if (daemonEvent.type !== "worker.stalled") {
           const worker = syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
-          onWorkerObserved?.(worker)
+          const observedLaunchId = getWorkerLaunchIdFromLabels(
+            (daemonEvent.payload.agent as Record<string, unknown> | undefined)?.labels,
+          )
+          onWorkerObserved?.(worker, observedLaunchId)
         }
         const resourceId = daemonEvent.payload.workerId
         const summary = truncateSummary(

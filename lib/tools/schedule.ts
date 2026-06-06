@@ -29,6 +29,16 @@ function ensureNonEmptyPrompt(prompt: string | undefined): string | undefined {
   return prompt
 }
 
+function optionalNonEmptyString(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  return trimmed ? value : undefined
+}
+
+function optionalPositiveInteger(value: number | undefined): number | undefined {
+  return value !== undefined && value > 0 ? value : undefined
+}
+
 function buildScheduleCadence(args: {
   cadenceType?: "every" | "cron"
   everyMs?: number
@@ -278,32 +288,37 @@ export function createScheduleUpdateTool(
     async execute(args, context: ToolContext) {
       logger.info("Tool: paseo_schedule_update invoked", { id: args.id })
 
+      const prompt = optionalNonEmptyString(args.prompt)
+      const cronExpression = optionalNonEmptyString(args.cronExpression)
+      const timezone = optionalNonEmptyString(args.timezone)
+      const profile = optionalNonEmptyString(args.profile)
+      const cwd = optionalNonEmptyString(args.cwd)
+      const expiresAt = optionalNonEmptyString(args.expiresAt)
+      const everyMs = optionalPositiveInteger(args.everyMs)
+      const maxRuns = optionalPositiveInteger(args.maxRuns)
+
       const cadence = buildScheduleCadence({
         ...(args.cadenceType !== undefined ? { cadenceType: args.cadenceType } : {}),
-        ...(args.everyMs !== undefined ? { everyMs: args.everyMs } : {}),
-        ...(args.cronExpression !== undefined ? { cronExpression: args.cronExpression } : {}),
-        ...(args.timezone !== undefined ? { timezone: args.timezone } : {}),
+        ...(everyMs !== undefined ? { everyMs } : {}),
+        ...(cronExpression !== undefined ? { cronExpression } : {}),
+        ...(timezone !== undefined ? { timezone } : {}),
       })
 
       // Build optional newAgentConfig
       let newAgentConfig: { provider?: string; model?: string | null; modeId?: string | null; cwd?: string } | undefined
 
-      if (args.profile !== undefined && !args.profile.trim()) {
-        throw new Error("profile must not be empty")
-      }
-
-      if (args.profile || args.cwd) {
+      if (profile || cwd) {
         newAgentConfig = {
-          ...(args.cwd !== undefined ? { cwd: args.cwd } : {}),
+          ...(cwd !== undefined ? { cwd } : {}),
         }
       }
 
-      ensureNonEmptyPrompt(args.prompt)
+      ensureNonEmptyPrompt(prompt)
 
       // Resolve and validate profile-backed provider for newAgentConfig if provided
-      if (newAgentConfig && args.profile) {
+      if (newAgentConfig && profile) {
         const cwd = newAgentConfig.cwd ?? context.directory
-        const resolvedProfile = await resolveValidatedScheduleProfile(client, opencodeClient, logger, args.profile, cwd)
+        const resolvedProfile = await resolveValidatedScheduleProfile(client, opencodeClient, logger, profile, cwd)
         newAgentConfig.provider = resolvedProfile.provider
         newAgentConfig.model = resolvedProfile.model ?? null
         newAgentConfig.modeId = resolvedProfile.modeId ?? null
@@ -312,11 +327,11 @@ export function createScheduleUpdateTool(
       const result = await client.scheduleUpdate({
         id: args.id,
         ...(args.name !== undefined ? { name: args.name } : {}),
-        ...(args.prompt !== undefined ? { prompt: args.prompt } : {}),
+        ...(prompt !== undefined ? { prompt } : {}),
         ...(cadence !== undefined ? { cadence } : {}),
         ...(newAgentConfig !== undefined ? { newAgentConfig } : {}),
-        ...(args.maxRuns !== undefined ? { maxRuns: args.maxRuns } : {}),
-        ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
+        ...(maxRuns !== undefined ? { maxRuns } : {}),
+        ...(expiresAt !== undefined ? { expiresAt } : {}),
       })
 
       return {

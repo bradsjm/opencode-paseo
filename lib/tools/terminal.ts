@@ -8,7 +8,9 @@ import { getOrCreateSession, recordCreatedTerminal, unbindTerminalFromSessions }
 
 export function createTerminalListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "List all known Paseo terminals. Returns ID, title, status, and line count for each.",
+    description:
+      "List all known Paseo terminals, including retained killed-terminal history when available. " +
+      "Returns ID, title, status, and line count for each.",
     args: {
       cwd: tool.schema.string().optional().describe("Filter terminals by working directory"),
     },

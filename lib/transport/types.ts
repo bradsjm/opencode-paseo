@@ -45,6 +45,13 @@ export interface TerminalSummary {
   title?: string
 }
 
+export interface TerminalExitedEvent {
+  type: "terminal.exited"
+  payload: {
+    terminalId: string
+  }
+}
+
 // ─── Phase 3 Worker Types ─────────────────────────────────────────────────────
 // Plugin-level shapes for worker (agent) mutation and inspection.
 
@@ -445,6 +452,10 @@ export interface ScheduleMutationResult {
   requestId: string
   schedule: ScheduleRecord | null
   error: string | null
+  dispatched?: boolean
+  async?: boolean
+  warning?: string
+  nextStep?: string
 }
 
 export interface ScheduleListResult {
@@ -630,6 +641,7 @@ export type DaemonEvent =
   | DaemonConnectedEvent
   | DaemonDisconnectedEvent
   | DaemonErrorEvent
+  | TerminalExitedEvent
   | WorkerStartedEvent
   | WorkerStalledEvent
   | WorkerActivityEvent

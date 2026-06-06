@@ -1,6 +1,6 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
-import { removeWorkerFromState } from "../state/state.js"
+import { markResourceEventsRead, removeWorkerFromState } from "../state/state.js"
 import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 
@@ -14,16 +14,17 @@ export function createWorktreeListTool(state: PluginState, client: PaseoTranspor
       repoRoot: tool.schema.string().optional().describe("Repository root path (alternative to cwd)"),
     },
     async execute(args, context: ToolContext) {
-      const cwd = args.cwd ?? context.directory
-      logger.info("Tool: paseo_worktree_list invoked", { cwd, repoRoot: args.repoRoot })
+      const cwd = args.cwd?.trim() ? args.cwd : context.directory
+      const repoRoot = args.repoRoot?.trim() ? args.repoRoot : undefined
+      logger.info("Tool: paseo_worktree_list invoked", { cwd, repoRoot })
 
-      if (!cwd && !args.repoRoot) {
+      if (!cwd && !repoRoot) {
         throw new Error("Either cwd or repoRoot must be provided")
       }
 
       const result = await client.listWorktrees({
         ...(cwd !== undefined ? { cwd } : {}),
-        ...(args.repoRoot !== undefined ? { repoRoot: args.repoRoot } : {}),
+        ...(repoRoot !== undefined ? { repoRoot } : {}),
       })
 
       return {
@@ -107,6 +108,7 @@ export function createWorktreeArchiveTool(state: PluginState, client: PaseoTrans
       })
 
       for (const workerId of result.removedAgents ?? []) {
+        markResourceEventsRead(state, workerId)
         removeWorkerFromState(state, workerId)
       }
 
