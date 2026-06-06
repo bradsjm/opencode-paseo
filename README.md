@@ -4,7 +4,6 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bradsjm/opencode-paseo)
 [![Coding Harness](https://img.shields.io/badge/coding_harness-opencode-orange)](https://opencode.ai/)
 
-
 # Paseo plugin for OpenCode.
 
 [Paseo](https://paseo.sh/) is a self-hosted, multi-provider, open source coding agent orchestrator.
