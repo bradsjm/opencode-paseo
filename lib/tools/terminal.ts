@@ -5,6 +5,12 @@ import type { Logger } from "../logger.js"
 import { getOrCreateSession, recordCreatedTerminal, unbindTerminalFromSessions } from "../state/state.js"
 import { collapseNull, compactDefined, nullableOptional, optionalNumber } from "./args.js"
 
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new Error("Terminal create aborted")
+  }
+}
+
 // ─── Terminal List Tool ──────────────────────────────────────────────────────
 
 export function createTerminalListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
@@ -34,6 +40,17 @@ export function createTerminalListTool(state: PluginState, client: PaseoTranspor
 // ─── Terminal Create Tool ────────────────────────────────────────────────────
 
 export function createTerminalCreateTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
+  let terminalCreateTail: Promise<void> = Promise.resolve()
+
+  function serializeTerminalCreate<T>(operation: () => Promise<T>): Promise<T> {
+    const run = terminalCreateTail.then(operation, operation)
+    terminalCreateTail = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
   return tool({
     description: "Create a new Paseo terminal session. The terminal is bound to the current opencode session.",
     args: {
@@ -50,39 +67,44 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
       const name = collapseNull(args.name)
       const agentId = collapseNull(args.agentId)
       logger.info("Tool: paseo_terminal_create invoked", { cwd, name })
+      throwIfAborted(context.abort)
 
-      const result = await client.createTerminal({ cwd, ...compactDefined({ name, agentId }) })
+      return serializeTerminalCreate(async () => {
+        throwIfAborted(context.abort)
 
-      // Bind terminal to the session
-      const session = getOrCreateSession(state, context.sessionID, context.worktree)
-      recordCreatedTerminal(state, context.sessionID, {
-        id: result.id,
-        title: result.title ?? result.name ?? result.id,
-        cwd: result.cwd ?? cwd,
-        status: "running",
-        lineCount: 0,
-        lastReadCursor: 0,
+        const result = await client.createTerminal({ cwd, ...compactDefined({ name, agentId }) })
+
+        // Bind terminal to the session
+        const session = getOrCreateSession(state, context.sessionID, context.worktree)
+        recordCreatedTerminal(state, context.sessionID, {
+          id: result.id,
+          title: result.title ?? result.name ?? result.id,
+          cwd: result.cwd ?? cwd,
+          status: "running",
+          lineCount: 0,
+          lastReadCursor: 0,
+        })
+
+        logger.info("Terminal created", {
+          terminalId: result.id,
+          sessionId: session.opencodeSessionId,
+        })
+
+        return {
+          title: "Terminal Created",
+          output: JSON.stringify(
+            {
+              id: result.id,
+              name: result.name,
+              title: result.title,
+              cwd: result.cwd ?? cwd,
+              status: "running",
+            },
+            null,
+            2,
+          ),
+        }
       })
-
-      logger.info("Terminal created", {
-        terminalId: result.id,
-        sessionId: session.opencodeSessionId,
-      })
-
-      return {
-        title: "Terminal Created",
-        output: JSON.stringify(
-          {
-            id: result.id,
-            name: result.name,
-            title: result.title,
-            cwd: result.cwd ?? cwd,
-            status: "running",
-          },
-          null,
-          2,
-        ),
-      }
     },
   })
 }

@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createPluginState } from "../lib/state/state.js"
-import type { PaseoTransport } from "../lib/transport/types.js"
+import type { CreatedTerminal, PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 import {
@@ -120,6 +120,23 @@ function mockContext(): ToolContext {
     metadata: () => {},
     ask: async () => {},
   }
+}
+
+function mockContextWithAbort(abort: AbortSignal): ToolContext {
+  return {
+    ...mockContext(),
+    abort,
+  }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 // ─── Send Input Tool Tests ──────────────────────────────────────────────────
@@ -497,4 +514,131 @@ test("paseo_terminal_create treats null optional args as omitted and uses contex
   await createTerminalCreateTool(state, client, logger).execute({ cwd: null, name: null, agentId: null }, mockContext())
 
   assert.deepEqual(received, { cwd: "/tmp" })
+})
+
+test("paseo_terminal_create serializes concurrent creates", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  const deferredCreates = [createDeferred<CreatedTerminal>(), createDeferred<CreatedTerminal>()]
+  let createCalls = 0
+  let activeCreates = 0
+  let maxActiveCreates = 0
+  const client = createMockTransport({
+    createTerminal: async (_opts) => {
+      const deferred = deferredCreates[createCalls]!
+      createCalls += 1
+      activeCreates += 1
+      maxActiveCreates = Math.max(maxActiveCreates, activeCreates)
+      try {
+        return await deferred.promise
+      } finally {
+        activeCreates -= 1
+      }
+    },
+  })
+
+  const toolDef = createTerminalCreateTool(state, client, logger)
+  const firstResultPromise = toolDef.execute({ cwd: "/tmp", name: "first" }, mockContext())
+  const secondResultPromise = toolDef.execute({ cwd: "/tmp", name: "second" }, mockContext())
+
+  await Promise.resolve()
+  assert.equal(createCalls, 1)
+  assert.equal(maxActiveCreates, 1)
+
+  deferredCreates[0]!.resolve({ id: "t1", name: "first", title: "Term 1", cwd: "/tmp" })
+  const firstResult = await firstResultPromise
+  await Promise.resolve()
+
+  assert.equal(createCalls, 2)
+
+  deferredCreates[1]!.resolve({ id: "t2", name: "second", title: "Term 2", cwd: "/tmp" })
+  const secondResult = await secondResultPromise
+
+  const firstOutput = JSON.parse((firstResult as { output: string }).output)
+  const secondOutput = JSON.parse((secondResult as { output: string }).output)
+  assert.equal(firstOutput.id, "t1")
+  assert.equal(secondOutput.id, "t2")
+  assert.equal(maxActiveCreates, 1)
+  assert.deepEqual([...state.terminals.keys()].sort(), ["t1", "t2"])
+  assert.deepEqual([...state.sessions.get("sess-1")!.createdTerminalIds].sort(), ["t1", "t2"])
+})
+
+test("paseo_terminal_create continues after a failed queued create", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  const deferredCreates = [createDeferred<CreatedTerminal>(), createDeferred<CreatedTerminal>()]
+  let createCalls = 0
+  let activeCreates = 0
+  let maxActiveCreates = 0
+  const client = createMockTransport({
+    createTerminal: async () => {
+      const deferred = deferredCreates[createCalls]!
+      createCalls += 1
+      activeCreates += 1
+      maxActiveCreates = Math.max(maxActiveCreates, activeCreates)
+      try {
+        return await deferred.promise
+      } finally {
+        activeCreates -= 1
+      }
+    },
+  })
+
+  const toolDef = createTerminalCreateTool(state, client, logger)
+  const firstResultPromise = toolDef.execute({ cwd: "/tmp", name: "first" }, mockContext())
+  const secondResultPromise = toolDef.execute({ cwd: "/tmp", name: "second" }, mockContext())
+
+  await Promise.resolve()
+  assert.equal(createCalls, 1)
+
+  deferredCreates[0]!.reject(new Error("create failed"))
+  await assert.rejects(firstResultPromise, /create failed/)
+  await Promise.resolve()
+
+  assert.equal(createCalls, 2)
+
+  deferredCreates[1]!.resolve({ id: "t2", name: "second", title: "Term 2", cwd: "/tmp" })
+  const secondResult = await secondResultPromise
+  const secondOutput = JSON.parse((secondResult as { output: string }).output)
+
+  assert.equal(secondOutput.id, "t2")
+  assert.equal(maxActiveCreates, 1)
+  assert.deepEqual([...state.terminals.keys()], ["t2"])
+  assert.deepEqual([...state.sessions.get("sess-1")!.createdTerminalIds], ["t2"])
+})
+
+test("paseo_terminal_create skips an aborted queued create before transport side effects", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  const firstCreate = createDeferred<CreatedTerminal>()
+  let createCalls = 0
+  const client = createMockTransport({
+    createTerminal: async () => {
+      createCalls += 1
+      return firstCreate.promise
+    },
+  })
+
+  const toolDef = createTerminalCreateTool(state, client, logger)
+  const firstResultPromise = toolDef.execute({ cwd: "/tmp", name: "first" }, mockContext())
+  const abortedController = new AbortController()
+  const secondResultPromise = toolDef.execute(
+    { cwd: "/tmp", name: "second" },
+    mockContextWithAbort(abortedController.signal),
+  )
+
+  await Promise.resolve()
+  assert.equal(createCalls, 1)
+
+  abortedController.abort()
+  firstCreate.resolve({ id: "t1", name: "first", title: "Term 1", cwd: "/tmp" })
+
+  const firstResult = await firstResultPromise
+  await assert.rejects(secondResultPromise, /Terminal create aborted/)
+
+  const firstOutput = JSON.parse((firstResult as { output: string }).output)
+  assert.equal(firstOutput.id, "t1")
+  assert.equal(createCalls, 1)
+  assert.deepEqual([...state.terminals.keys()], ["t1"])
+  assert.deepEqual([...state.sessions.get("sess-1")!.createdTerminalIds], ["t1"])
 })
