@@ -222,11 +222,17 @@ When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin wa
 | `paseo_worker_send`          | Send a message to an existing worker.                                                                          |
 | `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption.                                  |
 | `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.                                             |
-| `paseo_worker_archive`       | Archive a worker from the active list.                                                                         |
+| `paseo_worker_archive`       | Archive a worker from the active list; daemon-backed historical records may still remain inspectable.          |
 | `paseo_worker_update`        | Update worker metadata and runtime settings.                                                                   |
 | `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                                                    |
 
 `paseo_worker_create` and `paseo_worker_run` are intentionally different paths. `create` goes through the plugin-owned FIFO launch queue in `lib/worker-launch/queue.ts`, while `run` uses the non-detached transport path and tracks only in-memory ephemeral cleanup state.
+
+`paseo_worker_create` and `paseo_worker_run` both create Paseo agents. When the plugin itself is running inside a Paseo agent environment and `PASEO_AGENT_ID` is present, those two supported creation paths automatically set the reserved label `paseo.parent-agent-id=<PASEO_AGENT_ID>`. That label is what Paseo's own UI uses to derive parent/child linkage for its `SubagentsTrack`. In this ACP usage, OpenCode has no UI for that track; the relevant UI is Paseo's UI.
+
+When `PASEO_AGENT_ID` is unset or blank, the plugin sends no parent label. When it is set, the plugin treats `paseo.parent-agent-id` as a reserved relationship label and overrides any user-supplied value for that key. Parent-linked detached children then follow Paseo's current archive/cascade behavior model.
+
+Scheduled `new-agent` runs and daemon-native loops are currently **not** parent-linkable through this plugin because the upstream daemon/client payloads used for those paths do not expose a labels field.
 
 Queued launch status uses these final failure outcomes:
 
@@ -254,7 +260,7 @@ For failed worktree-backed launches, `paseo_worker_launch_status` returns a stru
 | `paseo_loop_logs`    | Read cursor-based loop logs.                                                     |
 | `paseo_loop_stop`    | Stop a running loop.                                                             |
 
-`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`).
+`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`). Optional string fields remain optional, but if you provide them they must be non-empty after trimming. `verifyChecks`, when provided, must contain at least one non-empty command.
 
 ### Schedule
 
@@ -271,6 +277,23 @@ For failed worktree-backed launches, `paseo_worker_launch_status` returns a stru
 | `paseo_schedule_logs`     | Retrieve recent schedule run history.                                    |
 
 For `new-agent` schedule targets, the plugin resolves the requested OpenCode profile and attempts to validate that the selected provider exists in the daemon provider snapshot for the target `cwd`.
+
+`paseo_schedule_run_once` dispatches work asynchronously. A returned timeout warning after dispatch is not proof that the run failed; it means the daemon did not answer the request in time. Use `paseo_schedule_logs` to confirm the final outcome.
+
+### Terminal capture semantics
+
+- `paseo_terminal_capture` returns **normalized** terminal content: internal blank lines are preserved, but surplus trailing blank PTY padding is trimmed.
+- The returned `lineCount` matches that normalized content rather than raw daemon `totalLines` metadata.
+- After `paseo_terminal_kill` or daemon exit, a fresh daemon capture may be empty even when list metadata still exists. When possible, the plugin returns the last retained non-empty **matching** capture request instead, but that fallback is best-effort only.
+- You should still capture important output before killing a terminal.
+
+### Verification and troubleshooting
+
+- Check `printenv | sort` (or equivalent) in the plugin/agent environment if you expect parent-linked workers; `PASEO_AGENT_ID` must be present and non-empty.
+- If `paseo_worker_create` or `paseo_worker_run` launched from a Paseo-managed agent does not appear under Paseo's `SubagentsTrack`, inspect the created agent labels and confirm `paseo.parent-agent-id` was set.
+- `paseo_schedule_run_once` warnings should be followed with `paseo_schedule_logs`, not treated as final failure on their own.
+- Loop validation is intentionally strict: empty strings are rejected for provided optional string fields, verification requires `verifyPrompt` or non-empty `verifyChecks`, and at least one positive stop bound is required.
+- Archived workers leave the plugin's active list immediately, but daemon-backed historical records may still be inspectable with `paseo_worker_inspect`.
 
 ## Development commands
 

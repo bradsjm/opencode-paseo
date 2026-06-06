@@ -206,6 +206,25 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
+async function withPaseoAgentId<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.PASEO_AGENT_ID
+  if (value === undefined) {
+    delete process.env.PASEO_AGENT_ID
+  } else {
+    process.env.PASEO_AGENT_ID = value
+  }
+
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASEO_AGENT_ID
+    } else {
+      process.env.PASEO_AGENT_ID = previous
+    }
+  }
+}
+
 async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve))
 }
@@ -728,6 +747,38 @@ test("paseo_worker_archive", async (t) => {
     assert.equal(output.alreadyRemovedUpstream, true)
   })
 
+  await t.test("archived workers can still be daemon-inspectable after leaving the active list", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "codex",
+          cwd: "/repo",
+          model: "gpt-4",
+          status: "closed",
+          title: "Archived Worker",
+          labels: {},
+        },
+        project: null,
+      }),
+    })
+
+    await createWorkerArchiveTool(state, client, logger).execute({ workerId: "w1" }, mockContext())
+    assert.equal(state.workers.has("w1"), false)
+
+    const inspectResult = await createWorkerInspectTool(state, client, logger).execute(
+      { workerId: "w1" },
+      mockContext(),
+    )
+    const output = JSON.parse((inspectResult as { output: string }).output)
+
+    assert.equal(output.worker.id, "w1")
+    assert.equal(output.worker.source, "daemon")
+    assert.equal(output.worker.title, "Archived Worker")
+  })
+
   await t.test("non-not-found archive errors still fail and keep local state", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
@@ -1052,6 +1103,123 @@ test("paseo_worker_update", async (t) => {
       assert.equal("worktreeName" in options, false)
     })
 
+    await t.test("injects reserved parent-agent label from PASEO_AGENT_ID and preserves other labels", async () => {
+      await withPaseoAgentId("  parent-123  ", async () => {
+        const state = createPluginState()
+        const opencode = mockOpencodeClient()
+        let receivedOptions: RunWorkerOptions | null = null
+        const client = createMockTransport({
+          runWorker: async (opts) => {
+            receivedOptions = opts
+            return {
+              id: "w-run-parent",
+              provider: "opencode",
+              cwd: "/tmp",
+              model: null,
+              status: "running",
+              title: null,
+            }
+          },
+        })
+
+        const toolDef = createWorkerRunTool(state, client, opencode, logger)
+        await toolDef.execute(
+          {
+            prompt: "Solve it",
+            background: true,
+            labels: {
+              priority: "high",
+              "paseo.parent-agent-id": "user-parent",
+            },
+          },
+          mockContext(),
+        )
+
+        assert.ok(receivedOptions)
+        const receivedRunOptions = receivedOptions as RunWorkerOptions
+        assert.deepEqual(receivedRunOptions.labels, {
+          priority: "high",
+          "paseo.parent-agent-id": "parent-123",
+        })
+      })
+    })
+
+    await t.test("omits reserved parent-agent label when PASEO_AGENT_ID is missing", async () => {
+      await withPaseoAgentId(undefined, async () => {
+        const state = createPluginState()
+        const opencode = mockOpencodeClient()
+        let receivedOptions: RunWorkerOptions | null = null
+        const client = createMockTransport({
+          runWorker: async (opts) => {
+            receivedOptions = opts
+            return {
+              id: "w-run-no-parent",
+              provider: "opencode",
+              cwd: "/tmp",
+              model: null,
+              status: "running",
+              title: null,
+            }
+          },
+        })
+
+        const toolDef = createWorkerRunTool(state, client, opencode, logger)
+        await toolDef.execute(
+          {
+            prompt: "Solve it",
+            background: true,
+            labels: {
+              priority: "high",
+              "paseo.parent-agent-id": "user-parent",
+            },
+          },
+          mockContext(),
+        )
+
+        assert.ok(receivedOptions)
+        const receivedRunOptions = receivedOptions as RunWorkerOptions
+        assert.deepEqual(receivedRunOptions.labels, { priority: "high" })
+      })
+    })
+
+    await t.test("omits reserved parent-agent label when PASEO_AGENT_ID is blank", async () => {
+      await withPaseoAgentId("   ", async () => {
+        const state = createPluginState()
+        const opencode = mockOpencodeClient()
+        let receivedOptions: RunWorkerOptions | null = null
+        const client = createMockTransport({
+          runWorker: async (opts) => {
+            receivedOptions = opts
+            return {
+              id: "w-run-blank-parent",
+              provider: "opencode",
+              cwd: "/tmp",
+              model: null,
+              status: "running",
+              title: null,
+            }
+          },
+        })
+
+        const toolDef = createWorkerRunTool(state, client, opencode, logger)
+        await toolDef.execute(
+          {
+            prompt: "Solve it",
+            background: true,
+            labels: {
+              priority: "high",
+              "paseo.parent-agent-id": "user-parent",
+            },
+          },
+          mockContext(),
+        )
+
+        assert.ok(receivedOptions)
+        const receivedRunOptions = receivedOptions as RunWorkerOptions
+        assert.deepEqual(receivedRunOptions.labels, { priority: "high" })
+      })
+    })
+
     await t.test("background run returns immediately and keeps ephemeral tracking", async () => {
       const state = createPluginState()
       const opencode = mockOpencodeClient()
@@ -1311,95 +1479,99 @@ test("paseo_worker_update", async (t) => {
     })
 
     await t.test("passes initialPrompt and labels through", async () => {
-      const state = createPluginState()
-      let receivedOptions: any = null
-      const client = createMockTransport({
-        createWorker: async (opts) => {
-          receivedOptions = opts
-          return {
-            id: "w4",
-            provider: "opencode",
-            cwd: "/tmp",
-            model: null,
-            status: "running" as const,
-            title: null,
-          }
-        },
-      })
-      const opencode = mockOpencodeClient()
-      const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
-
-      const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
-      const result = await toolDef.execute(
-        {
-          initialPrompt: "Fix the bug",
-          labels: {
-            priority: "high",
-            "opencodePaseo.launchId": "user-launch",
-            "opencodePaseo.sessionId": "user-session",
-            "opencodePaseo.worktreeName": "user-worktree",
+      await withPaseoAgentId(undefined, async () => {
+        const state = createPluginState()
+        let receivedOptions: any = null
+        const client = createMockTransport({
+          createWorker: async (opts) => {
+            receivedOptions = opts
+            return {
+              id: "w4",
+              provider: "opencode",
+              cwd: "/tmp",
+              model: null,
+              status: "running" as const,
+              title: null,
+            }
           },
-          worktreeName: "repo-worktree",
-        },
-        mockContext(),
-      )
-      await flushAsyncWork()
+        })
+        const opencode = mockOpencodeClient()
+        const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
 
-      const output = JSON.parse((result as { output: string }).output)
-      assert.equal(receivedOptions.initialPrompt, "Fix the bug")
-      assert.deepEqual(receivedOptions.labels, {
-        priority: "high",
-        "opencodePaseo.launchId": output.launchId,
-        "opencodePaseo.sessionId": "sess-1",
-        "opencodePaseo.worktreeName": "repo-worktree",
+        const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+        const result = await toolDef.execute(
+          {
+            initialPrompt: "Fix the bug",
+            labels: {
+              priority: "high",
+              "opencodePaseo.launchId": "user-launch",
+              "opencodePaseo.sessionId": "user-session",
+              "opencodePaseo.worktreeName": "user-worktree",
+            },
+            worktreeName: "repo-worktree",
+          },
+          mockContext(),
+        )
+        await flushAsyncWork()
+
+        const output = JSON.parse((result as { output: string }).output)
+        assert.equal(receivedOptions.initialPrompt, "Fix the bug")
+        assert.deepEqual(receivedOptions.labels, {
+          priority: "high",
+          "opencodePaseo.launchId": output.launchId,
+          "opencodePaseo.sessionId": "sess-1",
+          "opencodePaseo.worktreeName": "repo-worktree",
+        })
       })
     })
 
     await t.test("appends chat room instructions and persists reserved label", async () => {
-      const state = createPluginState()
-      let receivedOptions: any = null
-      const client = createMockTransport({
-        createWorker: async (opts) => {
-          receivedOptions = opts
-          return {
-            id: "w-chat",
-            provider: "opencode",
-            cwd: "/tmp",
-            model: null,
-            status: "running" as const,
-            title: null,
-          }
-        },
-      })
-      const opencode = mockOpencodeClient()
-      const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
-
-      const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
-      const result = await toolDef.execute(
-        {
-          initialPrompt: "Solve the task.",
-          chatRoom: "  room-alpha  ",
-          labels: {
-            priority: "high",
-            "opencodePaseo.chatRoom": "wrong-room",
+      await withPaseoAgentId(undefined, async () => {
+        const state = createPluginState()
+        let receivedOptions: any = null
+        const client = createMockTransport({
+          createWorker: async (opts) => {
+            receivedOptions = opts
+            return {
+              id: "w-chat",
+              provider: "opencode",
+              cwd: "/tmp",
+              model: null,
+              status: "running" as const,
+              title: null,
+            }
           },
-        },
-        mockContext(),
-      )
-      await flushAsyncWork()
+        })
+        const opencode = mockOpencodeClient()
+        const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
 
-      const output = JSON.parse((result as { output: string }).output)
-      assert.equal(output.chatRoom, "room-alpha")
-      assert.match(receivedOptions.initialPrompt, /^Solve the task\.\n\nPaseo chat coordination instructions:/)
-      assert.match(receivedOptions.initialPrompt, /room-alpha/)
-      assert.match(receivedOptions.initialPrompt, /paseo chat post/)
-      assert.match(receivedOptions.initialPrompt, /PASEO_AGENT_ID/)
-      assert.match(receivedOptions.initialPrompt, /@<worker-id>/)
-      assert.deepEqual(receivedOptions.labels, {
-        priority: "high",
-        "opencodePaseo.chatRoom": "room-alpha",
-        "opencodePaseo.launchId": output.launchId,
-        "opencodePaseo.sessionId": "sess-1",
+        const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+        const result = await toolDef.execute(
+          {
+            initialPrompt: "Solve the task.",
+            chatRoom: "  room-alpha  ",
+            labels: {
+              priority: "high",
+              "opencodePaseo.chatRoom": "wrong-room",
+            },
+          },
+          mockContext(),
+        )
+        await flushAsyncWork()
+
+        const output = JSON.parse((result as { output: string }).output)
+        assert.equal(output.chatRoom, "room-alpha")
+        assert.match(receivedOptions.initialPrompt, /^Solve the task\.\n\nPaseo chat coordination instructions:/)
+        assert.match(receivedOptions.initialPrompt, /room-alpha/)
+        assert.match(receivedOptions.initialPrompt, /paseo chat post/)
+        assert.match(receivedOptions.initialPrompt, /PASEO_AGENT_ID/)
+        assert.match(receivedOptions.initialPrompt, /@<worker-id>/)
+        assert.deepEqual(receivedOptions.labels, {
+          priority: "high",
+          "opencodePaseo.chatRoom": "room-alpha",
+          "opencodePaseo.launchId": output.launchId,
+          "opencodePaseo.sessionId": "sess-1",
+        })
       })
     })
 

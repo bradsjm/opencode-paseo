@@ -307,6 +307,36 @@ export function projectTimeline(timeline: unknown, requestedLimit?: number): Wor
   }
 }
 
+function isBlankTerminalLine(line: string): boolean {
+  return line.trim().length === 0
+}
+
+export function normalizeTerminalCaptureLines(lines: string[]): string[] {
+  const normalized = [...lines]
+  while (
+    normalized.length > 1 &&
+    isBlankTerminalLine(normalized[normalized.length - 1]!) &&
+    isBlankTerminalLine(normalized[normalized.length - 2]!)
+  ) {
+    normalized.pop()
+  }
+  return normalized
+}
+
+export function mapTerminalCaptureResult(result: {
+  terminalId: string
+  lines: string[]
+  totalLines: number
+}): TerminalCapture {
+  const normalizedLines = normalizeTerminalCaptureLines(result.lines)
+  return {
+    terminalId: result.terminalId,
+    content: normalizedLines.join("\n"),
+    lineCount: normalizedLines.length,
+    truncated: result.lines.length < result.totalLines,
+  }
+}
+
 export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerminalExitEvent): DaemonEvent | null {
   switch (event.type) {
     case "agent_update": {
@@ -830,13 +860,7 @@ export class PaseoClient implements PaseoTransport {
       end: options.end,
       stripAnsi: options.stripAnsi,
     })
-    const content = result.lines.join("\n")
-    return {
-      terminalId: result.terminalId,
-      content,
-      lineCount: result.totalLines,
-      truncated: result.lines.length < result.totalLines,
-    }
+    return mapTerminalCaptureResult(result)
   }
 
   sendTerminalInput(terminalId: string, input: string): void {

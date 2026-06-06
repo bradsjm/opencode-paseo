@@ -138,6 +138,25 @@ function mockContext(): ToolContext {
   }
 }
 
+async function withPaseoAgentId<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.PASEO_AGENT_ID
+  if (value === undefined) {
+    delete process.env.PASEO_AGENT_ID
+  } else {
+    process.env.PASEO_AGENT_ID = value
+  }
+
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASEO_AGENT_ID
+    } else {
+      process.env.PASEO_AGENT_ID = previous
+    }
+  }
+}
+
 test("paseo_schedule_create", async (t) => {
   const logger = new Logger(false)
 
@@ -191,6 +210,35 @@ test("paseo_schedule_create", async (t) => {
       cwd: "/tmp",
       model: "openai/gpt-5.4",
       modeId: "build",
+    })
+    assert.equal("labels" in receivedOptions.target.config, false)
+  })
+
+  await t.test("does not send unsupported parent-label fields for new-agent schedules", async () => {
+    await withPaseoAgentId("parent-schedule", async () => {
+      const state = createPluginState()
+      let receivedOptions: any = null
+      const client = createMockTransport({
+        scheduleCreate: async (opts) => {
+          receivedOptions = opts
+          return { requestId: "req", schedule: null, error: null }
+        },
+      })
+      const opencode = mockOpencodeClient()
+
+      await createScheduleCreateTool(state, client, opencode, logger).execute(
+        {
+          prompt: "Run nightly",
+          cadenceType: "every",
+          everyMs: 1000,
+          targetType: "new-agent",
+          profile: "build",
+        },
+        mockContext(),
+      )
+
+      assert.equal("labels" in receivedOptions.target.config, false)
+      assert.equal("paseo.parent-agent-id" in receivedOptions.target.config, false)
     })
   })
 
@@ -316,6 +364,7 @@ test("paseo_schedule_update", async (t) => {
       model: "openai/gpt-5.4",
       modeId: "build",
     })
+    assert.equal("labels" in receivedOptions.newAgentConfig, false)
   })
 
   await t.test("supports cwd-only new-agent updates", async () => {

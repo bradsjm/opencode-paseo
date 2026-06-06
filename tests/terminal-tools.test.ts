@@ -5,6 +5,7 @@ import type { PaseoTransport } from "../lib/transport/types.js"
 import { Logger } from "../lib/logger.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 import {
+  createTerminalCaptureTool,
   createTerminalKillTool,
   createTerminalListTool,
   createTerminalSendInputTool,
@@ -318,6 +319,157 @@ test("paseo_terminal_kill description warns to capture output first", () => {
   assert.match(toolDef.description, /capture any important output/i)
   assert.match(toolDef.description, /paseo_terminal_capture/i)
   assert.match(toolDef.description, /buffers may not remain available afterward/i)
+})
+
+test("paseo_terminal_capture", async (t) => {
+  const logger = new Logger(false)
+
+  await t.test("returns retained capture for killed terminals when daemon buffer is gone", async () => {
+    const state = createPluginState()
+    state.terminals.set("t1", {
+      id: "t1",
+      title: "Term 1",
+      cwd: "/tmp",
+      status: "running",
+      lineCount: 0,
+      lastReadCursor: 0,
+    })
+
+    let captureCalls = 0
+    const client = createMockTransport({
+      captureTerminal: async () => {
+        captureCalls += 1
+        if (captureCalls === 1) {
+          return {
+            terminalId: "t1",
+            content: "line one",
+            lineCount: 1,
+            truncated: false,
+          }
+        }
+
+        return {
+          terminalId: "t1",
+          content: "",
+          lineCount: 0,
+          truncated: false,
+        }
+      },
+    })
+
+    const toolDef = createTerminalCaptureTool(state, client, logger)
+    await toolDef.execute({ terminalId: "t1" }, mockContext())
+    state.terminals.get("t1")!.status = "killed"
+
+    const result = await toolDef.execute({ terminalId: "t1" }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.content, "line one")
+    assert.equal(output.lineCount, 1)
+    assert.equal(output.source, "retained")
+    assert.match(output.warning, /last retained capture/i)
+  })
+
+  await t.test("does not reuse stale retained capture for running terminals", async () => {
+    const state = createPluginState()
+    state.terminals.set("t1", {
+      id: "t1",
+      title: "Term 1",
+      cwd: "/tmp",
+      status: "running",
+      lineCount: 1,
+      lastReadCursor: 0,
+      lastCapture: {
+        content: "stale",
+        lineCount: 1,
+        truncated: false,
+        requestedLines: 200,
+        stripAnsi: true,
+      },
+    })
+    const client = createMockTransport({
+      captureTerminal: async () => ({
+        terminalId: "t1",
+        content: "",
+        lineCount: 0,
+        truncated: false,
+      }),
+    })
+
+    const result = await createTerminalCaptureTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.content, "")
+    assert.equal(output.lineCount, 0)
+    assert.equal(output.source, "daemon")
+    assert.equal(state.terminals.get("t1")?.lastCapture?.content, "stale")
+  })
+
+  await t.test("returns empty daemon capture when no retained output exists", async () => {
+    const state = createPluginState()
+    state.terminals.set("t1", {
+      id: "t1",
+      title: "Term 1",
+      cwd: "/tmp",
+      status: "killed",
+      lineCount: 0,
+      lastReadCursor: 0,
+    })
+    const client = createMockTransport({
+      captureTerminal: async () => ({
+        terminalId: "t1",
+        content: "",
+        lineCount: 0,
+        truncated: false,
+      }),
+    })
+
+    const result = await createTerminalCaptureTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.content, "")
+    assert.equal(output.lineCount, 0)
+    assert.equal(output.source, "daemon")
+    assert.equal("warning" in output, false)
+  })
+
+  await t.test("does not reuse retained capture when the new request shape does not match", async () => {
+    const state = createPluginState()
+    state.terminals.set("t1", {
+      id: "t1",
+      title: "Term 1",
+      cwd: "/tmp",
+      status: "killed",
+      lineCount: 1,
+      lastReadCursor: 0,
+      lastCapture: {
+        content: "line one",
+        lineCount: 1,
+        truncated: false,
+        requestedLines: 200,
+        stripAnsi: true,
+      },
+    })
+    const client = createMockTransport({
+      captureTerminal: async () => ({
+        terminalId: "t1",
+        content: "",
+        lineCount: 0,
+        truncated: false,
+      }),
+    })
+
+    const result = await createTerminalCaptureTool(state, client, logger).execute(
+      { terminalId: "t1", lines: 20 },
+      mockContext(),
+    )
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.content, "")
+    assert.equal(output.lineCount, 0)
+    assert.equal(output.source, "daemon")
+    assert.equal("warning" in output, false)
+  })
 })
 
 test("paseo_terminal_list retains killed terminal history", async () => {

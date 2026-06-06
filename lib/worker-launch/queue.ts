@@ -1,5 +1,6 @@
 import { sendNudge } from "../notifier.js"
 import { RESERVED_CHAT_ROOM_LABEL } from "../chat/worker-room.js"
+import { mergePaseoParentAgentLabel } from "../parent-agent-label.js"
 import {
   getOrCreateSession,
   getUnreadEventCountForResource,
@@ -109,7 +110,7 @@ function buildLaunchLabels(input: EnqueueWorkerLaunchInput, launchId: string): R
   if (input.chatRoom) {
     labels[RESERVED_CHAT_ROOM_LABEL] = input.chatRoom
   }
-  return labels
+  return mergePaseoParentAgentLabel(labels) ?? labels
 }
 
 function buildFallbackWorker(record: WorkerLaunchRecord, created: CreatedWorker): WorkerSummary {

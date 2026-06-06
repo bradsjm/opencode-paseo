@@ -14,6 +14,7 @@ import type {
 import type { WorkerActivitySummary } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import type { OpencodeClient } from "../profile.js"
+import { mergePaseoParentAgentLabel } from "../parent-agent-label.js"
 import {
   listProfiles,
   normalizeProfileName,
@@ -135,7 +136,8 @@ export function createWorkerCreateTool(
       `Profiles define the model and mode for the worker. Use paseo_profile_list to see available profiles. ` +
       `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified. ` +
       "This tool returns a launch receipt immediately; queued launches are executed FIFO with one active launch per plugin instance. " +
-      "Use paseo_worker_launch_status to check launch progress and worker ID once created.",
+      "Use paseo_worker_launch_status to check launch progress and worker ID once created. When the plugin runs inside " +
+      "a Paseo agent environment, it also sets the reserved paseo.parent-agent-id label automatically.",
     args: {
       cwd: tool.schema.string().optional().describe("Working directory for the worker (defaults to session directory)"),
       profile: tool.schema
@@ -272,7 +274,8 @@ export function createWorkerRunTool(
     description:
       "Create a new Paseo worker through the foreground run path. Runs are non-detached, " +
       "block by default until completion, support background mode, and are best-effort canceled " +
-      "on tool abort or owning session cleanup.",
+      "on tool abort or owning session cleanup. When the plugin runs inside a Paseo agent environment, " +
+      "it also sets the reserved paseo.parent-agent-id label automatically.",
     args: {
       prompt: tool.schema.string().describe("Prompt to execute on the worker"),
       cwd: tool.schema.string().optional().describe("Working directory for the worker (defaults to session directory)"),
@@ -320,13 +323,15 @@ export function createWorkerRunTool(
         timeout,
       })
 
+      const labels = mergePaseoParentAgentLabel(args.labels)
+
       const createdWorker = await client.runWorker({
         cwd,
         provider: workerFields.provider,
         ...(workerFields.model !== undefined ? { model: workerFields.model } : {}),
         modeId: workerFields.modeId,
         initialPrompt: chatRoom ? appendChatRoomCoordinationPrompt(args.prompt, chatRoom) : args.prompt,
-        ...(args.labels !== undefined ? { labels: args.labels } : {}),
+        ...(labels !== undefined ? { labels } : {}),
         ...(worktreeName !== undefined ? { worktreeName } : {}),
         background,
       })
@@ -944,7 +949,9 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
 
 export function createWorkerArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "Archive a Paseo worker. The worker is removed from the active list.",
+    description:
+      "Archive a Paseo worker. The worker is removed from the active list, but daemon-backed historical " +
+      "records may still remain inspectable afterward.",
     args: {
       workerId: tool.schema.string().describe("ID of the worker to archive"),
     },

@@ -16,6 +16,25 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
+async function withPaseoAgentId<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.PASEO_AGENT_ID
+  if (value === undefined) {
+    delete process.env.PASEO_AGENT_ID
+  } else {
+    process.env.PASEO_AGENT_ID = value
+  }
+
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASEO_AGENT_ID
+    } else {
+      process.env.PASEO_AGENT_ID = previous
+    }
+  }
+}
+
 async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve))
 }
@@ -232,75 +251,166 @@ test("worker launch queue controller", async (t) => {
   })
 
   await t.test("continues to next launch after failure and binds successful worker to session state", async () => {
-    const state = createPluginState()
-    const promptMessages: string[] = []
-    const first = createDeferred<never>()
-    const second = createDeferred<{
-      id: string
-      provider: string
-      cwd: string
-      model: string | null
-      status: "running"
-      title: null
-    }>()
-    let callIndex = 0
-    const client = createMockTransport({
-      createWorker: async () => {
-        callIndex += 1
-        return callIndex === 1 ? first.promise : second.promise
-      },
-    })
-    const controller = createWorkerLaunchQueueController(
-      state,
-      client,
-      createMockOpencodeClient(promptMessages),
-      logger,
-    )
+    await withPaseoAgentId(undefined, async () => {
+      const state = createPluginState()
+      const promptMessages: string[] = []
+      const first = createDeferred<never>()
+      const second = createDeferred<{
+        id: string
+        provider: string
+        cwd: string
+        model: string | null
+        status: "running"
+        title: null
+      }>()
+      let callIndex = 0
+      const client = createMockTransport({
+        createWorker: async () => {
+          callIndex += 1
+          return callIndex === 1 ? first.promise : second.promise
+        },
+      })
+      const controller = createWorkerLaunchQueueController(
+        state,
+        client,
+        createMockOpencodeClient(promptMessages),
+        logger,
+      )
 
-    const failedReceipt = controller.enqueueWorkerLaunch({
-      sessionId: "sess-1",
-      projectRoot: "/project",
-      profile: "build",
-      cwd: "/project",
-      provider: "opencode",
-      modeId: "build",
-    })
-    const successReceipt = controller.enqueueWorkerLaunch({
-      sessionId: "sess-1",
-      projectRoot: "/project",
-      profile: "review",
-      cwd: "/project",
-      provider: "opencode",
-      modeId: "review",
-    })
+      const failedReceipt = controller.enqueueWorkerLaunch({
+        sessionId: "sess-1",
+        projectRoot: "/project",
+        profile: "build",
+        cwd: "/project",
+        provider: "opencode",
+        modeId: "build",
+      })
+      const successReceipt = controller.enqueueWorkerLaunch({
+        sessionId: "sess-1",
+        projectRoot: "/project",
+        profile: "review",
+        cwd: "/project",
+        provider: "opencode",
+        modeId: "review",
+      })
 
-    const drainPromise = controller.drainWorkerLaunchQueue()
-    await flushAsyncWork()
-    first.reject(new Error("launch failed"))
-    await flushAsyncWork()
+      const drainPromise = controller.drainWorkerLaunchQueue()
+      await flushAsyncWork()
+      first.reject(new Error("launch failed"))
+      await flushAsyncWork()
 
-    second.resolve({
-      id: "w-success",
-      provider: "opencode",
-      cwd: "/project",
-      model: null,
-      status: "running",
-      title: null,
+      second.resolve({
+        id: "w-success",
+        provider: "opencode",
+        cwd: "/project",
+        model: null,
+        status: "running",
+        title: null,
+      })
+      await drainPromise
+
+      const failedStatus = controller.getWorkerLaunchStatus(failedReceipt.launchId)
+      const successStatus = controller.getWorkerLaunchStatus(successReceipt.launchId)
+      assert.equal(failedStatus.status, "failed")
+      assert.match(failedStatus.error ?? "", /launch failed/)
+      assert.equal(successStatus.status, "created")
+      assert.equal(successStatus.workerId, "w-success")
+      assert.ok(state.workers.has("w-success"))
+      assert.ok(state.sessions.get("sess-1")?.createdWorkerIds.has("w-success"))
+      assert.deepEqual(state.workers.get("w-success")?.labels, [])
+      assert.equal(promptMessages.length, 2)
+      assert.match(at(promptMessages, 0), new RegExp(failedReceipt.launchId))
+      assert.match(at(promptMessages, 1), /w-success/)
     })
-    await drainPromise
+  })
 
-    const failedStatus = controller.getWorkerLaunchStatus(failedReceipt.launchId)
-    const successStatus = controller.getWorkerLaunchStatus(successReceipt.launchId)
-    assert.equal(failedStatus.status, "failed")
-    assert.match(failedStatus.error ?? "", /launch failed/)
-    assert.equal(successStatus.status, "created")
-    assert.equal(successStatus.workerId, "w-success")
-    assert.ok(state.workers.has("w-success"))
-    assert.ok(state.sessions.get("sess-1")?.createdWorkerIds.has("w-success"))
-    assert.deepEqual(state.workers.get("w-success")?.labels, [])
-    assert.equal(promptMessages.length, 2)
-    assert.match(at(promptMessages, 0), new RegExp(failedReceipt.launchId))
-    assert.match(at(promptMessages, 1), /w-success/)
+  await t.test("merges reserved launch labels with env-derived parent linkage", async () => {
+    await withPaseoAgentId("  parent-queue  ", async () => {
+      const state = createPluginState()
+      let receivedLabels: Record<string, string> | undefined
+      const client = createMockTransport({
+        createWorker: async (opts) => {
+          receivedLabels = opts.labels
+          return {
+            id: "w-parent",
+            provider: "opencode",
+            cwd: "/project",
+            model: null,
+            status: "running",
+            title: null,
+          }
+        },
+      })
+      const controller = createWorkerLaunchQueueController(state, client, createMockOpencodeClient([]), logger)
+
+      const receipt = controller.enqueueWorkerLaunch({
+        sessionId: "sess-1",
+        projectRoot: "/project",
+        profile: "build",
+        cwd: "/project",
+        provider: "opencode",
+        modeId: "build",
+        chatRoom: "room-alpha",
+        worktreeName: "repo-worktree",
+        labels: {
+          priority: "high",
+          "paseo.parent-agent-id": "user-parent",
+        },
+      })
+
+      await controller.drainWorkerLaunchQueue()
+
+      assert.deepEqual(receivedLabels, {
+        priority: "high",
+        "paseo.parent-agent-id": "parent-queue",
+        "opencodePaseo.launchId": receipt.launchId,
+        "opencodePaseo.sessionId": "sess-1",
+        "opencodePaseo.worktreeName": "repo-worktree",
+        "opencodePaseo.chatRoom": "room-alpha",
+      })
+    })
+  })
+
+  await t.test("omits parent linkage for queued launches when env is blank", async () => {
+    await withPaseoAgentId("   ", async () => {
+      const state = createPluginState()
+      let receivedLabels: Record<string, string> | undefined
+      const client = createMockTransport({
+        createWorker: async (opts) => {
+          receivedLabels = opts.labels
+          return {
+            id: "w-no-parent",
+            provider: "opencode",
+            cwd: "/project",
+            model: null,
+            status: "running",
+            title: null,
+          }
+        },
+      })
+      const controller = createWorkerLaunchQueueController(state, client, createMockOpencodeClient([]), logger)
+
+      const receipt = controller.enqueueWorkerLaunch({
+        sessionId: "sess-1",
+        projectRoot: "/project",
+        profile: "build",
+        cwd: "/project",
+        provider: "opencode",
+        modeId: "build",
+        labels: {
+          priority: "high",
+          "paseo.parent-agent-id": "user-parent",
+        },
+      })
+
+      await controller.drainWorkerLaunchQueue()
+
+      assert.deepEqual(receivedLabels, {
+        priority: "high",
+        "opencodePaseo.launchId": receipt.launchId,
+        "opencodePaseo.sessionId": "sess-1",
+      })
+    })
   })
 
   await t.test("observed worker reconciles a starting launch before createWorker resolves", async () => {

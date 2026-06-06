@@ -130,6 +130,25 @@ function mockContext(directory = "/context-dir"): ToolContext {
   }
 }
 
+async function withPaseoAgentId<T>(value: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.PASEO_AGENT_ID
+  if (value === undefined) {
+    delete process.env.PASEO_AGENT_ID
+  } else {
+    process.env.PASEO_AGENT_ID = value
+  }
+
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PASEO_AGENT_ID
+    } else {
+      process.env.PASEO_AGENT_ID = previous
+    }
+  }
+}
+
 test("paseo_loop_run", async (t) => {
   const logger = new Logger(false)
 
@@ -183,6 +202,34 @@ test("paseo_loop_run", async (t) => {
       maxTimeMs: 1000,
     })
     assert.equal(typeof (result as { output: string }).output, "string")
+  })
+
+  await t.test("does not send unsupported parent-label fields even when PASEO_AGENT_ID is set", async () => {
+    await withPaseoAgentId("parent-loop", async () => {
+      let received: Record<string, unknown> | undefined
+      const client = createMockTransport({
+        loopRun: async (options) => {
+          received = options as unknown as Record<string, unknown>
+          return {
+            requestId: "req",
+            loop: { id: "loop-1", iterations: [] },
+            error: null,
+          }
+        },
+      })
+
+      await createLoopRunTool(client, logger).execute(
+        {
+          prompt: "loop",
+          verifyPrompt: "verify",
+          maxIterations: 1,
+        },
+        mockContext(),
+      )
+
+      assert.equal("labels" in (received ?? {}), false)
+      assert.equal("paseo.parent-agent-id" in (received ?? {}), false)
+    })
   })
 
   await t.test("defaults cwd from tool context", async () => {

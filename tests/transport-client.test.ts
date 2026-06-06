@@ -2,8 +2,10 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   buildDaemonConfig,
+  mapTerminalCaptureResult,
   mapServerInfo,
   mapAgentSnapshot,
+  normalizeTerminalCaptureLines,
   PaseoClient,
   projectTimeline,
   translateUpstreamEvent,
@@ -148,6 +150,30 @@ test("mapAgentSnapshot maps upstream agent to AgentSummary", async (t) => {
       labels: { worktreePath: "/wt/label" },
     })
     assert.equal(result.worktreePath, "/wt/direct")
+  })
+})
+
+test("terminal capture normalization", async (t) => {
+  await t.test("trims surplus trailing blank lines while preserving internal blanks and one trailing blank", () => {
+    assert.deepEqual(normalizeTerminalCaptureLines(["line 1", "", "line 2", "", "", "   "]), [
+      "line 1",
+      "",
+      "line 2",
+      "",
+    ])
+  })
+
+  await t.test("maps normalized content lineCount and preserves truncated flag semantics", () => {
+    const result = mapTerminalCaptureResult({
+      terminalId: "term-1",
+      lines: ["line 1", "", "", ""],
+      totalLines: 10,
+    })
+
+    assert.equal(result.terminalId, "term-1")
+    assert.equal(result.content, "line 1\n")
+    assert.equal(result.lineCount, 2)
+    assert.equal(result.truncated, true)
   })
 })
 

@@ -143,7 +143,8 @@ export function createScheduleCreateTool(
   return tool({
     description:
       "Create a new Paseo schedule. Defines a recurring prompt execution with a cadence and target agent configuration. " +
-      "Scheduled runs execute asynchronously. Use paseo_schedule_logs to inspect run history.",
+      "Scheduled runs execute asynchronously. Use paseo_schedule_logs to inspect run history. Scheduled new-agent runs " +
+      "cannot currently be parent-linked by this plugin because the upstream schedule payload exposes no labels field.",
     args: {
       prompt: tool.schema.string().describe("Prompt to execute on each scheduled run"),
       name: tool.schema.string().optional().describe("Human-readable name for the schedule"),
@@ -271,7 +272,9 @@ export function createScheduleUpdateTool(
 ): ToolDefinition {
   return tool({
     description:
-      "Update an existing Paseo schedule. Only provided fields are modified; omitted fields remain unchanged.",
+      "Update an existing Paseo schedule. Only provided fields are modified; omitted fields remain unchanged. " +
+      "Scheduled new-agent runs cannot currently be parent-linked by this plugin because the upstream schedule payload " +
+      "exposes no labels field.",
     args: {
       id: tool.schema.string().describe("ID of the schedule to update"),
       name: tool.schema.string().optional().describe("New human-readable name"),
@@ -405,7 +408,8 @@ export function createScheduleRunOnceTool(state: PluginState, client: PaseoTrans
   return tool({
     description:
       "Trigger a single immediate execution of a Paseo schedule. Does not affect the regular cadence. " +
-      "The triggered run executes asynchronously. Use paseo_schedule_logs to check run outcomes.",
+      "The triggered run executes asynchronously. A timeout warning after dispatch is not proof of failure; use " +
+      "paseo_schedule_logs to confirm the final outcome.",
     args: {
       id: tool.schema.string().describe("ID of the schedule to trigger"),
     },

@@ -58,7 +58,10 @@ function normalizeVerifyChecks(verifyChecks: string[] | undefined): string[] | u
 
 export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "Run a daemon-native Paseo loop with required verification and bounded stop conditions.",
+    description:
+      "Run a daemon-native Paseo loop with required verification and bounded stop conditions. Optional string fields " +
+      "must be non-empty when provided. Loop-created agents cannot currently be parent-linked by this plugin because " +
+      "the upstream loop payload exposes no labels field.",
     args: {
       prompt: tool.schema.string().describe("Prompt for the loop worker"),
       cwd: tool.schema.string().optional().describe("Working directory for the loop (defaults to session directory)"),

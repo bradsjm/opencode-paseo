@@ -34,6 +34,13 @@ export interface TerminalSessionSummary {
   status: TerminalStatus
   lineCount: number
   lastReadCursor: number
+  lastCapture?: {
+    content: string
+    lineCount: number
+    truncated: boolean
+    requestedLines: number
+    stripAnsi: boolean
+  }
 }
 
 export interface WorkerSummary {

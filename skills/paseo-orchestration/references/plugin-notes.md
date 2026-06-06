@@ -12,12 +12,15 @@ Keep this file as the quick contract reference for current `opencode-paseo` tool
 
 - `paseo_worker_run({ prompt, cwd?, profile?, background?, worktreeName?, chatRoom?, labels?, timeout? })` creates an ephemeral non-detached worker. Foreground blocks by default; background returns immediately. Runs are best-effort canceled on tool abort/session cleanup.
 - `paseo_worker_create({ cwd?, profile?, initialPrompt?, labels?, worktreeName?, chatRoom? })` queues a durable detached launch and returns a receipt immediately.
+- When `PASEO_AGENT_ID` is present and non-empty, both of those supported worker-creation paths automatically set `labels["paseo.parent-agent-id"]` for Paseo-side parent/child tracking. If the caller supplied that label manually, the plugin-owned env-derived value wins.
+- Paseo's UI, not OpenCode, renders the resulting `SubagentsTrack` in this ACP usage.
+- Schedule `new-agent` targets and daemon-native loops do not currently receive that parent linkage because the upstream payloads used by those paths expose no labels field.
 - Poll `paseo_worker_launch_status({ launchId })`; do not assume `paseo_worker_create` returned a worker ID.
 - `paseo_worker_wait({ workerIds: string[], waitFor?: "any" | "all", timeout?: number })` requires known worker IDs, uses a global timeout, and may return early with `interruptedByNudge`. Interruption is attention, not completion.
 - Nudge-worthy events include worker completion/failure/blocking/stall, chat mention, and permission request. Inspect before resuming orchestration.
 - `paseo_worker_inspect({ workerId, includeActivity?, activityLimit? })` is the routing tool for worker state, chat room, worktree path, branch name, pending permissions, blocking action, progress, and recent activity.
 - `paseo_worker_cancel({ workerId, forceKill: false })` cancels current work. `forceKill: true` is destructive permanent termination/removal.
-- `paseo_worker_archive({ workerId })` removes a completed worker from active state.
+- `paseo_worker_archive({ workerId })` removes a completed worker from active state, but daemon-backed historical records may still remain inspectable afterward.
 
 ## Chat
 
@@ -45,16 +48,17 @@ Keep this file as the quick contract reference for current `opencode-paseo` tool
 - `paseo_terminal_create` binds a terminal to the current OpenCode session.
 - `paseo_terminal_send_lines` appends newlines and is best for full commands.
 - `paseo_terminal_send_input` sends raw keystrokes.
-- `paseo_terminal_capture` returns bounded output and line counts.
-- Capture important output before `paseo_terminal_kill`.
+- `paseo_terminal_capture` returns bounded, normalized output and normalized line counts.
+- If a killed or exited terminal no longer has a daemon buffer, capture may fall back to the last retained non-empty matching capture when available.
+- Capture important output before `paseo_terminal_kill`; post-kill retention is best-effort only.
 
 ## Loops
 
-- `paseo_loop_run` requires a prompt, at least one verification mechanism (`verifyPrompt` or non-empty `verifyChecks`), and at least one positive stop bound (`maxIterations` or `maxTimeMs`).
+- `paseo_loop_run` requires a prompt, at least one verification mechanism (`verifyPrompt` or non-empty `verifyChecks`), and at least one positive stop bound (`maxIterations` or `maxTimeMs`). Optional string fields, when provided, must be non-empty after trimming.
 - Use loop list/inspect/logs/stop tools to observe and control daemon-native loops.
 
 ## Schedules
 
 - `paseo_schedule_create` supports `every` and `cron` cadences and `self`, `agent`, or `new-agent` targets.
 - `new-agent` schedules require a profile and cwd; the plugin resolves profile provider/model/mode and validates daemon provider availability. Treat schedules as profile-backed orchestration, not ad hoc model invocation.
-- Use `paseo_schedule_logs` and inbox tools to inspect async runs.
+- `paseo_schedule_run_once` may return a timeout warning after dispatch; treat that as asynchronous acceptance, not as proof of failure. Use `paseo_schedule_logs` and inbox tools to inspect final async outcomes.
