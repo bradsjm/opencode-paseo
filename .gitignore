@@ -1,5 +1,6 @@
+.DS_Store
 node_modules/
 dist/
+.opencode/
 *.tsbuildinfo
-.DS_Store
 *.log
