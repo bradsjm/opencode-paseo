@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "eslint.config.js"],
+    ignores: ["dist/**", "node_modules/**"],
   },
   js.configs.recommended,
   {
@@ -39,7 +39,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["index.ts", "lib/**/*.ts"],
+    files: ["index.ts", "lib/**/*.ts", "tsup.config.ts"],
     languageOptions: {
       parserOptions: {
         project: ["./tsconfig.json"],
@@ -56,11 +56,8 @@ export default tseslint.config(
   {
     files: ["tests/**/*.ts"],
     languageOptions: {
-      globals: {
-        ...globals.node,
-      },
       parserOptions: {
-        project: ["./tsconfig.test.json"],
+        project: ["./tsconfig.tests.json"],
         tsconfigRootDir: import.meta.dirname,
       },
     },
