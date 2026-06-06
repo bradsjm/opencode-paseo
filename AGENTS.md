@@ -27,16 +27,16 @@ This is a single-package ESM TypeScript OpenCode plugin repo.
 - Integration test: `pnpm test:integration`
 - Lint check: `pnpm lint`
 
-## Verification gotchas
-
-- `pnpm lint` is a Prettier check, not ESLint.
-- `tsconfig.json` excludes `tests/`, so `pnpm typecheck` does **not** typecheck test files. Run the relevant tests when you touch test helpers or integration coverage.
-- `pnpm build` depends on `jsonc-parser` being installed because `tsup.config.ts` bundles it via `noExternal: ["jsonc-parser"]`.
+## Post-edit verification
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`
+- `pnpm test:integration`
+- `pnpm build`
 
 ## Testing notes
 
 - Unit tests use Node's built-in runner via `node --import tsx --test tests/*.test.ts`.
-- `pnpm test:integration` requires the `opencode` CLI on `PATH`.
 - The integration test boots a real OpenCode host from a temp project under `.opencode/plugins/`, loads this plugin from `index.ts`, and expects debug logs under the XDG config log path.
 - `pnpm typecheck` does not verify Markdown or local AGENTS/README content; run `pnpm lint` after documentation edits because it is the repo's formatting gate.
 
