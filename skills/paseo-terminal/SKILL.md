@@ -30,7 +30,7 @@ List existing terminals before creating a duplicate service session:
 
 Create a terminal:
 
-- `paseo_terminal_create({ cwd, name, command, args })`
+- `paseo_terminal_create({ cwd, name })`
 
 Start a process in an existing terminal shell:
 
@@ -38,7 +38,7 @@ Start a process in an existing terminal shell:
 
 Capture output:
 
-- `paseo_terminal_capture({ terminalId, lines, stripAnsi: true })`
+- `paseo_terminal_capture({ terminalId, start, end, scrollback, stripAnsi: true })`
 
 Interrupt gracefully:
 
@@ -63,4 +63,4 @@ Record the terminal ID in the working context when a terminal will be reused lat
 - Use the repository or project root as `cwd` unless the command requires a narrower directory.
 - Quote paths containing spaces.
 - Treat `paseo_terminal_send_lines` and `paseo_terminal_send_input` as mutating: they type into a live shell.
-- Treat `paseo_terminal_kill` as destructive to that terminal session and session content history.
+- Treat `paseo_terminal_kill` as destructive to that terminal session. Capture important output before killing; the plugin does not retain killed/exited terminal output locally.

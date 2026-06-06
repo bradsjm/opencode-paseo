@@ -6,6 +6,7 @@ import { Logger } from "../lib/logger.js"
 import type { ToolContext } from "@opencode-ai/plugin/tool"
 import {
   createTerminalCaptureTool,
+  createTerminalCreateTool,
   createTerminalKillTool,
   createTerminalListTool,
   createTerminalSendInputTool,
@@ -28,9 +29,8 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     createTerminal: async () => ({ id: "t", name: "t" }),
     captureTerminal: async () => ({
       terminalId: "t",
-      content: "",
-      lineCount: 0,
-      truncated: false,
+      lines: [],
+      totalLines: 0,
     }),
     sendTerminalInput: () => {},
     killTerminal: async () => ({ id: "t", exitCode: null }),
@@ -324,155 +324,69 @@ test("paseo_terminal_kill description warns to capture output first", () => {
 test("paseo_terminal_capture", async (t) => {
   const logger = new Logger(false)
 
-  await t.test("returns retained capture for killed terminals when daemon buffer is gone", async () => {
+  await t.test("passes explicit range and stripAnsi through to transport", async () => {
     const state = createPluginState()
-    state.terminals.set("t1", {
-      id: "t1",
-      title: "Term 1",
-      cwd: "/tmp",
-      status: "running",
-      lineCount: 0,
-      lastReadCursor: 0,
-    })
-
-    let captureCalls = 0
+    let received: Record<string, unknown> | undefined
     const client = createMockTransport({
-      captureTerminal: async () => {
-        captureCalls += 1
-        if (captureCalls === 1) {
-          return {
-            terminalId: "t1",
-            content: "line one",
-            lineCount: 1,
-            truncated: false,
-          }
-        }
-
-        return {
-          terminalId: "t1",
-          content: "",
-          lineCount: 0,
-          truncated: false,
-        }
+      captureTerminal: async (opts) => {
+        received = opts as unknown as Record<string, unknown>
+        return { terminalId: opts.terminalId, lines: ["line one", "line two"], totalLines: 8 }
       },
     })
 
     const toolDef = createTerminalCaptureTool(state, client, logger)
-    await toolDef.execute({ terminalId: "t1" }, mockContext())
-    state.terminals.get("t1")!.status = "killed"
-
-    const result = await toolDef.execute({ terminalId: "t1" }, mockContext())
+    const result = await toolDef.execute({ terminalId: "t1", start: 2, end: 4, stripAnsi: false }, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
-    assert.equal(output.content, "line one")
-    assert.equal(output.lineCount, 1)
-    assert.equal(output.source, "retained")
-    assert.match(output.warning, /last retained capture/i)
-  })
-
-  await t.test("does not reuse stale retained capture for running terminals", async () => {
-    const state = createPluginState()
-    state.terminals.set("t1", {
-      id: "t1",
-      title: "Term 1",
-      cwd: "/tmp",
-      status: "running",
-      lineCount: 1,
-      lastReadCursor: 0,
-      lastCapture: {
-        content: "stale",
-        lineCount: 1,
-        truncated: false,
-        requestedLines: 200,
-        stripAnsi: true,
-      },
-    })
-    const client = createMockTransport({
-      captureTerminal: async () => ({
-        terminalId: "t1",
-        content: "",
-        lineCount: 0,
-        truncated: false,
-      }),
-    })
-
-    const result = await createTerminalCaptureTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
-    const output = JSON.parse((result as { output: string }).output)
-
-    assert.equal(output.content, "")
-    assert.equal(output.lineCount, 0)
-    assert.equal(output.source, "daemon")
-    assert.equal(state.terminals.get("t1")?.lastCapture?.content, "stale")
-  })
-
-  await t.test("returns empty daemon capture when no retained output exists", async () => {
-    const state = createPluginState()
-    state.terminals.set("t1", {
-      id: "t1",
-      title: "Term 1",
-      cwd: "/tmp",
-      status: "killed",
-      lineCount: 0,
-      lastReadCursor: 0,
-    })
-    const client = createMockTransport({
-      captureTerminal: async () => ({
-        terminalId: "t1",
-        content: "",
-        lineCount: 0,
-        truncated: false,
-      }),
-    })
-
-    const result = await createTerminalCaptureTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
-    const output = JSON.parse((result as { output: string }).output)
-
-    assert.equal(output.content, "")
-    assert.equal(output.lineCount, 0)
-    assert.equal(output.source, "daemon")
+    assert.deepEqual(received, { terminalId: "t1", start: 2, end: 4, stripAnsi: false })
+    assert.deepEqual(output, { terminalId: "t1", lines: ["line one", "line two"], totalLines: 8 })
+    assert.equal("content" in output, false)
+    assert.equal("lineCount" in output, false)
+    assert.equal("truncated" in output, false)
+    assert.equal("source" in output, false)
     assert.equal("warning" in output, false)
   })
 
-  await t.test("does not reuse retained capture when the new request shape does not match", async () => {
+  await t.test("scrollback captures from start of daemon buffer", async () => {
     const state = createPluginState()
-    state.terminals.set("t1", {
-      id: "t1",
-      title: "Term 1",
-      cwd: "/tmp",
-      status: "killed",
-      lineCount: 1,
-      lastReadCursor: 0,
-      lastCapture: {
-        content: "line one",
-        lineCount: 1,
-        truncated: false,
-        requestedLines: 200,
-        stripAnsi: true,
-      },
-    })
+    let received: Record<string, unknown> | undefined
     const client = createMockTransport({
-      captureTerminal: async () => ({
-        terminalId: "t1",
-        content: "",
-        lineCount: 0,
-        truncated: false,
-      }),
+      captureTerminal: async (opts) => {
+        received = opts as unknown as Record<string, unknown>
+        return { terminalId: opts.terminalId, lines: ["first", "last"], totalLines: 2 }
+      },
     })
 
     const result = await createTerminalCaptureTool(state, client, logger).execute(
-      { terminalId: "t1", lines: 20 },
+      { terminalId: "t1", start: 99, end: 100, scrollback: true },
       mockContext(),
     )
     const output = JSON.parse((result as { output: string }).output)
 
-    assert.equal(output.content, "")
-    assert.equal(output.lineCount, 0)
-    assert.equal(output.source, "daemon")
-    assert.equal("warning" in output, false)
+    assert.deepEqual(received, { terminalId: "t1", start: 0, end: 100, stripAnsi: true })
+    assert.deepEqual(output.lines, ["first", "last"])
+    assert.equal(output.totalLines, 2)
+  })
+
+  await t.test("omits range fields when defaults are used", async () => {
+    const state = createPluginState()
+    let received: Record<string, unknown> | undefined
+    const client = createMockTransport({
+      captureTerminal: async (opts) => {
+        received = opts as unknown as Record<string, unknown>
+        return { terminalId: opts.terminalId, lines: [], totalLines: 0 }
+      },
+    })
+
+    const result = await createTerminalCaptureTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.deepEqual(received, { terminalId: "t1", stripAnsi: true })
+    assert.deepEqual(output, { terminalId: "t1", lines: [], totalLines: 0 })
   })
 })
 
-test("paseo_terminal_list retains killed terminal history", async () => {
+test("paseo_terminal_list returns daemon terminals only", async () => {
   const logger = new Logger(false)
   const state = createPluginState()
   state.terminals.set("t1", {
@@ -484,37 +398,53 @@ test("paseo_terminal_list retains killed terminal history", async () => {
     lastReadCursor: 0,
   })
   const client = createMockTransport({
-    killTerminal: async () => ({ id: "t1", exitCode: null }),
     listTerminals: async () => [],
   })
 
-  await createTerminalKillTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
   const listResult = await createTerminalListTool(state, client, logger).execute({}, mockContext())
   const output = JSON.parse((listResult as { output: string }).output)
 
-  assert.equal(output.count, 1)
-  assert.equal(output.terminals[0].id, "t1")
-  assert.equal(output.terminals[0].status, "killed")
+  assert.equal(output.count, 0)
+  assert.deepEqual(output.terminals, [])
 })
 
-test("paseo_terminal_list preserves exited status learned from daemon events", async () => {
+test("paseo_terminal_list filters by current cwd unless all is true", async () => {
   const logger = new Logger(false)
   const state = createPluginState()
-  state.terminals.set("t1", {
-    id: "t1",
-    title: "Term 1",
-    cwd: "/tmp",
-    status: "exited",
-    lineCount: 3,
-    lastReadCursor: 0,
-  })
+  const received: Array<string | undefined> = []
   const client = createMockTransport({
-    listTerminals: async () => [{ id: "t1", name: "t1", title: "Term 1" }],
+    listTerminals: async (cwd) => {
+      received.push(cwd)
+      return [{ id: "daemon-t1", name: "t1", title: "Term 1" }]
+    },
   })
 
-  const listResult = await createTerminalListTool(state, client, logger).execute({}, mockContext())
-  const output = JSON.parse((listResult as { output: string }).output)
+  await createTerminalListTool(state, client, logger).execute({}, mockContext())
+  await createTerminalListTool(state, client, logger).execute({ cwd: "/other" }, mockContext())
+  await createTerminalListTool(state, client, logger).execute({ all: true }, mockContext())
 
-  assert.equal(output.count, 1)
-  assert.equal(output.terminals[0].status, "exited")
+  assert.deepEqual(received, ["/tmp", "/other", undefined])
+})
+
+test("paseo_terminal_create creates shell terminal without command or args support", async () => {
+  const logger = new Logger(false)
+  const state = createPluginState()
+  let received: Record<string, unknown> | undefined
+  const client = createMockTransport({
+    createTerminal: async (opts) => {
+      received = opts as unknown as Record<string, unknown>
+      return { id: "t1", name: "t1", title: "Term 1", cwd: opts.cwd }
+    },
+  })
+
+  const toolDef = createTerminalCreateTool(state, client, logger)
+  assert.equal("command" in toolDef.args, false)
+  assert.equal("args" in toolDef.args, false)
+
+  const result = await toolDef.execute({ cwd: "/tmp", name: "term", agentId: "agent-1" }, mockContext())
+  const output = JSON.parse((result as { output: string }).output)
+
+  assert.deepEqual(received, { cwd: "/tmp", name: "term", agentId: "agent-1" })
+  assert.equal(output.id, "t1")
+  assert.equal(output.status, "running")
 })

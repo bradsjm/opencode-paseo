@@ -260,21 +260,21 @@ For failed worktree-backed launches, `paseo_worker_launch_status` returns a stru
 | `paseo_loop_logs`    | Read cursor-based loop logs.                                                     |
 | `paseo_loop_stop`    | Stop a running loop.                                                             |
 
-`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`). Optional string fields remain optional, but if you provide them they must be non-empty after trimming. `verifyChecks`, when provided, must contain at least one non-empty command.
+`paseo_loop_run` requires at least one verification mechanism (`verifyPrompt` or `verifyChecks`) and at least one stop bound (`maxIterations` or `maxTimeMs`). Optional string fields remain optional, but if you provide them they must be non-empty after trimming. `verifyChecks`, when provided, must contain at least one non-empty command. `verifyPrompt` is evaluated separately by the daemon verifier, so ask for explicit, checkable evidence from worker output or loop logs; successful `verifyChecks` alone do not guarantee prompt verification success.
 
 ### Schedule
 
-| Tool                      | Description                                                              |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `paseo_schedule_list`     | List daemon-managed schedules.                                           |
-| `paseo_schedule_inspect`  | Inspect a schedule by ID.                                                |
-| `paseo_schedule_create`   | Create a recurring schedule for `self`, `agent`, or `new-agent` targets. |
-| `paseo_schedule_update`   | Update an existing schedule.                                             |
-| `paseo_schedule_pause`    | Pause a schedule.                                                        |
-| `paseo_schedule_resume`   | Resume a paused schedule.                                                |
-| `paseo_schedule_delete`   | Delete a schedule.                                                       |
-| `paseo_schedule_run_once` | Trigger one immediate execution.                                         |
-| `paseo_schedule_logs`     | Retrieve recent schedule run history.                                    |
+| Tool                      | Description                                                     |
+| ------------------------- | --------------------------------------------------------------- |
+| `paseo_schedule_list`     | List daemon-managed schedules.                                  |
+| `paseo_schedule_inspect`  | Inspect a schedule by ID.                                       |
+| `paseo_schedule_create`   | Create a recurring schedule for `agent` or `new-agent` targets. |
+| `paseo_schedule_update`   | Update an existing schedule.                                    |
+| `paseo_schedule_pause`    | Pause a schedule.                                               |
+| `paseo_schedule_resume`   | Resume a paused schedule.                                       |
+| `paseo_schedule_delete`   | Delete a schedule.                                              |
+| `paseo_schedule_run_once` | Trigger one immediate execution.                                |
+| `paseo_schedule_logs`     | Retrieve recent schedule run history.                           |
 
 For `new-agent` schedule targets, the plugin resolves the requested OpenCode profile and attempts to validate that the selected provider exists in the daemon provider snapshot for the target `cwd`.
 
@@ -282,17 +282,21 @@ For `new-agent` schedule targets, the plugin resolves the requested OpenCode pro
 
 ### Terminal capture semantics
 
-- `paseo_terminal_capture` returns **normalized** terminal content: internal blank lines are preserved, but surplus trailing blank PTY padding is trimmed.
-- The returned `lineCount` matches that normalized content rather than raw daemon `totalLines` metadata.
-- After `paseo_terminal_kill` or daemon exit, a fresh daemon capture may be empty even when list metadata still exists. When possible, the plugin returns the last retained non-empty **matching** capture request instead, but that fallback is best-effort only.
+- `paseo_terminal_capture` returns daemon-native `{ terminalId, lines, totalLines }` without plugin-side normalization, truncation flags, or retained-cache fallback.
+- Use `start`/`end` for bounded daemon ranges, or `scrollback: true` to request capture from the start of the daemon buffer.
+- After `paseo_terminal_kill` or daemon exit, a fresh daemon capture may be empty even when list metadata still exists. The plugin does not retain terminal buffers locally.
 - You should still capture important output before killing a terminal.
+
+### Chat error semantics
+
+- Chat room mutations return daemon JSON on success. Duplicate room creation and other daemon create failures remain thrown tool errors rather than `{ error }` envelopes.
 
 ### Verification and troubleshooting
 
 - Check `printenv | sort` (or equivalent) in the plugin/agent environment if you expect parent-linked workers; `PASEO_AGENT_ID` must be present and non-empty.
 - If `paseo_worker_create` or `paseo_worker_run` launched from a Paseo-managed agent does not appear under Paseo's `SubagentsTrack`, inspect the created agent labels and confirm `paseo.parent-agent-id` was set.
 - `paseo_schedule_run_once` warnings should be followed with `paseo_schedule_logs`, not treated as final failure on their own.
-- Loop validation is intentionally strict: empty strings are rejected for provided optional string fields, verification requires `verifyPrompt` or non-empty `verifyChecks`, and at least one positive stop bound is required.
+- Loop validation is intentionally strict: empty strings are rejected for provided optional string fields, verification requires `verifyPrompt` or non-empty `verifyChecks`, and at least one positive stop bound is required. For prompt-based verification, include concrete evidence to verify rather than only asking whether the worker completed.
 - Archived workers leave the plugin's active list immediately, but daemon-backed historical records may still be inspectable with `paseo_worker_inspect`.
 
 ## Development commands

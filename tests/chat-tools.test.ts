@@ -127,6 +127,19 @@ test("chat tools", async (t) => {
     assert.equal(JSON.parse((deleted as { output: string }).output).room.name, "ops")
   })
 
+  await t.test("duplicate create daemon errors remain thrown tool errors", async () => {
+    const client = createMockTransport({
+      createChatRoom: async () => {
+        throw new Error('chat room "ops" already exists')
+      },
+    })
+
+    await assert.rejects(
+      () => createChatCreateTool(client, logger).execute({ name: "ops" }, mockContext()),
+      /already exists/,
+    )
+  })
+
   await t.test("post defaults authorAgentId to manual when omitted", async () => {
     let receivedAuthorAgentId: string | undefined
     const client = createMockTransport({

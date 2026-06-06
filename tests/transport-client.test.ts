@@ -2,10 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   buildDaemonConfig,
-  mapTerminalCaptureResult,
   mapServerInfo,
   mapAgentSnapshot,
-  normalizeTerminalCaptureLines,
   PaseoClient,
   projectTimeline,
   translateUpstreamEvent,
@@ -153,28 +151,51 @@ test("mapAgentSnapshot maps upstream agent to AgentSummary", async (t) => {
   })
 })
 
-test("terminal capture normalization", async (t) => {
-  await t.test("trims surplus trailing blank lines while preserving internal blanks and one trailing blank", () => {
-    assert.deepEqual(normalizeTerminalCaptureLines(["line 1", "", "line 2", "", "", "   "]), [
-      "line 1",
-      "",
-      "line 2",
-      "",
-    ])
+test("PaseoClient.captureTerminal returns daemon-native lines and totalLines", async () => {
+  const client = new PaseoClient({
+    host: "127.0.0.1",
+    port: 1,
+    connectionTimeoutMs: 100,
   })
+  let receivedTerminalId: string | undefined
+  let receivedOptions: Record<string, unknown> | undefined
+  ;(client as any).daemon = {
+    captureTerminal: async (terminalId: string, options: Record<string, unknown>) => {
+      receivedTerminalId = terminalId
+      receivedOptions = options
+      return { terminalId, lines: ["line 1", "", ""], totalLines: 12 }
+    },
+  }
 
-  await t.test("maps normalized content lineCount and preserves truncated flag semantics", () => {
-    const result = mapTerminalCaptureResult({
-      terminalId: "term-1",
-      lines: ["line 1", "", "", ""],
-      totalLines: 10,
-    })
+  const result = await client.captureTerminal({ terminalId: "term-1", start: 0, end: 10, stripAnsi: false })
 
-    assert.equal(result.terminalId, "term-1")
-    assert.equal(result.content, "line 1\n")
-    assert.equal(result.lineCount, 2)
-    assert.equal(result.truncated, true)
+  assert.equal(receivedTerminalId, "term-1")
+  assert.deepEqual(receivedOptions, { start: 0, end: 10, stripAnsi: false })
+  assert.deepEqual(result, { terminalId: "term-1", lines: ["line 1", "", ""], totalLines: 12 })
+})
+
+test("PaseoClient.createTerminal does not send command or args", async () => {
+  const client = new PaseoClient({
+    host: "127.0.0.1",
+    port: 1,
+    connectionTimeoutMs: 100,
   })
+  let receivedOptions: Record<string, unknown> | undefined
+  ;(client as any).daemon = {
+    createTerminal: async (
+      _cwd: string,
+      _name: string | undefined,
+      _unused: unknown,
+      options: Record<string, unknown>,
+    ) => {
+      receivedOptions = options
+      return { terminal: { id: "t1", name: "t1", cwd: "/tmp" } }
+    },
+  }
+
+  await client.createTerminal({ cwd: "/tmp", name: "term", agentId: "agent-1" })
+
+  assert.deepEqual(receivedOptions, { agentId: "agent-1" })
 })
 
 test("projectTimeline projects compact activity summaries", async (t) => {

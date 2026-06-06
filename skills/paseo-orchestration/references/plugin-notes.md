@@ -48,17 +48,16 @@ Keep this file as the quick contract reference for current `opencode-paseo` tool
 - `paseo_terminal_create` binds a terminal to the current OpenCode session.
 - `paseo_terminal_send_lines` appends newlines and is best for full commands.
 - `paseo_terminal_send_input` sends raw keystrokes.
-- `paseo_terminal_capture` returns bounded, normalized output and normalized line counts.
-- If a killed or exited terminal no longer has a daemon buffer, capture may fall back to the last retained non-empty matching capture when available.
-- Capture important output before `paseo_terminal_kill`; post-kill retention is best-effort only.
+- `paseo_terminal_capture` returns daemon-native `{ terminalId, lines, totalLines }` and supports `start`, `end`, `scrollback`, and `stripAnsi`.
+- Capture important output before `paseo_terminal_kill`; the plugin does not retain post-kill terminal buffers locally.
 
 ## Loops
 
-- `paseo_loop_run` requires a prompt, at least one verification mechanism (`verifyPrompt` or non-empty `verifyChecks`), and at least one positive stop bound (`maxIterations` or `maxTimeMs`). Optional string fields, when provided, must be non-empty after trimming.
+- `paseo_loop_run` requires a prompt, at least one verification mechanism (`verifyPrompt` or non-empty `verifyChecks`), and at least one positive stop bound (`maxIterations` or `maxTimeMs`). Optional string fields, when provided, must be non-empty after trimming. `verifyPrompt` is evaluated by the daemon verifier; ask for explicit, checkable evidence from worker output or loop logs because successful `verifyChecks` alone do not guarantee prompt verification success.
 - Use loop list/inspect/logs/stop tools to observe and control daemon-native loops.
 
 ## Schedules
 
-- `paseo_schedule_create` supports `every` and `cron` cadences and `self`, `agent`, or `new-agent` targets.
+- `paseo_schedule_create` supports `every` and `cron` cadences and `agent` or `new-agent` targets.
 - `new-agent` schedules require a profile and cwd; the plugin resolves profile provider/model/mode and validates daemon provider availability. Treat schedules as profile-backed orchestration, not ad hoc model invocation.
 - `paseo_schedule_run_once` may return a timeout warning after dispatch; treat that as asynchronous acceptance, not as proof of failure. Use `paseo_schedule_logs` and inbox tools to inspect final async outcomes.

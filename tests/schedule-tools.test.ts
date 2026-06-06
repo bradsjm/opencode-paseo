@@ -21,9 +21,8 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     createTerminal: async () => ({ id: "t", name: "t" }),
     captureTerminal: async () => ({
       terminalId: "t",
-      content: "",
-      lineCount: 0,
-      truncated: false,
+      lines: [],
+      totalLines: 0,
     }),
     sendTerminalInput: () => {},
     killTerminal: async () => ({ id: "t", exitCode: null }),
@@ -285,7 +284,7 @@ test("paseo_schedule_create", async (t) => {
             prompt: "Run nightly",
             cadenceType: "every",
             everyMs: 1000,
-            targetType: "self",
+            targetType: "agent",
             agentId: "a1",
             profile: "build",
           },
@@ -293,6 +292,32 @@ test("paseo_schedule_create", async (t) => {
         ),
       /profile is only supported for target type 'new-agent'/,
     )
+  })
+
+  await t.test("creates agent target schedules without exposing self target semantics", async () => {
+    const state = createPluginState()
+    let receivedOptions: any = null
+    const client = createMockTransport({
+      scheduleCreate: async (opts) => {
+        receivedOptions = opts
+        return { requestId: "req", schedule: null, error: null }
+      },
+    })
+    const opencode = mockOpencodeClient()
+
+    const toolDef = createScheduleCreateTool(state, client, opencode, logger)
+    await toolDef.execute(
+      {
+        prompt: "Run nightly",
+        cadenceType: "every",
+        everyMs: 1000,
+        targetType: "agent",
+        agentId: "a1",
+      },
+      mockContext(),
+    )
+
+    assert.deepEqual(receivedOptions.target, { type: "agent", agentId: "a1" })
   })
 
   await t.test("errors when resolved provider is unavailable", async () => {

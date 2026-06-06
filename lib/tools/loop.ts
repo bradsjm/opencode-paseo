@@ -60,7 +60,9 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
   return tool({
     description:
       "Run a daemon-native Paseo loop with required verification and bounded stop conditions. Optional string fields " +
-      "must be non-empty when provided. Loop-created agents cannot currently be parent-linked by this plugin because " +
+      "must be non-empty when provided. Verifier prompts should ask for explicit, checkable evidence from the worker " +
+      "output or loop logs; passing verifyChecks alone does not guarantee verifyPrompt success. " +
+      "Loop-created agents cannot currently be parent-linked by this plugin because " +
       "the upstream loop payload exposes no labels field.",
     args: {
       prompt: tool.schema.string().describe("Prompt for the loop worker"),

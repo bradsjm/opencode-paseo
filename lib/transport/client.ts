@@ -307,36 +307,6 @@ export function projectTimeline(timeline: unknown, requestedLimit?: number): Wor
   }
 }
 
-function isBlankTerminalLine(line: string): boolean {
-  return line.trim().length === 0
-}
-
-export function normalizeTerminalCaptureLines(lines: string[]): string[] {
-  const normalized = [...lines]
-  while (
-    normalized.length > 1 &&
-    isBlankTerminalLine(normalized[normalized.length - 1]!) &&
-    isBlankTerminalLine(normalized[normalized.length - 2]!)
-  ) {
-    normalized.pop()
-  }
-  return normalized
-}
-
-export function mapTerminalCaptureResult(result: {
-  terminalId: string
-  lines: string[]
-  totalLines: number
-}): TerminalCapture {
-  const normalizedLines = normalizeTerminalCaptureLines(result.lines)
-  return {
-    terminalId: result.terminalId,
-    content: normalizedLines.join("\n"),
-    lineCount: normalizedLines.length,
-    truncated: result.lines.length < result.totalLines,
-  }
-}
-
 export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerminalExitEvent): DaemonEvent | null {
   switch (event.type) {
     case "agent_update": {
@@ -839,8 +809,6 @@ export class PaseoClient implements PaseoTransport {
   async createTerminal(options: CreateTerminalOptions): Promise<CreatedTerminal> {
     const result = await this.daemon.createTerminal(options.cwd, options.name, undefined, {
       agentId: options.agentId,
-      command: options.command,
-      args: options.args,
     })
     const terminal = result.terminal
     if (!terminal) {
@@ -860,7 +828,11 @@ export class PaseoClient implements PaseoTransport {
       end: options.end,
       stripAnsi: options.stripAnsi,
     })
-    return mapTerminalCaptureResult(result)
+    return {
+      terminalId: result.terminalId,
+      lines: result.lines,
+      totalLines: result.totalLines,
+    }
   }
 
   sendTerminalInput(terminalId: string, input: string): void {

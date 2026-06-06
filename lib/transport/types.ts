@@ -239,9 +239,8 @@ export interface CreatedTerminal {
 
 export interface TerminalCapture {
   terminalId: string
-  content: string
-  lineCount: number
-  truncated: boolean
+  lines: string[]
+  totalLines: number
 }
 
 export interface KilledTerminal {
@@ -259,8 +258,6 @@ export interface CreateTerminalOptions {
   cwd: string
   name?: string
   agentId?: string
-  command?: string
-  args?: string[]
 }
 
 export interface CaptureTerminalOptions {
@@ -403,11 +400,6 @@ export interface ScheduleNewAgentConfig {
   model?: string
 }
 
-export interface ScheduleTargetSelf {
-  type: "self"
-  agentId: string
-}
-
 export interface ScheduleTargetAgent {
   type: "agent"
   agentId: string
@@ -418,7 +410,7 @@ export interface ScheduleTargetNewAgent {
   config: ScheduleNewAgentConfig
 }
 
-export type ScheduleTarget = ScheduleTargetSelf | ScheduleTargetAgent | ScheduleTargetNewAgent
+export type ScheduleTarget = ScheduleTargetAgent | ScheduleTargetNewAgent
 
 export interface ScheduleRunRecord {
   id: string

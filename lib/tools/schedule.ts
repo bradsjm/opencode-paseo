@@ -159,9 +159,9 @@ export function createScheduleCreateTool(
       cronExpression: tool.schema.string().optional().describe("Cron expression (required when cadenceType is 'cron')"),
       timezone: tool.schema.string().optional().describe("IANA timezone for cron schedules (e.g. 'America/New_York')"),
       targetType: tool.schema
-        .enum(["self", "agent", "new-agent"])
-        .describe("Target type: 'self', 'agent' (existing), or 'new-agent' (spawn new)"),
-      agentId: tool.schema.string().optional().describe("Agent ID (required for 'self' or 'agent' target types)"),
+        .enum(["agent", "new-agent"])
+        .describe("Target type: 'agent' (existing) or 'new-agent' (spawn new)"),
+      agentId: tool.schema.string().optional().describe("Agent ID (required for 'agent' target type)"),
       profile: tool.schema
         .string()
         .optional()
@@ -195,7 +195,6 @@ export function createScheduleCreateTool(
       let target: ScheduleTarget
 
       switch (args.targetType) {
-        case "self":
         case "agent":
           if (args.profile?.trim()) {
             throw new Error(`profile is only supported for target type 'new-agent'`)

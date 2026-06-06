@@ -54,9 +54,8 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
     }),
     captureTerminal: async (options) => ({
       terminalId: options.terminalId,
-      content: "",
-      lineCount: 0,
-      truncated: false,
+      lines: [],
+      totalLines: 0,
     }),
     sendTerminalInput: () => {},
     killTerminal: async (terminalId) => ({ id: terminalId, exitCode: null }),

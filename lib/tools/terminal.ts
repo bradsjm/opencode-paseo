@@ -1,91 +1,25 @@
 import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin/tool"
 import type { PluginState } from "../state/types.js"
-import type { PaseoTransport, TerminalCapture } from "../transport/types.js"
+import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import { getOrCreateSession, recordCreatedTerminal, unbindTerminalFromSessions } from "../state/state.js"
-
-function hasRetainableTerminalCapture(capture: TerminalCapture): boolean {
-  return capture.content.length > 0 || capture.lineCount > 0 || capture.truncated
-}
-
-function getCaptureRequest(args: { lines?: number; stripAnsi?: boolean }): {
-  requestedLines: number
-  stripAnsi: boolean
-} {
-  return {
-    requestedLines: args.lines ?? DEFAULT_CAPTURE_LINES,
-    stripAnsi: args.stripAnsi ?? true,
-  }
-}
-
-function buildRetainedCaptureResult(
-  state: PluginState,
-  terminalId: string,
-  request: { requestedLines: number; stripAnsi: boolean },
-):
-  | (TerminalCapture & {
-      source: "retained"
-      warning: string
-    })
-  | null {
-  const lastCapture = state.terminals.get(terminalId)?.lastCapture
-  if (
-    !lastCapture ||
-    lastCapture.requestedLines !== request.requestedLines ||
-    lastCapture.stripAnsi !== request.stripAnsi
-  ) {
-    return null
-  }
-
-  return {
-    terminalId,
-    ...lastCapture,
-    source: "retained",
-    warning:
-      "Terminal is no longer running and the daemon returned no capturable buffer. Returning the last retained capture instead.",
-  }
-}
 
 // ─── Terminal List Tool ──────────────────────────────────────────────────────
 
 export function createTerminalListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
-      "List all known Paseo terminals, including retained killed-terminal history when available. " +
-      "Returns ID, title, status, and last known normalized line count for each.",
+      "List daemon-reported Paseo terminals. By default lists terminals for the current working directory; " +
+      "set all to true to request the daemon's unfiltered terminal list.",
     args: {
       cwd: tool.schema.string().optional().describe("Filter terminals by working directory"),
+      all: tool.schema.boolean().optional().describe("List all daemon-reported terminals without a cwd filter"),
     },
-    async execute(args) {
-      logger.info("Tool: paseo_terminal_list invoked", { cwd: args.cwd })
+    async execute(args, context: ToolContext) {
+      const cwd = args.all ? undefined : (args.cwd ?? context.directory)
+      logger.info("Tool: paseo_terminal_list invoked", { cwd, all: args.all })
 
-      // Refresh from daemon
-      try {
-        const terminals = await client.listTerminals(args.cwd)
-        // Update state with fresh data
-        for (const t of terminals) {
-          const existing = state.terminals.get(t.id)
-          state.terminals.set(t.id, {
-            id: t.id,
-            title: t.title ?? t.name ?? t.id,
-            cwd: existing?.cwd ?? "",
-            status: existing?.status ?? "unknown",
-            lineCount: existing?.lineCount ?? 0,
-            lastReadCursor: existing?.lastReadCursor ?? 0,
-            ...(existing?.lastCapture !== undefined ? { lastCapture: existing.lastCapture } : {}),
-          })
-        }
-      } catch (err: any) {
-        logger.warn("Terminal list refresh failed", err.message)
-      }
-
-      const terminals = Array.from(state.terminals.values()).map((t) => ({
-        id: t.id,
-        title: t.title,
-        cwd: t.cwd,
-        status: t.status,
-        lineCount: t.lineCount,
-      }))
+      const terminals = await client.listTerminals(cwd)
 
       return {
         title: "Paseo Terminals",
@@ -106,8 +40,6 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
         .optional()
         .describe("Working directory for the terminal (defaults to session directory)"),
       name: tool.schema.string().optional().describe("Human-readable name for the terminal"),
-      command: tool.schema.string().optional().describe("Initial command to run in the terminal"),
-      args: tool.schema.array(tool.schema.string()).optional().describe("Arguments for the initial command"),
       agentId: tool.schema.string().optional().describe("Associate terminal with a specific agent"),
     },
     async execute(args, context: ToolContext) {
@@ -118,8 +50,6 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
         cwd,
         ...(args.name !== undefined ? { name: args.name } : {}),
         ...(args.agentId !== undefined ? { agentId: args.agentId } : {}),
-        ...(args.command !== undefined ? { command: args.command } : {}),
-        ...(args.args !== undefined ? { args: args.args } : {}),
       })
 
       // Bind terminal to the session
@@ -158,70 +88,36 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
 
 // ─── Terminal Capture Tool ───────────────────────────────────────────────────
 
-const DEFAULT_CAPTURE_LINES = 200
-
 export function createTerminalCaptureTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
-      "Capture output from a Paseo terminal. Returns normalized terminal content with line count. " +
-      "If a killed or exited terminal no longer has a daemon buffer, the plugin returns the last retained matching capture when available.",
+      "Capture output from a Paseo terminal. Returns daemon-native lines and totalLines metadata. " +
+      "Use scrollback to request capture from the start of the daemon buffer.",
     args: {
       terminalId: tool.schema.string().describe("ID of the terminal to capture"),
-      lines: tool.schema
-        .number()
-        .int()
-        .optional()
-        .describe(`Number of lines to capture from the end (default: ${DEFAULT_CAPTURE_LINES})`),
+      start: tool.schema.number().int().optional().describe("Start line/range passed to the daemon capture API"),
+      end: tool.schema.number().int().optional().describe("End line/range passed to the daemon capture API"),
+      scrollback: tool.schema.boolean().optional().describe("Capture from daemon scrollback by setting start to 0"),
       stripAnsi: tool.schema.boolean().optional().describe("Strip ANSI escape codes from output (default: true)"),
     },
     async execute(args) {
       logger.info("Tool: paseo_terminal_capture invoked", {
         terminalId: args.terminalId,
-        lines: args.lines,
+        start: args.start,
+        end: args.end,
+        scrollback: args.scrollback,
       })
 
       const capture = await client.captureTerminal({
         terminalId: args.terminalId,
         stripAnsi: args.stripAnsi ?? true,
-        ...(args.lines !== undefined ? { end: -1, start: -args.lines } : { end: -1, start: -DEFAULT_CAPTURE_LINES }),
+        ...(args.scrollback ? { start: 0 } : args.start !== undefined ? { start: args.start } : {}),
+        ...(args.end !== undefined ? { end: args.end } : {}),
       })
-
-      const captureRequest = getCaptureRequest(args)
-      const terminal = state.terminals.get(args.terminalId)
-      const retainedCapture =
-        !hasRetainableTerminalCapture(capture) && (terminal?.status === "killed" || terminal?.status === "exited")
-          ? buildRetainedCaptureResult(state, args.terminalId, captureRequest)
-          : null
-      const effectiveCapture = retainedCapture ?? capture
-
-      if (terminal) {
-        terminal.lineCount = effectiveCapture.lineCount
-        if (hasRetainableTerminalCapture(capture)) {
-          terminal.lastCapture = {
-            content: capture.content,
-            lineCount: capture.lineCount,
-            truncated: capture.truncated,
-            requestedLines: captureRequest.requestedLines,
-            stripAnsi: captureRequest.stripAnsi,
-          }
-        }
-      }
 
       return {
         title: `Terminal Capture: ${args.terminalId}`,
-        output: JSON.stringify(
-          {
-            terminalId: effectiveCapture.terminalId,
-            lineCount: effectiveCapture.lineCount,
-            truncated: effectiveCapture.truncated,
-            content: effectiveCapture.content,
-            ...(retainedCapture
-              ? { source: retainedCapture.source, warning: retainedCapture.warning }
-              : { source: "daemon" }),
-          },
-          null,
-          2,
-        ),
+        output: JSON.stringify(capture, null, 2),
       }
     },
   })
@@ -323,8 +219,7 @@ export function createTerminalKillTool(state: PluginState, client: PaseoTranspor
   return tool({
     description:
       "Kill a running Paseo terminal session. Destructive: capture any important output " +
-      "with paseo_terminal_capture before killing, because terminal buffers may not remain " +
-      "available afterward and retained post-kill capture is only best-effort.",
+      "with paseo_terminal_capture before killing, because terminal buffers may not remain available afterward.",
     args: {
       terminalId: tool.schema.string().describe("ID of the terminal to kill"),
     },
