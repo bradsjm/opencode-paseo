@@ -18,7 +18,7 @@ Keep this file as the quick contract reference for current `opencode-paseo` tool
 - Poll `paseo_worker_launch_status({ launchId })`; do not assume `paseo_worker_create` returned a worker ID.
 - `paseo_worker_wait({ workerIds: string[], waitFor?: "any" | "all", timeout?: number })` requires known worker IDs, uses a global timeout, and may return early with `interruptedByNudge`. Interruption is attention, not completion.
 - Nudge-worthy events include worker completion/failure/blocking/stall, chat mention, and permission request. Inspect before resuming orchestration.
-- `paseo_worker_inspect({ workerId, includeActivity?, activityLimit? })` is the routing tool for worker state, chat room, worktree path, branch name, pending permissions, blocking action, progress, and recent activity.
+- `paseo_worker_inspect({ workerId, includeActivity?, includeLastMessage?, activityLimit? })` is the routing tool for worker state, chat room, worktree path, branch name, pending permissions, blocking action, progress, recent activity, and the latest assistant/final reply body when explicitly requested.
 - `paseo_worker_cancel({ workerId, forceKill: false })` cancels current work. `forceKill: true` is destructive permanent termination/removal.
 - `paseo_worker_archive({ workerId })` removes a completed worker from active state, but daemon-backed historical records may still remain inspectable afterward.
 

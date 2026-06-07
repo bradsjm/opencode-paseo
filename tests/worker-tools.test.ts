@@ -909,7 +909,7 @@ test("paseo_worker_archive", async (t) => {
     await createWorkerArchiveTool(state, client, logger).execute({ workerId: "w1" }, mockContext())
     assert.equal(state.workers.has("w1"), false)
 
-    const inspectResult = await createWorkerInspectTool(state, client, logger).execute(
+    const inspectResult = await createWorkerInspectTool(state, client, TEST_CONFIG, logger).execute(
       { workerId: "w1" },
       mockContext(),
     )
@@ -1835,7 +1835,7 @@ test("paseo_worker_inspect", async (t) => {
       },
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1" }, mockContext())
 
     assert.ok(!activityCalled)
@@ -1849,6 +1849,7 @@ test("paseo_worker_inspect", async (t) => {
     assert.equal(output.runtimeInfo, undefined)
     assert.equal(output.project, undefined)
     assert.equal(output.activity, undefined)
+    assert.equal(output.lastMessage, undefined)
   })
 
   await t.test("includes projected activity when requested", async () => {
@@ -1882,7 +1883,7 @@ test("paseo_worker_inspect", async (t) => {
       }),
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1", includeActivity: true }, mockContext())
 
     const output = JSON.parse((result as { output: string }).output)
@@ -1892,6 +1893,7 @@ test("paseo_worker_inspect", async (t) => {
       timestamp: "2024-01-01T00:00:00Z",
       summary: "hello",
     })
+    assert.equal(output.lastMessage, undefined)
     assert.equal(output.progress.activityState, "active")
     assert.equal(output.progress.summary, "hello")
   })
@@ -1918,7 +1920,7 @@ test("paseo_worker_inspect", async (t) => {
       }),
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1", includeActivity: true }, mockContext())
 
     const output = JSON.parse((result as { output: string }).output)
@@ -1949,10 +1951,177 @@ test("paseo_worker_inspect", async (t) => {
       },
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     await toolDef.execute({ workerId: "w1", includeActivity: true, activityLimit: 10 }, mockContext())
 
     assert.equal(receivedLimit, 10)
+  })
+
+  await t.test("does not couple activityLimit to lastMessage lookup", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const receivedCalls: Array<{ limit: number | undefined; includeLastMessage: boolean | undefined }> = []
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "idle",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
+      fetchWorkerActivity: async (opts) => {
+        receivedCalls.push({ limit: opts.limit, includeLastMessage: opts.includeLastMessage })
+        return {
+          workerId: opts.workerId,
+          activity: { entries: [], hasMore: false },
+          lastMessage: {
+            role: "assistant",
+            text: "final answer",
+            timestamp: "2024-01-01T00:00:00Z",
+            truncated: false,
+          },
+        }
+      },
+    })
+
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
+    await toolDef.execute(
+      { workerId: "w1", includeActivity: true, includeLastMessage: true, activityLimit: 1 },
+      mockContext(),
+    )
+
+    assert.deepEqual(receivedCalls, [
+      { limit: 1, includeLastMessage: undefined },
+      { limit: undefined, includeLastMessage: true },
+    ])
+  })
+
+  await t.test("includes latest assistant message only when requested", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    let receivedIncludeLastMessage: boolean | undefined
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "idle",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
+      fetchWorkerActivity: async (opts) => {
+        receivedIncludeLastMessage = opts.includeLastMessage
+        return {
+          workerId: opts.workerId,
+          activity: { entries: [], hasMore: false },
+          lastMessage: {
+            role: "assistant",
+            text: "final answer",
+            timestamp: "2024-01-01T00:00:00Z",
+            truncated: false,
+          },
+        }
+      },
+    })
+
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
+    const result = await toolDef.execute({ workerId: "w1", includeLastMessage: true }, mockContext())
+
+    const output = JSON.parse((result as { output: string }).output)
+    assert.equal(receivedIncludeLastMessage, true)
+    assert.equal(output.activity, undefined)
+    assert.deepEqual(output.lastMessage, {
+      role: "assistant",
+      text: "final answer",
+      timestamp: "2024-01-01T00:00:00Z",
+      truncated: false,
+    })
+  })
+
+  await t.test("returns null lastMessage when requested but unavailable", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "idle",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
+      fetchWorkerActivity: async (opts) => ({
+        workerId: opts.workerId,
+        activity: { entries: [], hasMore: false },
+        lastMessage: null,
+      }),
+    })
+
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
+    const result = await toolDef.execute({ workerId: "w1", includeLastMessage: true }, mockContext())
+
+    const output = JSON.parse((result as { output: string }).output)
+    assert.equal(output.lastMessage, null)
+  })
+
+  await t.test("can include activity and lastMessage together", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    let activityCalls = 0
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Worker w1",
+          labels: {},
+        },
+        project: null,
+      }),
+      fetchWorkerActivity: async (opts) => {
+        activityCalls += 1
+        return {
+          workerId: opts.workerId,
+          activity: {
+            entries: [{ kind: "message", timestamp: "2024-01-01T00:00:00Z", summary: "hello" }],
+            hasMore: false,
+          },
+          lastMessage: {
+            role: "assistant",
+            text: "final answer",
+            timestamp: "2024-01-01T00:00:01Z",
+            truncated: false,
+          },
+        }
+      },
+    })
+
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
+    const result = await toolDef.execute(
+      { workerId: "w1", includeActivity: true, includeLastMessage: true },
+      mockContext(),
+    )
+
+    const output = JSON.parse((result as { output: string }).output)
+    assert.equal(activityCalls, 1)
+    assert.equal(output.activity.entries[0].summary, "hello")
+    assert.equal(output.lastMessage.text, "final answer")
   })
 
   await t.test("uses fresh daemon data and exposes raw status plus attention fields", async () => {
@@ -1976,7 +2145,7 @@ test("paseo_worker_inspect", async (t) => {
       }),
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1" }, mockContext())
 
     const output = JSON.parse((result as { output: string }).output)
@@ -2011,7 +2180,7 @@ test("paseo_worker_inspect", async (t) => {
       }),
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1" }, mockContext())
 
     const output = JSON.parse((result as { output: string }).output)
@@ -2041,7 +2210,7 @@ test("paseo_worker_inspect", async (t) => {
       }),
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1" }, mockContext())
 
     const output = JSON.parse((result as { output: string }).output)
@@ -2072,7 +2241,7 @@ test("paseo_worker_inspect", async (t) => {
       }),
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerId: "w1", includeActivity: true }, mockContext())
 
     const output = JSON.parse((result as { output: string }).output)
@@ -2087,7 +2256,7 @@ test("paseo_worker_inspect", async (t) => {
       fetchWorker: async () => null,
     })
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     await assert.rejects(() => toolDef.execute({ workerId: "w1" }, mockContext()), /not found/)
   })
 
@@ -2095,7 +2264,7 @@ test("paseo_worker_inspect", async (t) => {
     const state = createPluginState()
     const client = createMockTransport()
 
-    const toolDef = createWorkerInspectTool(state, client, logger)
+    const toolDef = createWorkerInspectTool(state, client, TEST_CONFIG, logger)
     await assert.rejects(() => toolDef.execute({ workerId: "nonexistent" }, mockContext()), /not found/)
   })
 })

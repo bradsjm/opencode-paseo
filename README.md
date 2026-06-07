@@ -224,7 +224,7 @@ When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin wa
 | `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.                                                                             |
 | `paseo_worker_archive`       | Archive a worker from the active list; local removal is immediate on success, but daemon-side disappearance or inspectability may lag briefly. |
 | `paseo_worker_update`        | Update worker metadata and runtime settings.                                                                                                   |
-| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                                                                                    |
+| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity and optional latest assistant/final reply.                                          |
 
 When `task.enabled` is true, the plugin registers a tool named `task` that overrides OpenCode's builtin task tool. It accepts the same task parameters (`description`, `prompt`, `subagent_type`, optional `task_id`, `command`, and `background`) but executes through a non-detached Paseo worker. The returned `task_id` is an OpenCode child session ID; the backing Paseo worker ID is tracked internally and exposed in tool metadata for diagnostics.
 

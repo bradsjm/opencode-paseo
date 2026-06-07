@@ -587,6 +587,16 @@ export interface WorkerUpdateResult {
 export interface WorkerActivityOptions {
   workerId: string
   limit?: number
+  includeLastMessage?: boolean
+  maxSummaryLength?: number
+}
+
+/** Latest assistant/final message projected for inspect output. */
+export interface WorkerLastMessage {
+  role: "assistant"
+  text: string
+  timestamp: string | null
+  truncated: boolean
 }
 
 /** Summary for a single worker activity entry. */
@@ -608,6 +618,7 @@ export interface WorkerActivitySummary {
 export interface WorkerActivityResult {
   workerId: string
   activity: WorkerActivitySummary | null
+  lastMessage?: WorkerLastMessage | null
 }
 
 // ─── Normalized Daemon Event ──────────────────────────────────────────────────

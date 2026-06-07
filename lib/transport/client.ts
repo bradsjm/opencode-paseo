@@ -2,6 +2,7 @@ import { DaemonClient } from "@getpaseo/client"
 import type { DaemonClientConfig, DaemonEvent as UpstreamDaemonEvent, ConnectionState } from "@getpaseo/client"
 import packageJson from "../../package.json" with { type: "json" }
 import type { DaemonConfig } from "../config.js"
+import { truncateSummary } from "../inbox/summary.js"
 import type {
   AgentSummary,
   FetchAgentsOptions,
@@ -40,6 +41,7 @@ import type {
   WorkerActivityOptions,
   WorkerActivityEntrySummary,
   WorkerActivityResult,
+  WorkerLastMessage,
   WorkerActivitySummary,
   WorktreeListOptions,
   WorktreeCreateOptions,
@@ -307,6 +309,110 @@ function extractTimelineEntries(timeline: unknown): unknown[] {
   }
 
   return []
+}
+
+function timelineRelatedRecords(record: Record<string, unknown>): Record<string, unknown>[] {
+  const payload = asRecord(record.payload)
+  const event = asRecord(record.event)
+  return [
+    record,
+    payload,
+    event,
+    asRecord(record.item),
+    payload ? asRecord(payload.item) : null,
+    event ? asRecord(event.item) : null,
+  ].filter((value): value is Record<string, unknown> => value !== null)
+}
+
+function isAssistantLikeTimelineRecord(record: Record<string, unknown>): boolean {
+  const role = firstScalar(record, ["role", "authorRole", "speakerRole", "sourceRole"])
+  if (role === "assistant") {
+    return true
+  }
+
+  const kind = firstScalar(record, ["kind", "type", "subtype", "eventType", "category"])
+  return kind === "assistant" || kind === "assistant_message" || kind === "final"
+}
+
+function extractTimelineTimestamp(record: Record<string, unknown>): string | undefined {
+  return firstScalar(record, ["timestamp", "createdAt", "updatedAt", "at"])
+}
+
+function extractTimelineMessageText(record: Record<string, unknown>): string | undefined {
+  const direct = firstScalar(record, ["text", "body", "message", "content"])
+  if (direct) {
+    return direct
+  }
+
+  const content = record.content
+  if (!Array.isArray(content)) {
+    return undefined
+  }
+
+  return content
+    .map((item) => {
+      const itemRecord = asRecord(item)
+      return itemRecord ? firstScalar(itemRecord, ["text", "value", "content"]) : undefined
+    })
+    .find((value) => value !== undefined)
+}
+
+function collectLastTimelineMessageChunks(timeline: unknown): { chunks: string[]; timestamp: string | null } {
+  const entries = extractTimelineEntries(timeline)
+  const chunks: string[] = []
+  let timestamp: string | null = null
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]
+    const record = asRecord(entry)
+    if (!record) {
+      continue
+    }
+
+    const related = timelineRelatedRecords(record)
+    if (!related.some(isAssistantLikeTimelineRecord)) {
+      if (chunks.length > 0) {
+        break
+      }
+      continue
+    }
+
+    const text = related.map(extractTimelineMessageText).find((value) => value !== undefined)
+    if (!text) {
+      if (chunks.length > 0) {
+        break
+      }
+      continue
+    }
+
+    chunks.push(text)
+    timestamp ??= related.map(extractTimelineTimestamp).find((value) => value !== undefined) ?? null
+  }
+
+  return { chunks, timestamp }
+}
+
+/** Projects the latest assistant/final timeline message for inspect output.
+ *
+ * @param timeline - Raw timeline payload from the daemon.
+ * @param maxSummaryLength - Optional maximum message length to retain.
+ * @returns The normalized last assistant/final message, or null when unavailable.
+ */
+export function projectLastTimelineMessage(timeline: unknown, maxSummaryLength?: number): WorkerLastMessage | null {
+  const { chunks, timestamp } = collectLastTimelineMessageChunks(timeline)
+
+  if (chunks.length === 0) {
+    return null
+  }
+
+  const text = chunks.reverse().join("")
+  const normalizedText = maxSummaryLength !== undefined ? truncateSummary(text, maxSummaryLength) : text
+  return {
+    role: "assistant",
+    text: normalizedText,
+    timestamp,
+    truncated: normalizedText !== text,
+  }
 }
 
 function projectTimelineEntry(entry: unknown): WorkerActivityEntrySummary | null {
@@ -1362,10 +1468,19 @@ export class PaseoClient implements PaseoTransport {
       return {
         workerId: options.workerId,
         activity: projectTimeline(timeline, options.limit),
+        ...(options.includeLastMessage === true
+          ? {
+              lastMessage: projectLastTimelineMessage(timeline, options.maxSummaryLength),
+            }
+          : {}),
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes("not found")) {
-        return { workerId: options.workerId, activity: null }
+        return {
+          workerId: options.workerId,
+          activity: null,
+          ...(options.includeLastMessage === true ? { lastMessage: null } : {}),
+        }
       }
       throw err
     }

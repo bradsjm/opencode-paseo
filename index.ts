@@ -171,7 +171,7 @@ const server: Plugin = (async (ctx) => {
     paseo_worker_cancel: createWorkerCancelTool(state, client, logger),
     paseo_worker_archive: createWorkerArchiveTool(state, client, logger),
     paseo_worker_update: createWorkerUpdateTool(state, client, logger, observeWorker),
-    paseo_worker_inspect: createWorkerInspectTool(state, client, logger, observeWorker),
+    paseo_worker_inspect: createWorkerInspectTool(state, client, config, logger, observeWorker),
     paseo_worktree_list: createWorktreeListTool(client, logger),
     paseo_worktree_create: createWorktreeCreateTool(client, logger),
     paseo_worktree_archive: createWorktreeArchiveTool(state, client, logger),

@@ -7,6 +7,7 @@ import type {
   DaemonEvent,
   MultiWorkerWaitResult,
   PaseoTransport,
+  WorkerLastMessage,
   WorkerWaitNudgeEvent,
   WorkerWaitResult,
 } from "../transport/types.js"
@@ -365,6 +366,12 @@ interface WorkerInspectResponse {
     readyForDependentWork: ReadyForDependentWork
   }
   activity?: WorkerActivitySummary | null
+  lastMessage?: WorkerLastMessage | null
+}
+
+interface WorkerInspectTimelineResult {
+  activity: WorkerActivitySummary | null
+  lastMessage?: WorkerLastMessage | null
 }
 
 function isTerminalWorkerStatus(status: string | undefined): boolean {
@@ -973,6 +980,7 @@ export function createWorkerUpdateTool(
  *
  * @param state In-memory plugin state.
  * @param client Paseo transport client.
+ * @param config Plugin configuration used for output shaping.
  * @param logger Logger used for invocation tracing.
  * @param onWorkerObserved Optional callback invoked after a refreshed worker is observed.
  * @returns The OpenCode tool definition.
@@ -980,13 +988,14 @@ export function createWorkerUpdateTool(
 export function createWorkerInspectTool(
   state: PluginState,
   client: PaseoTransport,
+  config: PluginConfig,
   logger: Logger,
   onWorkerObserved?: WorkerRefreshObserver,
 ): ToolDefinition {
   return tool({
     description:
       "Inspect a Paseo worker. Returns a compact daemon-backed summary for routing, attention, and progress decisions. " +
-      "Check progress.readyForDependentWork before starting dependent work. Optionally includes a projected recent activity summary when includeActivity is true.",
+      "Check progress.readyForDependentWork before starting dependent work. Optionally includes a projected recent activity summary when includeActivity is true and the latest assistant/final reply body when includeLastMessage is true.",
     args: {
       workerId: tool.schema.string().describe("ID of the worker to inspect"),
       includeActivity: tool.schema
@@ -994,22 +1003,43 @@ export function createWorkerInspectTool(
         .nullable()
         .optional()
         .describe("If true, include the worker's recent projected activity summary"),
+      includeLastMessage: tool.schema
+        .boolean()
+        .nullable()
+        .optional()
+        .describe("If true, include the worker's latest assistant/final reply body when available"),
       activityLimit: nullableOptional(tool.schema.number()).describe(
         "Maximum number of projected activity entries to return",
       ),
     },
     async execute(args) {
       const includeActivity = collapseNull(args.includeActivity)
+      const includeLastMessage = collapseNull(args.includeLastMessage)
       const activityLimit = optionalNumber(args.activityLimit)
       logger.info("Tool: paseo_worker_inspect invoked", {
         workerId: args.workerId,
         includeActivity,
+        includeLastMessage,
       })
 
       const { fetched, worker } = await fetchAndStoreWorkerSnapshot(state, client, args.workerId, onWorkerObserved)
       const activityFetched = Boolean(includeActivity)
-      const activity = await fetchInspectActivity(client, args.workerId, activityFetched, activityLimit)
-      const output = buildWorkerInspectResponse(fetched.agent.status, worker, activity, activityFetched)
+      const timeline = await fetchInspectTimeline(
+        client,
+        args.workerId,
+        includeActivity === true,
+        includeLastMessage === true,
+        activityLimit,
+        config.output.maxSummaryLength,
+      )
+      const output = buildWorkerInspectResponse(
+        fetched.agent.status,
+        worker,
+        timeline.activity,
+        activityFetched,
+        timeline.lastMessage,
+        includeLastMessage === true,
+      )
 
       return {
         title: `Worker Inspect: ${args.workerId}`,
@@ -1035,15 +1065,70 @@ async function fetchAndStoreWorkerSnapshot(
   return { fetched, worker }
 }
 
-async function fetchInspectActivity(
+async function fetchInspectTimeline(
   client: PaseoTransport,
   workerId: string,
   includeActivity: boolean,
+  includeLastMessage: boolean,
   activityLimit: number | undefined,
-): Promise<WorkerActivitySummary | null> {
-  if (!includeActivity) return null
+  maxSummaryLength: number,
+): Promise<WorkerInspectTimelineResult> {
+  if (!includeActivity && !includeLastMessage) return { activity: null }
+
+  if (!includeActivity) {
+    return fetchInspectLastMessageOnly(client, workerId, maxSummaryLength)
+  }
+
+  if (!includeLastMessage) {
+    return fetchInspectActivityOnly(client, workerId, activityLimit)
+  }
+
+  if (activityLimit !== undefined) {
+    return fetchInspectTimelineWithSeparateMessageLookup(client, workerId, activityLimit, maxSummaryLength)
+  }
+
+  const activityResult = await client.fetchWorkerActivity({ workerId, includeLastMessage: true, maxSummaryLength })
+  return {
+    activity: activityResult.activity,
+    lastMessage: activityResult.lastMessage ?? null,
+  }
+}
+
+async function fetchInspectActivityOnly(
+  client: PaseoTransport,
+  workerId: string,
+  activityLimit: number | undefined,
+): Promise<WorkerInspectTimelineResult> {
   const activityResult = await client.fetchWorkerActivity({ workerId, ...compactDefined({ limit: activityLimit }) })
-  return activityResult.activity
+  return { activity: activityResult.activity }
+}
+
+async function fetchInspectLastMessageOnly(
+  client: PaseoTransport,
+  workerId: string,
+  maxSummaryLength: number,
+): Promise<WorkerInspectTimelineResult> {
+  const activityResult = await client.fetchWorkerActivity({ workerId, includeLastMessage: true, maxSummaryLength })
+  return {
+    activity: null,
+    lastMessage: activityResult.lastMessage ?? null,
+  }
+}
+
+async function fetchInspectTimelineWithSeparateMessageLookup(
+  client: PaseoTransport,
+  workerId: string,
+  activityLimit: number,
+  maxSummaryLength: number,
+): Promise<WorkerInspectTimelineResult> {
+  const [activityResult, lastMessageResult] = await Promise.all([
+    client.fetchWorkerActivity({ workerId, limit: activityLimit }),
+    client.fetchWorkerActivity({ workerId, includeLastMessage: true, maxSummaryLength }),
+  ])
+  return {
+    activity: activityResult.activity,
+    lastMessage: lastMessageResult.lastMessage ?? null,
+  }
 }
 
 function buildWorkerInspectResponse(
@@ -1051,6 +1136,8 @@ function buildWorkerInspectResponse(
   worker: WorkerSummary,
   activity: WorkerActivitySummary | null,
   activityFetched: boolean,
+  lastMessage: WorkerLastMessage | null | undefined,
+  includeLastMessage: boolean,
 ): WorkerInspectResponse {
   const activityState = deriveActivityState(worker, activity, activityFetched)
   return {
@@ -1058,6 +1145,7 @@ function buildWorkerInspectResponse(
     attention: buildWorkerInspectAttention(worker),
     progress: buildWorkerInspectProgress(worker, activityState, activity, activityFetched),
     ...(activityFetched ? { activity } : {}),
+    ...(includeLastMessage ? { lastMessage: lastMessage ?? null } : {}),
   }
 }
 

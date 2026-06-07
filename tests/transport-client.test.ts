@@ -5,6 +5,7 @@ import {
   mapServerInfo,
   mapAgentSnapshot,
   PaseoClient,
+  projectLastTimelineMessage,
   projectTimeline,
   translateUpstreamEvent,
 } from "../lib/transport/client.js"
@@ -228,6 +229,102 @@ test("projectTimeline projects compact activity summaries", async (t) => {
         },
       ],
       hasMore: true,
+    })
+  })
+})
+
+test("projectLastTimelineMessage projects latest assistant reply", async (t) => {
+  await t.test("selects the last assistant/final message and truncates it", () => {
+    const result = projectLastTimelineMessage(
+      {
+        entries: [
+          { type: "timeline", item: { type: "user_message", text: "question" }, timestamp: "2024-01-01T00:00:00Z" },
+          {
+            type: "timeline",
+            item: { type: "assistant_message", text: "first answer" },
+            timestamp: "2024-01-01T00:00:02Z",
+          },
+          {
+            type: "timeline",
+            item: {
+              type: "tool_call",
+              name: "Read",
+              callId: "c1",
+              detail: { type: "unknown", input: {}, output: {} },
+              status: "completed",
+              error: null,
+            },
+            timestamp: "2024-01-01T00:00:03Z",
+          },
+          {
+            type: "timeline",
+            item: { type: "assistant_message", text: "second answer is longer" },
+            timestamp: "2024-01-01T00:00:04Z",
+          },
+          {
+            type: "timeline",
+            item: { type: "compaction", status: "completed" },
+            timestamp: "2024-01-01T00:00:05Z",
+          },
+        ],
+      },
+      12,
+    )
+
+    assert.deepEqual(result, {
+      role: "assistant",
+      text: "second answ…",
+      timestamp: "2024-01-01T00:00:04Z",
+      truncated: true,
+    })
+  })
+
+  await t.test("returns null when no assistant-like message is present", () => {
+    const result = projectLastTimelineMessage(
+      {
+        entries: [
+          { type: "timeline", item: { type: "user_message", text: "question" } },
+          {
+            type: "timeline",
+            item: {
+              type: "tool_call",
+              name: "Read",
+              callId: "c1",
+              detail: { type: "unknown", input: {}, output: {} },
+              status: "completed",
+              error: null,
+            },
+          },
+        ],
+      },
+      50,
+    )
+
+    assert.equal(result, null)
+  })
+
+  await t.test("joins consecutive assistant chunks into one reply", () => {
+    const result = projectLastTimelineMessage({
+      entries: [
+        { type: "timeline", item: { type: "user_message", text: "question" }, timestamp: "2024-01-01T00:00:00Z" },
+        {
+          type: "timeline",
+          item: { type: "assistant_message", text: "Hello " },
+          timestamp: "2024-01-01T00:00:01Z",
+        },
+        {
+          type: "timeline",
+          item: { type: "assistant_message", text: "world" },
+          timestamp: "2024-01-01T00:00:02Z",
+        },
+      ],
+    })
+
+    assert.deepEqual(result, {
+      role: "assistant",
+      text: "Hello world",
+      timestamp: "2024-01-01T00:00:02Z",
+      truncated: false,
     })
   })
 })
