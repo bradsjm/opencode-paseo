@@ -33,10 +33,6 @@ import {
 import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
 import { collapseNull, compactDefined, nullableOptional, optionalNonBlankString, optionalNumber } from "./args.js"
 
-function optionalNonEmptyString(value: string | null | undefined): string | undefined {
-  return optionalNonBlankString(value)
-}
-
 type WorkerRefreshObserver = (worker: WorkerSummary, observedLaunchId?: string) => void
 
 async function resolveWorkerProfileFields(
@@ -174,15 +170,15 @@ export function createWorkerCreateTool(
       ),
     },
     async execute(args, context: ToolContext) {
-      const cwd = optionalNonEmptyString(args.cwd) ?? context.directory
-      const chatRoom = normalizeChatRoom(optionalNonEmptyString(args.chatRoom))
-      const worktreeName = optionalNonEmptyString(args.worktreeName)
+      const cwd = optionalNonBlankString(args.cwd) ?? context.directory
+      const chatRoom = normalizeChatRoom(optionalNonBlankString(args.chatRoom))
+      const worktreeName = optionalNonBlankString(args.worktreeName)
       const initialPrompt = collapseNull(args.initialPrompt)
       const labels = collapseNull(args.labels)
       const { profileName, workerFields } = await resolveWorkerProfileFields(
         opencodeClient,
         cwd,
-        optionalNonEmptyString(args.profile),
+        optionalNonBlankString(args.profile),
       )
 
       logger.info("Tool: paseo_worker_create invoked", {
@@ -379,8 +375,8 @@ function deriveActivityState(
   activity: WorkerActivitySummary | null,
   activityFetched: boolean,
 ): InspectActivityState {
-  if (workerIsBlocked(worker)) return "blocked"
   if (isTerminalWorkerStatus(worker.status)) return "finished"
+  if (workerIsBlocked(worker)) return "blocked"
   if (worker.status === "initializing") return "quiet"
   if (worker.status === "running") return runningActivityState(activity, activityFetched)
   return hasProjectedActivity(activity) ? "active" : "unknown"
@@ -810,20 +806,13 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
 
       await client.cancelWorker(args.workerId)
 
-      // Update local state
-      const worker = state.workers.get(args.workerId)
-      if (worker) {
-        worker.status = "closed"
-        worker.rawStatus = "canceled"
-      }
-
       return {
-        title: "Worker Canceled",
+        title: "Worker Cancel Requested",
         output: JSON.stringify(
           {
             workerId: args.workerId,
-            action: "canceled",
-            status: "closed",
+            action: "cancel_requested",
+            note: "Daemon state may settle asynchronously; use inspect or wait for final status.",
           },
           null,
           2,

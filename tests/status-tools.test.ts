@@ -25,7 +25,7 @@ test("createStatusTool", async (t) => {
     setConnectionStatus(state, "connected")
     setCapabilities(state, { version: "0.1.0", features: ["workers"], fetchedAt: Date.now() })
 
-    const toolDef = createStatusTool(state, {} as any, logger)
+    const toolDef = createStatusTool(state, logger)
     const result = await toolDef.execute({}, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
@@ -55,7 +55,7 @@ test("createStatusTool", async (t) => {
       },
     })
 
-    const toolDef = createStatusTool(state, {} as any, logger)
+    const toolDef = createStatusTool(state, logger)
     const result = await toolDef.execute({}, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
@@ -76,7 +76,7 @@ test("createStatusTool", async (t) => {
     const state = createPluginState()
     setConnectionStatus(state, "error", "Daemon disconnected")
 
-    const toolDef = createStatusTool(state, {} as any, logger)
+    const toolDef = createStatusTool(state, logger)
     const result = await toolDef.execute({}, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 

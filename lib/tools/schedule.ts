@@ -32,10 +32,6 @@ function ensureNonEmptyPrompt(prompt: string | null | undefined): string | undef
   return prompt
 }
 
-function optionalNonEmptyString(value: string | null | undefined): string | undefined {
-  return optionalNonBlankString(value)
-}
-
 function optionalPositiveInteger(value: number | null | undefined, fieldName: string): number | undefined {
   const normalized = optionalNumber(value)
   if (normalized === undefined) {
@@ -113,7 +109,7 @@ function normalizeScheduleCreateArgs(args: ScheduleCreateArgs, context: ToolCont
       cronExpression: collapseNull(args.cronExpression),
       timezone: collapseNull(args.timezone),
       agentId: collapseNull(args.agentId),
-      profile: optionalNonEmptyString(args.profile),
+      profile: optionalNonBlankString(args.profile),
       maxRuns: optionalPositiveInteger(args.maxRuns, "maxRuns"),
       expiresAt: collapseNull(args.expiresAt),
       runOnCreate: collapseNull(args.runOnCreate),
@@ -210,15 +206,15 @@ interface ScheduleUpdateNormalizedFields {
 
 function normalizeScheduleUpdateFields(args: ScheduleUpdateArgs): ScheduleUpdateNormalizedFields {
   return compactDefined({
-    name: optionalNonEmptyString(args.name),
-    prompt: optionalNonEmptyString(args.prompt),
+    name: optionalNonBlankString(args.name),
+    prompt: optionalNonBlankString(args.prompt),
     everyMs: optionalPositiveInteger(args.everyMs, "everyMs"),
-    cronExpression: optionalNonEmptyString(args.cronExpression),
-    timezone: optionalNonEmptyString(args.timezone),
-    profile: optionalNonEmptyString(args.profile),
-    cwd: optionalNonEmptyString(args.cwd),
+    cronExpression: optionalNonBlankString(args.cronExpression),
+    timezone: optionalNonBlankString(args.timezone),
+    profile: optionalNonBlankString(args.profile),
+    cwd: optionalNonBlankString(args.cwd),
     maxRuns: optionalPositiveInteger(args.maxRuns, "maxRuns"),
-    expiresAt: optionalNonEmptyString(args.expiresAt),
+    expiresAt: optionalNonBlankString(args.expiresAt),
   })
 }
 

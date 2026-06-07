@@ -5,7 +5,7 @@ import type { OpencodeClient } from "../profile.js"
 import { findBackgroundSessionsForResource, insertInboxEvent } from "../state/state.js"
 import type { ChatMessage, PaseoTransport } from "../transport/types.js"
 import type { PluginConfig } from "../config.js"
-import type { InboxEvent, PluginState, WorkerSummary } from "../state/types.js"
+import type { ChatRoomWatchState, InboxEvent, PluginState, WorkerSummary } from "../state/types.js"
 
 interface WatchedRoomState {
   room: string
@@ -55,35 +55,28 @@ export function createChatWatcher(
   const watchedRooms = new Map<string, WatchedRoomState>()
   let disposed = false
 
-  function seedRoomState(room: string): void {
+  function ensureRoomState(room: string): ChatRoomWatchState {
     const existing = state.chatRooms.get(room)
     if (existing) {
-      return
+      return existing
     }
 
-    state.chatRooms.set(room, {
+    const entry: ChatRoomWatchState = {
       name: room,
       lastMessageId: null,
       seededAt: null,
       watching: false,
-    })
+    }
+    state.chatRooms.set(room, entry)
+    return entry
   }
 
   function noteRoomWatching(room: string, watching: boolean): void {
-    seedRoomState(room)
-    const entry = state.chatRooms.get(room)
-    if (!entry) {
-      return
-    }
-    entry.watching = watching
+    ensureRoomState(room).watching = watching
   }
 
   function noteRoomCursor(room: string, messageId: string | null): void {
-    seedRoomState(room)
-    const entry = state.chatRooms.get(room)
-    if (!entry) {
-      return
-    }
+    const entry = ensureRoomState(room)
     entry.lastMessageId = messageId
     if (entry.seededAt === null) {
       entry.seededAt = Date.now()
@@ -243,12 +236,12 @@ export function createChatWatcher(
       const room = worker.chatRoom
       if (!room || watchedRooms.has(room) || disposed) {
         if (room) {
-          seedRoomState(room)
+          ensureRoomState(room)
         }
         return
       }
 
-      seedRoomState(room)
+      ensureRoomState(room)
       watchedRooms.set(room, { room, running: false })
       void watchRoom(room)
     },

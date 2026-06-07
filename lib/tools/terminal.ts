@@ -16,12 +16,11 @@ function throwIfAborted(signal: AbortSignal): void {
 /**
  * Create the tool that lists daemon-reported terminals.
  *
- * @param state In-memory plugin state.
  * @param client Paseo transport client.
  * @param logger Logger used for invocation tracing.
  * @returns The OpenCode tool definition.
  */
-export function createTerminalListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
+export function createTerminalListTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
       "List daemon-reported Paseo terminals. By default lists terminals for the current working directory; " +
@@ -130,12 +129,11 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
 /**
  * Create the tool that captures terminal output.
  *
- * @param state In-memory plugin state.
  * @param client Paseo transport client.
  * @param logger Logger used for invocation tracing.
  * @returns The OpenCode tool definition.
  */
-export function createTerminalCaptureTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
+export function createTerminalCaptureTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
       "Capture output from a Paseo terminal. Returns daemon-native lines and totalLines metadata. " +
@@ -183,16 +181,11 @@ export function createTerminalCaptureTool(state: PluginState, client: PaseoTrans
 /**
  * Create the tool that sends raw input to a terminal.
  *
- * @param state In-memory plugin state.
  * @param client Paseo transport client.
  * @param logger Logger used for invocation tracing.
  * @returns The OpenCode tool definition.
  */
-export function createTerminalSendInputTool(
-  state: PluginState,
-  client: PaseoTransport,
-  logger: Logger,
-): ToolDefinition {
+export function createTerminalSendInputTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
       "Send raw input (keystrokes/text) to a running Paseo terminal. " +
@@ -234,16 +227,11 @@ export function createTerminalSendInputTool(
 /**
  * Create the tool that sends multiple command lines to a terminal.
  *
- * @param state In-memory plugin state.
  * @param client Paseo transport client.
  * @param logger Logger used for invocation tracing.
  * @returns The OpenCode tool definition.
  */
-export function createTerminalSendLinesTool(
-  state: PluginState,
-  client: PaseoTransport,
-  logger: Logger,
-): ToolDefinition {
+export function createTerminalSendLinesTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
       "Send one or more command lines to a running Paseo terminal. " +

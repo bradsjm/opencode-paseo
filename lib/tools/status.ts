@@ -1,7 +1,6 @@
 import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool"
 import type { InboxEvent } from "../state/types.js"
 import type { PluginState } from "../state/types.js"
-import type { PaseoTransport } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 
 // ─── Daemon Status Tool ──────────────────────────────────────────────────────
@@ -51,11 +50,10 @@ function buildNextAction(state: PluginState, blockingEvents: InboxEvent[]): Next
  * Create the tool that reports daemon readiness and next actions.
  *
  * @param state In-memory plugin state.
- * @param _client Paseo transport client, kept for interface symmetry.
  * @param logger Logger used for invocation tracing.
  * @returns The OpenCode tool definition.
  */
-export function createStatusTool(state: PluginState, _client: PaseoTransport, logger: Logger): ToolDefinition {
+export function createStatusTool(state: PluginState, logger: Logger): ToolDefinition {
   return tool({
     description: "Check Paseo plugin readiness, daemon status, and next actions",
     args: {},

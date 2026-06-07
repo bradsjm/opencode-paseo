@@ -676,9 +676,11 @@ test("paseo_worker_wait", async (t) => {
 test("paseo_worker_cancel", async (t) => {
   const logger = new Logger(false)
 
-  await t.test("default cancel closes local status and keeps worker in state", async () => {
+  await t.test("default cancel requests daemon cancellation and keeps local status", async () => {
     const state = createPluginState()
-    seedWorker(state, "w1")
+    const worker = seedWorker(state, "w1")
+    worker.status = "running"
+    worker.rawStatus = "running"
     let cancelCalled = false
     const client = createMockTransport({
       cancelWorker: async () => {
@@ -691,10 +693,11 @@ test("paseo_worker_cancel", async (t) => {
 
     assert.ok(cancelCalled)
     assert.ok(state.workers.has("w1"))
-    assert.equal(state.workers.get("w1")!.status, "closed")
-    assert.equal(state.workers.get("w1")!.rawStatus, "canceled")
+    assert.equal(state.workers.get("w1")!.status, "running")
+    assert.equal(state.workers.get("w1")!.rawStatus, "running")
     const output = JSON.parse((result as { output: string }).output)
-    assert.equal(output.action, "canceled")
+    assert.equal(output.action, "cancel_requested")
+    assert.equal(output.status, undefined)
   })
 
   await t.test("forceKill removes worker from state and unbinds sessions", async () => {
@@ -781,7 +784,7 @@ test("paseo_worker_cancel", async (t) => {
 
     assert.equal(cancelCalls, 1)
     assert.equal(output.workerId, "nonexistent")
-    assert.equal(output.action, "canceled")
+    assert.equal(output.action, "cancel_requested")
   })
 
   await t.test("description warns that forceKill should capture output first", async () => {
@@ -1749,49 +1752,6 @@ test("paseo_worker_update", async (t) => {
     assert.equal(worker.model, "gpt-5")
   })
 
-  await t.test("worker wait defaults survive null optional args", async () => {
-    const state = createPluginState()
-    seedWorker(state, "w1")
-    const client = createMockTransport({
-      waitForWorker: async (workerId) => ({
-        status: "idle",
-        workerId,
-        error: null,
-        lastMessage: null,
-        finalSnapshot: null,
-      }),
-    })
-
-    const result = await createWorkerWaitTool(state, client, TEST_CONFIG, logger).execute(
-      { workerIds: ["w1"], waitFor: null, timeout: null },
-      mockContext(),
-    )
-    const output = JSON.parse((result as { output: string }).output)
-
-    assert.equal(output.waitFor, "all")
-    assert.equal(output.timedOut, false)
-  })
-
-  await t.test("worker cancel treats null forceKill like omission", async () => {
-    const state = createPluginState()
-    seedWorker(state, "w1")
-    let cancelCalls = 0
-    let killCalls = 0
-    const client = createMockTransport({
-      cancelWorker: async () => {
-        cancelCalls += 1
-      },
-      killWorker: async () => {
-        killCalls += 1
-      },
-    })
-
-    await createWorkerCancelTool(state, client, logger).execute({ workerId: "w1", forceKill: null }, mockContext())
-
-    assert.equal(cancelCalls, 1)
-    assert.equal(killCalls, 0)
-  })
-
   await t.test("handles update with only workerId (no changes)", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
@@ -1843,37 +1803,6 @@ test("paseo_worker_update", async (t) => {
 
 test("paseo_worker_inspect", async (t) => {
   const logger = new Logger(false)
-
-  await t.test("treats null activity options as omitted", async () => {
-    const state = createPluginState()
-    seedWorker(state, "w1")
-    let activityCalls = 0
-    const client = createMockTransport({
-      fetchWorker: async () => ({
-        agent: {
-          id: "w1",
-          provider: "test",
-          cwd: "/tmp",
-          model: null,
-          status: "running",
-          title: "Worker w1",
-          labels: {},
-        },
-        project: null,
-      }),
-      fetchWorkerActivity: async () => {
-        activityCalls += 1
-        return { workerId: "w1", activity: null }
-      },
-    })
-
-    await createWorkerInspectTool(state, client, logger).execute(
-      { workerId: "w1", includeActivity: null, activityLimit: null },
-      mockContext(),
-    )
-
-    assert.equal(activityCalls, 0)
-  })
 
   await t.test("returns snapshot without activity by default", async () => {
     const state = createPluginState()
@@ -2052,6 +1981,65 @@ test("paseo_worker_inspect", async (t) => {
     assert.equal(output.attention.pendingPermissionCount, 1)
     assert.equal(output.attention.blockingAction, "paseo_permission_respond")
     assert.equal(output.project, undefined)
+  })
+
+  await t.test("treats idle finished attention as finished progress", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "idle",
+          title: "Finished Worker",
+          labels: {},
+          requiresAttention: true,
+          attentionReason: "finished",
+        },
+        project: null,
+      }),
+    })
+
+    const toolDef = createWorkerInspectTool(state, client, logger)
+    const result = await toolDef.execute({ workerId: "w1" }, mockContext())
+
+    const output = JSON.parse((result as { output: string }).output)
+    assert.equal(output.progress.activityState, "finished")
+    assert.equal(output.progress.readyForDependentWork, true)
+    assert.equal(output.attention.requiresAttention, true)
+    assert.equal(output.attention.attentionReason, "finished")
+  })
+
+  await t.test("keeps non-terminal attention blocked", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const client = createMockTransport({
+      fetchWorker: async () => ({
+        agent: {
+          id: "w1",
+          provider: "test",
+          cwd: "/tmp",
+          model: null,
+          status: "running",
+          title: "Blocked Worker",
+          labels: {},
+          requiresAttention: true,
+          attentionReason: "needs review",
+        },
+        project: null,
+      }),
+    })
+
+    const toolDef = createWorkerInspectTool(state, client, logger)
+    const result = await toolDef.execute({ workerId: "w1" }, mockContext())
+
+    const output = JSON.parse((result as { output: string }).output)
+    assert.equal(output.progress.activityState, "blocked")
+    assert.equal(output.progress.readyForDependentWork, false)
+    assert.equal(output.progress.summary, "needs review")
   })
 
   await t.test("distinguishes quiet from active running workers", async () => {

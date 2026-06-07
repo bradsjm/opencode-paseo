@@ -145,7 +145,6 @@ test("paseo_terminal_send_input", async (t) => {
   const logger = new Logger(false)
 
   await t.test("forwards exact input string unchanged to transport", async () => {
-    const state = createPluginState()
     let receivedTerminalId: string | undefined
     let receivedInput: string | undefined
     const client = createMockTransport({
@@ -155,7 +154,7 @@ test("paseo_terminal_send_input", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendInputTool(state, client, logger)
+    const toolDef = createTerminalSendInputTool(client, logger)
     const result = await toolDef.execute({ terminalId: "t1", input: "ls -la\n" }, mockContext())
 
     assert.equal(receivedTerminalId, "t1")
@@ -166,7 +165,6 @@ test("paseo_terminal_send_input", async (t) => {
   })
 
   await t.test("sends raw input with no escape-sequence interpretation", async () => {
-    const state = createPluginState()
     let receivedInput: string | undefined
     const client = createMockTransport({
       sendTerminalInput: (_terminalId, input) => {
@@ -174,7 +172,7 @@ test("paseo_terminal_send_input", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendInputTool(state, client, logger)
+    const toolDef = createTerminalSendInputTool(client, logger)
     // Send literal backslash-n characters (not an actual newline)
     await toolDef.execute({ terminalId: "t1", input: "echo hello\\nworld" }, mockContext())
 
@@ -182,7 +180,6 @@ test("paseo_terminal_send_input", async (t) => {
   })
 
   await t.test("handles empty input string", async () => {
-    const state = createPluginState()
     let receivedInput: string | undefined
     const client = createMockTransport({
       sendTerminalInput: (_terminalId, input) => {
@@ -190,7 +187,7 @@ test("paseo_terminal_send_input", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendInputTool(state, client, logger)
+    const toolDef = createTerminalSendInputTool(client, logger)
     const result = await toolDef.execute({ terminalId: "t1", input: "" }, mockContext())
 
     assert.equal(receivedInput, "")
@@ -199,7 +196,6 @@ test("paseo_terminal_send_input", async (t) => {
   })
 
   await t.test("sends special characters verbatim", async () => {
-    const state = createPluginState()
     let receivedInput: string | undefined
     const client = createMockTransport({
       sendTerminalInput: (_terminalId, input) => {
@@ -207,7 +203,7 @@ test("paseo_terminal_send_input", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendInputTool(state, client, logger)
+    const toolDef = createTerminalSendInputTool(client, logger)
     const specialInput = "\t\x03\x1b[A"
     await toolDef.execute({ terminalId: "t1", input: specialInput }, mockContext())
 
@@ -215,14 +211,13 @@ test("paseo_terminal_send_input", async (t) => {
   })
 
   await t.test("surfaces synchronous transport throws", async () => {
-    const state = createPluginState()
     const client = createMockTransport({
       sendTerminalInput: () => {
         throw new Error("send failed")
       },
     })
 
-    const toolDef = createTerminalSendInputTool(state, client, logger)
+    const toolDef = createTerminalSendInputTool(client, logger)
     await assert.rejects(() => toolDef.execute({ terminalId: "t1", input: "pwd\n" }, mockContext()), /send failed/)
   })
 })
@@ -233,7 +228,6 @@ test("paseo_terminal_send_lines", async (t) => {
   const logger = new Logger(false)
 
   await t.test("joins lines with newlines and appends trailing newline", async () => {
-    const state = createPluginState()
     let receivedTerminalId: string | undefined
     let receivedInput: string | undefined
     const client = createMockTransport({
@@ -243,7 +237,7 @@ test("paseo_terminal_send_lines", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendLinesTool(state, client, logger)
+    const toolDef = createTerminalSendLinesTool(client, logger)
     const result = await toolDef.execute(
       {
         terminalId: "t1",
@@ -261,7 +255,6 @@ test("paseo_terminal_send_lines", async (t) => {
   })
 
   await t.test("handles single line", async () => {
-    const state = createPluginState()
     let receivedInput: string | undefined
     const client = createMockTransport({
       sendTerminalInput: (_terminalId, input) => {
@@ -269,7 +262,7 @@ test("paseo_terminal_send_lines", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendLinesTool(state, client, logger)
+    const toolDef = createTerminalSendLinesTool(client, logger)
     const result = await toolDef.execute({ terminalId: "t1", lines: ["ls -la"] }, mockContext())
 
     assert.equal(receivedInput, "ls -la\n")
@@ -279,7 +272,6 @@ test("paseo_terminal_send_lines", async (t) => {
   })
 
   await t.test("preserves empty-string lines", async () => {
-    const state = createPluginState()
     let receivedInput: string | undefined
     const client = createMockTransport({
       sendTerminalInput: (_terminalId, input) => {
@@ -287,14 +279,13 @@ test("paseo_terminal_send_lines", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendLinesTool(state, client, logger)
+    const toolDef = createTerminalSendLinesTool(client, logger)
     await toolDef.execute({ terminalId: "t1", lines: ["echo a", "", "echo b"] }, mockContext())
 
     assert.equal(receivedInput, "echo a\n\necho b\n")
   })
 
   await t.test("handles empty lines array", async () => {
-    const state = createPluginState()
     let receivedInput: string | undefined
     const client = createMockTransport({
       sendTerminalInput: (_terminalId, input) => {
@@ -302,7 +293,7 @@ test("paseo_terminal_send_lines", async (t) => {
       },
     })
 
-    const toolDef = createTerminalSendLinesTool(state, client, logger)
+    const toolDef = createTerminalSendLinesTool(client, logger)
     const result = await toolDef.execute({ terminalId: "t1", lines: [] }, mockContext())
 
     assert.equal(receivedInput, "\n")
@@ -312,10 +303,9 @@ test("paseo_terminal_send_lines", async (t) => {
   })
 
   await t.test("sent count matches joined string length", async () => {
-    const state = createPluginState()
     const client = createMockTransport()
 
-    const toolDef = createTerminalSendLinesTool(state, client, logger)
+    const toolDef = createTerminalSendLinesTool(client, logger)
     const lines = ["first command", "second command", "third"]
     const result = await toolDef.execute({ terminalId: "t1", lines }, mockContext())
 
@@ -342,7 +332,6 @@ test("paseo_terminal_capture", async (t) => {
   const logger = new Logger(false)
 
   await t.test("passes explicit range and stripAnsi through to transport", async () => {
-    const state = createPluginState()
     let received: Record<string, unknown> | undefined
     const client = createMockTransport({
       captureTerminal: async (opts) => {
@@ -351,7 +340,7 @@ test("paseo_terminal_capture", async (t) => {
       },
     })
 
-    const toolDef = createTerminalCaptureTool(state, client, logger)
+    const toolDef = createTerminalCaptureTool(client, logger)
     const result = await toolDef.execute({ terminalId: "t1", start: 2, end: 4, stripAnsi: false }, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
@@ -365,7 +354,6 @@ test("paseo_terminal_capture", async (t) => {
   })
 
   await t.test("scrollback captures from start of daemon buffer", async () => {
-    const state = createPluginState()
     let received: Record<string, unknown> | undefined
     const client = createMockTransport({
       captureTerminal: async (opts) => {
@@ -374,7 +362,7 @@ test("paseo_terminal_capture", async (t) => {
       },
     })
 
-    const result = await createTerminalCaptureTool(state, client, logger).execute(
+    const result = await createTerminalCaptureTool(client, logger).execute(
       { terminalId: "t1", start: 99, end: 100, scrollback: true },
       mockContext(),
     )
@@ -386,7 +374,6 @@ test("paseo_terminal_capture", async (t) => {
   })
 
   await t.test("omits range fields when defaults are used", async () => {
-    const state = createPluginState()
     let received: Record<string, unknown> | undefined
     const client = createMockTransport({
       captureTerminal: async (opts) => {
@@ -395,7 +382,7 @@ test("paseo_terminal_capture", async (t) => {
       },
     })
 
-    const result = await createTerminalCaptureTool(state, client, logger).execute({ terminalId: "t1" }, mockContext())
+    const result = await createTerminalCaptureTool(client, logger).execute({ terminalId: "t1" }, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
     assert.deepEqual(received, { terminalId: "t1", stripAnsi: true })
@@ -403,7 +390,6 @@ test("paseo_terminal_capture", async (t) => {
   })
 
   await t.test("treats null capture options as omitted and keeps default stripAnsi", async () => {
-    const state = createPluginState()
     let received: Record<string, unknown> | undefined
     const client = createMockTransport({
       captureTerminal: async (opts) => {
@@ -412,7 +398,7 @@ test("paseo_terminal_capture", async (t) => {
       },
     })
 
-    await createTerminalCaptureTool(state, client, logger).execute(
+    await createTerminalCaptureTool(client, logger).execute(
       { terminalId: "t1", start: null, end: null, scrollback: null, stripAnsi: null },
       mockContext(),
     )
@@ -423,20 +409,11 @@ test("paseo_terminal_capture", async (t) => {
 
 test("paseo_terminal_list returns daemon terminals only", async () => {
   const logger = new Logger(false)
-  const state = createPluginState()
-  state.terminals.set("t1", {
-    id: "t1",
-    title: "Term 1",
-    cwd: "/tmp",
-    status: "running",
-    lineCount: 3,
-    lastReadCursor: 0,
-  })
   const client = createMockTransport({
     listTerminals: async () => [],
   })
 
-  const listResult = await createTerminalListTool(state, client, logger).execute({}, mockContext())
+  const listResult = await createTerminalListTool(client, logger).execute({}, mockContext())
   const output = JSON.parse((listResult as { output: string }).output)
 
   assert.equal(output.count, 0)
@@ -445,7 +422,6 @@ test("paseo_terminal_list returns daemon terminals only", async () => {
 
 test("paseo_terminal_list filters by current cwd unless all is true", async () => {
   const logger = new Logger(false)
-  const state = createPluginState()
   const received: Array<string | undefined> = []
   const client = createMockTransport({
     listTerminals: async (cwd) => {
@@ -454,16 +430,15 @@ test("paseo_terminal_list filters by current cwd unless all is true", async () =
     },
   })
 
-  await createTerminalListTool(state, client, logger).execute({}, mockContext())
-  await createTerminalListTool(state, client, logger).execute({ cwd: "/other" }, mockContext())
-  await createTerminalListTool(state, client, logger).execute({ all: true }, mockContext())
+  await createTerminalListTool(client, logger).execute({}, mockContext())
+  await createTerminalListTool(client, logger).execute({ cwd: "/other" }, mockContext())
+  await createTerminalListTool(client, logger).execute({ all: true }, mockContext())
 
   assert.deepEqual(received, ["/tmp", "/other", undefined])
 })
 
 test("paseo_terminal_list treats null optional args as omitted", async () => {
   const logger = new Logger(false)
-  const state = createPluginState()
   const received: Array<string | undefined> = []
   const client = createMockTransport({
     listTerminals: async (cwd) => {
@@ -472,7 +447,7 @@ test("paseo_terminal_list treats null optional args as omitted", async () => {
     },
   })
 
-  await createTerminalListTool(state, client, logger).execute({ cwd: null, all: null }, mockContext())
+  await createTerminalListTool(client, logger).execute({ cwd: null, all: null }, mockContext())
 
   assert.deepEqual(received, ["/tmp"])
 })
