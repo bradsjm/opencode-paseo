@@ -1,11 +1,5 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on Keep a Changelog, but entries are summarized from the repository's checked-in source and git history.
-
-## [Unreleased]
-
 ## [0.2.0] - 2026-06-07
 
 ### Added
