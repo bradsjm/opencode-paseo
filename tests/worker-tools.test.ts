@@ -821,6 +821,7 @@ test("paseo_worker_archive", async (t) => {
 
     const toolDef = createWorkerArchiveTool(state, createMockTransport(), logger)
     const result = await toolDef.execute({ workerId: "w1" }, mockContext())
+    assert.equal((result as { title: string }).title, "Worker Archived Locally")
     const output = JSON.parse((result as { output: string }).output)
 
     assert.equal(state.workers.has("w1"), false)
@@ -1219,6 +1220,9 @@ test("paseo_worker_update", async (t) => {
       const workerLaunchQueue = createWorkerLaunchQueueController(state, client, opencode, logger)
 
       const toolDef = createWorkerCreateTool(opencode, workerLaunchQueue, logger)
+      assert.match(toolDef.description ?? "", /serialized per plugin instance/i)
+      assert.match(toolDef.description ?? "", /one launch starts at a time/i)
+      assert.match(toolDef.description ?? "", /fifo order, not in parallel/i)
       const result = await toolDef.execute({}, mockContext())
       await flushAsyncWork()
 
@@ -1232,6 +1236,10 @@ test("paseo_worker_update", async (t) => {
       assert.equal(output.position, 1)
       assert.equal(typeof output.launchId, "string")
       assert.equal("id" in output, false)
+      assert.match(output.message, /only confirms queueing/i)
+      assert.match(output.message, /one at a time per plugin instance/i)
+      assert.match(output.message, /fifo order, not in parallel/i)
+      assert.match(output.message, /status is created and workerId is present/i)
     })
 
     await t.test("uses specified profile", async () => {

@@ -214,17 +214,17 @@ When a worker carries the reserved `opencodePaseo.chatRoom` label, the plugin wa
 
 ### Worker
 
-| Tool                         | Description                                                                                                    |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `paseo_worker_list`          | Refresh and list known workers.                                                                                |
-| `paseo_worker_create`        | Queue a durable detached worker launch using an OpenCode profile.                                              |
-| `paseo_worker_launch_status` | Inspect a queued worker launch by `launchId`, including rollback metadata for failed worktree-backed launches. |
-| `paseo_worker_send`          | Send a message to an existing worker.                                                                          |
-| `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption.                                  |
-| `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.                                             |
-| `paseo_worker_archive`       | Archive a worker from the active list; daemon-backed historical records may still remain inspectable.          |
-| `paseo_worker_update`        | Update worker metadata and runtime settings.                                                                   |
-| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                                                    |
+| Tool                         | Description                                                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paseo_worker_list`          | Refresh and list known workers.                                                                                                                |
+| `paseo_worker_create`        | Queue a durable detached worker launch using an OpenCode profile; launches are serialized per plugin instance, one at a time in FIFO order.    |
+| `paseo_worker_launch_status` | Inspect a queued worker launch by `launchId`, including rollback metadata for failed worktree-backed launches.                                 |
+| `paseo_worker_send`          | Send a message to an existing worker.                                                                                                          |
+| `paseo_worker_wait`          | Wait on one or more workers until completion, timeout, or nudge interruption.                                                                  |
+| `paseo_worker_cancel`        | Cancel a worker task or permanently terminate it with `forceKill`.                                                                             |
+| `paseo_worker_archive`       | Archive a worker from the active list; local removal is immediate on success, but daemon-side disappearance or inspectability may lag briefly. |
+| `paseo_worker_update`        | Update worker metadata and runtime settings.                                                                                                   |
+| `paseo_worker_inspect`       | Inspect current worker state with optional recent activity.                                                                                    |
 
 When `task.enabled` is true, the plugin registers a tool named `task` that overrides OpenCode's builtin task tool. It accepts the same task parameters (`description`, `prompt`, `subagent_type`, optional `task_id`, `command`, and `background`) but executes through a non-detached Paseo worker. The returned `task_id` is an OpenCode child session ID; the backing Paseo worker ID is tracked internally and exposed in tool metadata for diagnostics.
 

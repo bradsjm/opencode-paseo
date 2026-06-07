@@ -140,7 +140,7 @@ export function createWorkerCreateTool(
       "Queue a new Paseo worker (agent) launch using an OpenCode profile. " +
       `Profiles define the model and mode for the worker. Use paseo_profile_list to see available profiles. ` +
       `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified. ` +
-      "This tool returns a launch receipt immediately; queued launches are executed FIFO with one active launch per plugin instance. " +
+      "This tool returns a launch receipt immediately. Worker launches are queued and serialized per plugin instance: one launch starts at a time, in FIFO order, not in parallel. " +
       "Do not treat launch as complete until paseo_worker_launch_status returns status created and a workerId. " +
       "Use paseo_worker_launch_status to check launch progress and worker ID once created. When the plugin runs inside " +
       "a Paseo agent environment, it also sets the reserved paseo.parent-agent-id label automatically.",
@@ -224,8 +224,8 @@ export function createWorkerCreateTool(
             worktreeName: receipt.worktreeName,
             chatRoom: receipt.chatRoom,
             message:
-              "Worker launch queued. Use paseo_worker_launch_status with the launchId " +
-              "to monitor progress. Do not treat launch as complete until status is created and workerId is present.",
+              "Worker launch queued. This receipt only confirms queueing. Launches start one at a time per plugin instance, in FIFO order, not in parallel. " +
+              "Use paseo_worker_launch_status with the launchId to monitor progress, and do not treat launch as complete until status is created and workerId is present.",
           },
           null,
           2,
@@ -836,8 +836,8 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
 export function createWorkerArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
-      "Archive a Paseo worker. The worker is removed from the active list, but daemon-backed historical " +
-      "records may still remain inspectable afterward.",
+      "Archive a Paseo worker. Local active state is removed immediately on success, but daemon-side disappearance " +
+      "or historical inspectability may lag briefly afterward.",
     args: {
       workerId: tool.schema.string().describe("ID of the worker to archive"),
     },
@@ -862,7 +862,7 @@ export function createWorkerArchiveTool(state: PluginState, client: PaseoTranspo
       removeWorkerFromState(state, args.workerId)
 
       return {
-        title: "Worker Archived",
+        title: "Worker Archived Locally",
         output: JSON.stringify(
           {
             workerId: args.workerId,
