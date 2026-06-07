@@ -101,7 +101,8 @@ export function createWorktreeCreateTool(client: PaseoTransport, logger: Logger)
  */
 export function createWorktreeArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "Archive a Paseo worktree. Requires explicit directory context for the project.",
+    description:
+      "Archive a Paseo worktree. Requires explicit directory context for the project. Capture needed worker output first; associated agents may be removed or unbound.",
     args: {
       worktreePath: tool.schema.string().describe("Path to the worktree to archive"),
       cwd: tool.schema

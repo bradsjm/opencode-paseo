@@ -339,7 +339,11 @@ export function createScheduleCreateTool(
       "Scheduled runs execute asynchronously. Use paseo_schedule_logs to inspect run history. Scheduled new-agent runs " +
       "cannot currently be parent-linked by this plugin because the upstream schedule payload exposes no labels field.",
     args: {
-      prompt: tool.schema.string().describe("Prompt to execute on each scheduled run"),
+      prompt: tool.schema
+        .string()
+        .describe(
+          "Self-contained prompt for each scheduled run: objective, cadence-aware behavior, allowed side effects, reporting destination, failure behavior, and verification.",
+        ),
       name: nullableOptional(tool.schema.string()).describe("Human-readable name for the schedule"),
       cadenceType: tool.schema
         .enum(["every", "cron"])
@@ -369,7 +373,7 @@ export function createScheduleCreateTool(
         .string()
         .nullable()
         .optional()
-        .describe("Working directory (required for 'new-agent' target, defaults to session directory)"),
+        .describe("Working directory for 'new-agent' target (defaults to session directory)"),
       maxRuns: nullableOptional(tool.schema.number().int()).describe(
         "Maximum number of executions before the schedule stops",
       ),
@@ -560,7 +564,7 @@ export function createScheduleRunOnceTool(state: PluginState, client: PaseoTrans
     description:
       "Trigger a single immediate execution of a Paseo schedule. Does not affect the regular cadence. " +
       "The triggered run executes asynchronously. A timeout warning after dispatch is not proof of failure; use " +
-      "paseo_schedule_logs to confirm the final outcome.",
+      "paseo_schedule_logs to confirm the final outcome before reporting success or failure.",
     args: {
       id: tool.schema.string().describe("ID of the schedule to trigger"),
     },

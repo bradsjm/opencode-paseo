@@ -52,9 +52,10 @@ export function getChatRoomFromAgentLabels(labels: AgentSummary["labels"] | unde
 export function appendChatRoomCoordinationPrompt(initialPrompt: string | undefined, chatRoom: string): string {
   const block = [
     "Paseo chat coordination instructions:",
-    `- Use the Paseo chat room "${chatRoom}" with \`paseo chat post\`, \`paseo chat read\`, and \`paseo chat wait\`.`,
+    `- Use the Paseo chat room "${chatRoom}" with the available Paseo chat tools: CLI-style \`paseo chat post/read/wait\` or plugin tools such as \`paseo_chat_post\`, \`paseo_chat_read\`, and \`paseo_chat_wait\`.`,
     "- Rely on the automatic PASEO_AGENT_ID author identity when posting to chat unless explicitly instructed otherwise.",
-    "- Post progress updates, blockers, and final completion in that room.",
+    "- Post a start/claim message, meaningful progress, blockers needing coordinator action, and final completion in that room.",
+    "- Final chat updates should include status, changed files or artifacts, verification run/results, risks, and remaining blockers.",
     "- For reliable plugin nudges, mention coworkers with exact `@<worker-id>` tokens.",
   ].join("\n")
 

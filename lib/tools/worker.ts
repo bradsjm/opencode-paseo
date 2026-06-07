@@ -141,6 +141,7 @@ export function createWorkerCreateTool(
       `Profiles define the model and mode for the worker. Use paseo_profile_list to see available profiles. ` +
       `Defaults to the "${DEFAULT_PROFILE}" profile if no profile is specified. ` +
       "This tool returns a launch receipt immediately; queued launches are executed FIFO with one active launch per plugin instance. " +
+      "Do not treat launch as complete until paseo_worker_launch_status returns status created and a workerId. " +
       "Use paseo_worker_launch_status to check launch progress and worker ID once created. When the plugin runs inside " +
       "a Paseo agent environment, it also sets the reserved paseo.parent-agent-id label automatically.",
     args: {
@@ -155,7 +156,7 @@ export function createWorkerCreateTool(
           `OpenCode profile name to use (default: "${DEFAULT_PROFILE}"). Use paseo_profile_list to see available profiles.`,
         ),
       initialPrompt: nullableOptional(tool.schema.string()).describe(
-        "Initial prompt to send to the worker on creation",
+        "Self-contained initial worker brief: objective, scope, allowed edits, verification, blockers, and required final report fields",
       ),
       labels: tool.schema
         .record(tool.schema.string(), tool.schema.string())
@@ -224,7 +225,7 @@ export function createWorkerCreateTool(
             chatRoom: receipt.chatRoom,
             message:
               "Worker launch queued. Use paseo_worker_launch_status with the launchId " +
-              "to monitor progress and retrieve the workerId once created.",
+              "to monitor progress. Do not treat launch as complete until status is created and workerId is present.",
           },
           null,
           2,
@@ -540,7 +541,7 @@ export function createWorkerWaitTool(
 ): ToolDefinition {
   return tool({
     description:
-      "Wait for one or more Paseo workers to finish their current tasks. Supports waiting for any or all targets, respects a global timeout, and stops early if this session receives a nudge-eligible owned-worker event.",
+      "Wait for one or more Paseo workers to finish their current tasks. Supports waiting for any or all targets, respects a global timeout, and stops early if this session receives a nudge-eligible owned-worker event. Inspect timedOut, interruptedByNudge, pendingWorkerIds, and nudgeEvent before treating the wait as complete.",
     args: {
       workerIds: tool.schema.array(tool.schema.string()).min(1).describe("IDs of one or more workers to wait on"),
       waitFor: tool.schema
@@ -985,7 +986,7 @@ export function createWorkerInspectTool(
   return tool({
     description:
       "Inspect a Paseo worker. Returns a compact daemon-backed summary for routing, attention, and progress decisions. " +
-      "Optionally includes a projected recent activity summary when includeActivity is true.",
+      "Check progress.readyForDependentWork before starting dependent work. Optionally includes a projected recent activity summary when includeActivity is true.",
     args: {
       workerId: tool.schema.string().describe("ID of the worker to inspect"),
       includeActivity: tool.schema

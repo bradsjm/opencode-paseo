@@ -72,11 +72,16 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
     description:
       "Run a daemon-native Paseo loop with required verification and bounded stop conditions. Optional string fields " +
       "must be non-empty when provided. Verifier prompts should ask for explicit, checkable evidence from the worker " +
-      "output or loop logs; passing verifyChecks alone does not guarantee verifyPrompt success. " +
+      "output or loop logs. verifyChecks validate command/process state; verifyPrompt validates semantic success. " +
+      "Passing verifyChecks alone does not guarantee verifyPrompt success. " +
       "Loop-created agents cannot currently be parent-linked by this plugin because " +
       "the upstream loop payload exposes no labels field.",
     args: {
-      prompt: tool.schema.string().describe("Prompt for the loop worker"),
+      prompt: tool.schema
+        .string()
+        .describe(
+          "Self-contained loop worker prompt with objective, scope, acceptance criteria, and stop-worthy blockers",
+        ),
       cwd: nullableOptional(tool.schema.string()).describe(
         "Working directory for the loop (defaults to session directory)",
       ),
@@ -87,13 +92,15 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
       verifierModel: nullableOptional(tool.schema.string()).describe("Model override for the verifier worker"),
       verifierModeId: nullableOptional(tool.schema.string()).describe("Mode override for the verifier worker"),
       verifyPrompt: nullableOptional(tool.schema.string()).describe(
-        "Verifier prompt. Must be non-empty when provided.",
+        "Verifier prompt with explicit pass/fail criteria based on worker output, loop logs, or command output. Must be non-empty when provided.",
       ),
       verifyChecks: tool.schema
         .array(tool.schema.string())
         .nullable()
         .optional()
-        .describe("Verifier commands. Must contain at least one non-empty command when provided."),
+        .describe(
+          "Verifier commands for executable checks. Must contain at least one non-empty command when provided.",
+        ),
       name: nullableOptional(tool.schema.string()).describe("Optional human-readable loop name"),
       sleepMs: nullableOptional(tool.schema.number().int()).describe(
         "Sleep interval between loop iterations in milliseconds",

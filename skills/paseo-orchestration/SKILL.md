@@ -38,6 +38,7 @@ Use this project skill as the single coordinator playbook for agentic work throu
 - Prefer profiles from `paseo_profile_list`; do not hard-code provider/model fields unless the tool specifically requires them.
 - Prefer bounded waits over polling loops. If a wait is interrupted by a nudge, inspect inbox and the affected worker before sending more work.
 - Do not archive worktrees, force-kill workers, or kill terminals until useful output is captured and safety checks pass.
+- Treat async dispatch as incomplete until the relevant status/log/wait output confirms completion; check fields such as `status`, `workerId`, `timedOut`, `interruptedByNudge`, `pendingWorkerIds`, and `nudgeEvent`.
 
 ## Worker Brief Minimum
 
@@ -52,6 +53,13 @@ Include:
 - escalation rules: stop for unclear ownership, unexpected dirty state, permission ambiguity, destructive actions, or cross-worker conflicts.
 
 See `references/briefing.md` for copyable templates.
+
+## Before Final Synthesis
+
+- Confirm coverage for every delegated scope or mark it blocked.
+- Verify material worker claims, changed files, and command results before reporting them to the user.
+- Resolve or report pending inbox items, permissions, nudges, timeouts, and blockers.
+- Capture useful terminal, worker, chat, schedule, or loop output before destructive cleanup.
 
 ## Load References As Needed
 

@@ -91,7 +91,8 @@ export function createChatInspectTool(client: PaseoTransport, logger: Logger): T
  */
 export function createChatDeleteTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
-    description: "Delete a Paseo chat room permanently.",
+    description:
+      "Delete a Paseo chat room permanently. Capture any needed messages first; room history may be removed.",
     args: {
       room: tool.schema.string().describe("Name of the chat room to delete"),
     },

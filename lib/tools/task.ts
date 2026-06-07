@@ -49,11 +49,11 @@ When NOT to use the Task tool:
 - If no available agent is a good fit for the task, use other tools directly
 
 Usage notes:
-1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
+1. Launch multiple agents concurrently only for independent, non-overlapping work; to do that, use a single message with multiple tool uses
 2. Once you have delegated work to an agent, do not duplicate that work yourself. Continue with non-overlapping tasks, or wait for the result. For background tasks, you will be notified automatically when the result is ready.
 3. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result. The output includes a task_id you can reuse later to continue the same subagent session.
-4. Each agent invocation starts with a fresh context unless you provide task_id to resume the same subagent session (which continues with its previous messages and tool outputs). When starting fresh, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
-5. The agent's outputs should generally be trusted
+4. Each agent invocation starts with a fresh context unless you provide task_id to resume the same subagent session (which continues with its previous messages and tool outputs). When starting fresh, your prompt should include objective, scope, forbidden scope, allowed edits, verification, blockers, and exactly what final fields the agent should return.
+5. Treat the agent's output as primary evidence, but verify material claims, code changes, and test results before user-facing synthesis or mergeback.
 6. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
 7. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.`
 
@@ -104,7 +104,11 @@ export function createTaskTool(
     description: TASK_TOOL_DESCRIPTION,
     args: {
       description: tool.schema.string().describe("A short (3-5 words) description of the task"),
-      prompt: tool.schema.string().describe("The task for the agent to perform"),
+      prompt: tool.schema
+        .string()
+        .describe(
+          "Self-contained task brief for the agent: objective, scope, allowed edits, verification, blockers, and required final report fields.",
+        ),
       subagent_type: tool.schema.string().describe("The type of specialized agent to use for this task"),
       task_id: tool.schema
         .string()
