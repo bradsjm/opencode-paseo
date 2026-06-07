@@ -10,7 +10,12 @@ import type { Logger } from "./logger.js"
 // ─── Message Formatting ──────────────────────────────────────────────────────
 
 /**
- * Build a concise nudge message for injection into the controller session.
+ * Build a concise nudge message for injection into a controller session.
+ *
+ * @param kind Inbox event kind that triggered the nudge.
+ * @param resourceId Resource identifier associated with the event.
+ * @param summary Human-readable event summary.
+ * @returns The formatted nudge message.
  */
 export function formatNudgeMessage(kind: InboxEventKind, resourceId: string, summary: string): string {
   const prefix = `[paseo:${kind}]`
@@ -21,8 +26,14 @@ export function formatNudgeMessage(kind: InboxEventKind, resourceId: string, sum
 
 /**
  * Send a best-effort nudge to one or more OpenCode sessions.
- * Failures are logged but never thrown — nudges are fire-and-forget.
- * All prompts are fired concurrently without awaiting.
+ *
+ * Failures are logged but never thrown; nudges are fire-and-forget.
+ *
+ * @param client OpenCode client used to deliver session prompts.
+ * @param sessionIds Session identifiers to nudge.
+ * @param message Message body to inject.
+ * @param logger Logger used for success and failure reporting.
+ * @returns Nothing.
  */
 export function sendNudge(client: OpencodeClient, sessionIds: string[], message: string, logger: Logger): void {
   for (const sessionId of sessionIds) {

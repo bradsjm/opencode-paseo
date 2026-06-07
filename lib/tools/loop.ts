@@ -61,6 +61,12 @@ function normalizeVerifyChecks(verifyChecks: string[] | null | undefined): strin
 
 // ─── Loop Run Tool ────────────────────────────────────────────────────────────
 
+/** Create the tool that runs a daemon-native Paseo loop.
+ *
+ * @param client - Transport used to start and manage the loop.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for running loops.
+ */
 export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -169,6 +175,12 @@ export function createLoopRunTool(client: PaseoTransport, logger: Logger): ToolD
 
 // ─── Loop List Tool ───────────────────────────────────────────────────────────
 
+/** Create the tool that lists daemon-native Paseo loops.
+ *
+ * @param client - Transport used to list loops.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for listing loops.
+ */
 export function createLoopListTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "List daemon-native Paseo loops managed by the daemon.",
@@ -186,6 +198,12 @@ export function createLoopListTool(client: PaseoTransport, logger: Logger): Tool
 
 // ─── Loop Inspect Tool ────────────────────────────────────────────────────────
 
+/** Create the tool that inspects a daemon-native Paseo loop.
+ *
+ * @param client - Transport used to inspect the loop.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for inspecting loops.
+ */
 export function createLoopInspectTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Inspect a daemon-native Paseo loop by ID.",
@@ -206,6 +224,12 @@ export function createLoopInspectTool(client: PaseoTransport, logger: Logger): T
 
 // ─── Loop Logs Tool ───────────────────────────────────────────────────────────
 
+/** Create the tool that reads logs for a daemon-native Paseo loop.
+ *
+ * @param client - Transport used to read loop logs.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for reading loop logs.
+ */
 export function createLoopLogsTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Read snapshot/cursor-based daemon-native loop logs for a specific loop by ID.",
@@ -230,6 +254,12 @@ export function createLoopLogsTool(client: PaseoTransport, logger: Logger): Tool
 
 // ─── Loop Stop Tool ───────────────────────────────────────────────────────────
 
+/** Create the tool that stops a daemon-native Paseo loop.
+ *
+ * @param client - Transport used to stop the loop.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for stopping loops.
+ */
 export function createLoopStopTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Stop a daemon-native Paseo loop by ID.",

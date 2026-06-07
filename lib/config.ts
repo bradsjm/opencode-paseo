@@ -102,10 +102,19 @@ const configLayerSchema = z
   })
   .strict()
 
+/** Runtime settings for connecting to the Paseo daemon. */
 export type DaemonConfig = z.infer<typeof daemonRuntimeSchema>
+
+/** Output-related configuration used by the plugin when rendering summaries and inbox items. */
 export type OutputConfig = z.infer<typeof outputRuntimeSchema>
+
+/** Optional default agent and model overrides used by task and worker helpers. */
 export type AgentsConfig = z.infer<typeof agentsRuntimeSchema>
+
+/** Feature flag configuration for task support. */
 export type TaskConfig = z.infer<typeof taskRuntimeSchema>
+
+/** Fully merged runtime configuration consumed by the plugin. */
 export type PluginConfig = z.infer<typeof configRuntimeSchema>
 
 type ConfigLayer = z.infer<typeof configLayerSchema>
@@ -204,6 +213,13 @@ function loadConfigFile(configPath: string): ConfigLoadResult {
   return { data: parsed }
 }
 
+/**
+ * Creates an isolated copy of a merged plugin configuration.
+ *
+ * @param config - The configuration to clone.
+ * @returns A deep clone of the provided configuration.
+ * @throws If the configuration cannot be cloned by `structuredClone`.
+ */
 export function deepCloneConfig(config: PluginConfig): PluginConfig {
   return structuredClone(config)
 }
@@ -273,6 +289,12 @@ function showValidationWarning(ctx: PluginInput, configPath: string, layer: Conf
   queueConfigWarning(ctx, `Paseo: ${getLayerLabel(layer)} warning`, `${configPath}\n${messages.join("\n")}${suffix}`)
 }
 
+/**
+ * Validates a raw config object against the expected config schema surface.
+ *
+ * @param data - Untrusted configuration data to validate.
+ * @returns A list of validation mismatches, or an empty array when the data is valid.
+ */
 export function validateConfigTypes(data: unknown): ValidationError[] {
   const result = configLayerSchema.safeParse(data)
   if (result.success) {
@@ -313,6 +335,13 @@ function createDefaultConfig(): void {
   writeFileSync(GLOBAL_CONFIG_PATH_JSONC, configContent, "utf-8")
 }
 
+/**
+ * Loads, validates, and merges Paseo configuration from the available config layers.
+ *
+ * @param ctx - OpenCode plugin context used to locate project configuration and emit warnings.
+ * @returns The merged plugin configuration.
+ * @throws If the default global config directory or file cannot be created.
+ */
 export function getConfig(ctx: PluginInput): PluginConfig {
   let config = deepCloneConfig(defaultConfig)
   const configPaths = getConfigPaths(ctx)

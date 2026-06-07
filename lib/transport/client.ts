@@ -91,6 +91,11 @@ type UpstreamTerminalExitEvent = {
 
 // ─── Exported Pure Functions (for testing) ────────────────────────────────────
 
+/** Builds the daemon client configuration from plugin daemon settings.
+ *
+ * @param config - Daemon connection settings.
+ * @returns The daemon client configuration.
+ */
 export function buildDaemonConfig(config: DaemonConfig): DaemonClientConfig {
   const host = config.host.includes(":") ? `[${config.host}]` : config.host
   return {
@@ -105,6 +110,16 @@ export function buildDaemonConfig(config: DaemonConfig): DaemonClientConfig {
   }
 }
 
+/** Normalizes daemon server metadata into the plugin transport shape.
+ *
+ * @param info - Raw server info from the daemon.
+ * @param info.serverId
+ * @param info.hostname
+ * @param info.version
+ * @param info.capabilities
+ * @param info.features
+ * @returns The normalized server info.
+ */
 export function mapServerInfo(info: {
   serverId: string
   hostname?: string | null
@@ -121,6 +136,11 @@ export function mapServerInfo(info: {
   }
 }
 
+/** Normalizes a daemon agent snapshot into plugin state shape.
+ *
+ * @param agent - Raw agent snapshot from the daemon.
+ * @returns The normalized agent summary.
+ */
 export function mapAgentSnapshot(agent: Record<string, unknown>): AgentSummary {
   return {
     id: agent.id as string,
@@ -344,6 +364,12 @@ function timelineSummary(
   )
 }
 
+/** Projects a daemon activity timeline into the plugin summary shape.
+ *
+ * @param timeline - Raw timeline payload from the daemon.
+ * @param requestedLimit - Optional maximum number of entries to keep.
+ * @returns The normalized worker activity summary.
+ */
 export function projectTimeline(timeline: unknown, requestedLimit?: number): WorkerActivitySummary {
   const entries = extractTimelineEntries(timeline)
     .map((entry) => projectTimelineEntry(entry))
@@ -365,6 +391,11 @@ export function projectTimeline(timeline: unknown, requestedLimit?: number): Wor
   }
 }
 
+/** Translates upstream daemon events into normalized plugin events.
+ *
+ * @param event - Upstream daemon or terminal exit event.
+ * @returns The normalized daemon event, or null when it should be ignored.
+ */
 export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerminalExitEvent): DaemonEvent | null {
   switch (event.type) {
     case "agent_update":
@@ -784,18 +815,28 @@ function buildWorkerMetadataUpdate(
 
 // ─── PaseoClient Class ────────────────────────────────────────────────────────
 
+/** Adapts the upstream daemon client to the plugin transport contract. */
 export class PaseoClient implements PaseoTransport {
   private daemon: DaemonClient
   private serverInfo: ServerInfo | null = null
   private eventListeners: DaemonEventCallback[] = []
   private unsubscribes: Array<() => void> = []
 
+  /** Creates a transport client backed by the configured daemon.
+   *
+   * @param config - Daemon connection settings.
+   * @returns A new transport client instance.
+   */
   constructor(config: DaemonConfig) {
     this.daemon = new DaemonClient(buildDaemonConfig(config))
   }
 
   // ─── Connection ──────────────────────────────────────────────────────
 
+  /** Connects to the daemon and wires event subscriptions.
+   *
+   * @returns A promise that resolves when the client is connected.
+   */
   async connect(): Promise<void> {
     await this.daemon.connect()
 
@@ -827,6 +868,10 @@ export class PaseoClient implements PaseoTransport {
     this.unsubscribes.push(eventUnsub)
   }
 
+  /** Closes the daemon connection and clears local state.
+   *
+   * @returns A promise that resolves when the client is closed.
+   */
   async close(): Promise<void> {
     for (const unsub of this.unsubscribes) {
       unsub()
@@ -836,21 +881,39 @@ export class PaseoClient implements PaseoTransport {
     await this.daemon.close()
   }
 
+  /** Reports whether the daemon connection is currently open.
+   *
+   * @returns `true` when the daemon is connected.
+   */
   isConnected(): boolean {
     return this.daemon.isConnected
   }
 
+  /** Returns the last known server info snapshot.
+   *
+   * @returns The cached server info, or `null` when unavailable.
+   */
   getServerInfo(): ServerInfo | null {
     return this.serverInfo
   }
 
   // ─── Data Fetching ───────────────────────────────────────────────────
 
+  /** Fetches the current set of agents from the daemon.
+   *
+   * @param options - Optional fetch options.
+   * @returns The normalized agent list.
+   */
   async fetchAgents(options?: FetchAgentsOptions): Promise<AgentSummary[]> {
     const result = await this.daemon.fetchAgents(options)
     return (result.entries ?? []).map((entry) => mapAgentSnapshot(entry.agent as unknown as Record<string, unknown>))
   }
 
+  /** Lists terminals for the given working directory.
+   *
+   * @param cwd - Optional working directory filter.
+   * @returns The terminal summaries reported by the daemon.
+   */
   async listTerminals(cwd?: string): Promise<TerminalSummary[]> {
     const result = await this.daemon.listTerminals(cwd)
     return (result.terminals ?? []).map((t) => ({
@@ -860,11 +923,20 @@ export class PaseoClient implements PaseoTransport {
     }))
   }
 
+  /** Fetches the raw daemon status payload.
+   *
+   * @returns The daemon status record.
+   */
   async getStatus(): Promise<Record<string, unknown>> {
     const result = await this.daemon.getDaemonStatus()
     return result
   }
 
+  /** Fetches the provider snapshot for a working directory.
+   *
+   * @param cwd - Optional working directory filter.
+   * @returns The provider snapshot entries.
+   */
   async getProvidersSnapshot(cwd?: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.daemon.getProvidersSnapshot({ cwd })
     return result.entries ?? []
@@ -872,6 +944,11 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Terminal Operations ─────────────────────────────────────────────
 
+  /** Creates a terminal session through the daemon.
+   *
+   * @param options - Terminal creation options.
+   * @returns The normalized created terminal.
+   */
   async createTerminal(options: CreateTerminalOptions): Promise<CreatedTerminal> {
     const result = await this.daemon.createTerminal(options.cwd, options.name, undefined, {
       agentId: options.agentId,
@@ -888,6 +965,11 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Captures terminal output from the daemon.
+   *
+   * @param options - Terminal capture options.
+   * @returns The captured terminal output.
+   */
   async captureTerminal(options: CaptureTerminalOptions): Promise<TerminalCapture> {
     const result = await this.daemon.captureTerminal(options.terminalId, {
       start: options.start,
@@ -901,10 +983,21 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Sends input to a running terminal.
+   *
+   * @param terminalId - The terminal to target.
+   * @param input - Raw input to send.
+   * @returns Nothing.
+   */
   sendTerminalInput(terminalId: string, input: string): void {
     this.daemon.sendTerminalInput(terminalId, { type: "input", data: input })
   }
 
+  /** Terminates a terminal through the daemon.
+   *
+   * @param terminalId - The terminal to terminate.
+   * @returns The normalized terminal termination result.
+   */
   async killTerminal(terminalId: string): Promise<KilledTerminal> {
     const result = await this.daemon.killTerminal(terminalId)
     return {
@@ -915,6 +1008,11 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Permission Operations ───────────────────────────────────────────
 
+  /** Responds to a permission request.
+   *
+   * @param options - Permission response options.
+   * @returns The normalized permission response.
+   */
   async respondToPermission(options: RespondPermissionOptions): Promise<PermissionResponse> {
     const response =
       options.behavior === "allow"
@@ -938,36 +1036,70 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Chat Operations ─────────────────────────────────────────────────
 
+  /** Creates a chat room.
+   *
+   * @param options - Chat room creation options.
+   * @returns The normalized chat room mutation result.
+   */
   async createChatRoom(options: CreateChatRoomOptions): Promise<ChatRoomMutationResult> {
     const result = await this.daemon.createChatRoom(options)
     return mapChatRoomMutationResult(result)
   }
 
+  /** Lists all chat rooms.
+   *
+   * @returns The normalized chat room list result.
+   */
   async listChatRooms(): Promise<ChatRoomListResult> {
     const result = await this.daemon.listChatRooms()
     return mapChatRoomListResult(result)
   }
 
+  /** Inspects a chat room.
+   *
+   * @param options - Chat room inspection options.
+   * @returns The normalized chat room mutation result.
+   */
   async inspectChatRoom(options: InspectChatRoomOptions): Promise<ChatRoomMutationResult> {
     const result = await this.daemon.inspectChatRoom(options)
     return mapChatRoomMutationResult(result)
   }
 
+  /** Deletes a chat room.
+   *
+   * @param options - Chat room deletion options.
+   * @returns The normalized chat room mutation result.
+   */
   async deleteChatRoom(options: DeleteChatRoomOptions): Promise<ChatRoomMutationResult> {
     const result = await this.daemon.deleteChatRoom(options)
     return mapChatRoomMutationResult(result)
   }
 
+  /** Posts a chat message.
+   *
+   * @param options - Chat message posting options.
+   * @returns The normalized chat message mutation result.
+   */
   async postChatMessage(options: PostChatMessageOptions): Promise<ChatMessageMutationResult> {
     const result = await this.daemon.postChatMessage(options)
     return mapChatMessageMutationResult(result)
   }
 
+  /** Reads chat messages from a room.
+   *
+   * @param options - Chat message read options.
+   * @returns The normalized chat read result.
+   */
   async readChatMessages(options: ReadChatMessagesOptions): Promise<ChatReadResult> {
     const result = await this.daemon.readChatMessages(options)
     return mapChatReadResult(result)
   }
 
+  /** Waits for new chat messages.
+   *
+   * @param options - Chat wait options.
+   * @returns The normalized chat wait result.
+   */
   async waitForChatMessages(options: WaitForChatMessagesOptions): Promise<ChatWaitResult> {
     const result = await this.daemon.waitForChatMessages(options)
     return mapChatWaitResult(result)
@@ -1000,6 +1132,11 @@ export class PaseoClient implements PaseoTransport {
     return payload
   }
 
+  /** Creates a new worker agent.
+   *
+   * @param options - Worker creation options.
+   * @returns The normalized created worker.
+   */
   async createWorker(options: CreateWorkerOptions): Promise<CreatedWorker> {
     // Assemble the daemon create-agent payload.
     // background/detached are always forced to true: the plugin creates workers
@@ -1024,6 +1161,11 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Runs a worker agent with the requested lifecycle settings.
+   *
+   * @param options - Worker run options.
+   * @returns The normalized created worker.
+   */
   async runWorker(options: RunWorkerOptions): Promise<CreatedWorker> {
     const payload = this.buildWorkerCreatePayload(options, {
       background: options.background ?? false,
@@ -1042,10 +1184,22 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Sends a message to a worker agent.
+   *
+   * @param workerId - The worker to target.
+   * @param message - The message to send.
+   * @returns A promise that resolves when the message is sent.
+   */
   async sendWorkerMessage(workerId: string, message: string): Promise<void> {
     await this.daemon.sendAgentMessage(workerId, message)
   }
 
+  /** Waits for a worker to finish.
+   *
+   * @param workerId - The worker to wait on.
+   * @param timeout - Maximum wait time in milliseconds.
+   * @returns The normalized worker wait result.
+   */
   async waitForWorker(workerId: string, timeout: number): Promise<WorkerWaitResult> {
     const result = await this.daemon.waitForFinish(workerId, timeout)
     return {
@@ -1057,10 +1211,20 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Cancels a worker agent.
+   *
+   * @param workerId - The worker to cancel.
+   * @returns A promise that resolves when the cancel request completes.
+   */
   async cancelWorker(workerId: string): Promise<void> {
     await this.daemon.cancelAgent(workerId)
   }
 
+  /** Archives a worker agent.
+   *
+   * @param workerId - The worker to archive.
+   * @returns The normalized archived worker record.
+   */
   async archiveWorker(workerId: string): Promise<ArchivedWorker> {
     const result = await this.daemon.archiveAgent(workerId)
     return {
@@ -1069,6 +1233,11 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Fetches a worker snapshot.
+   *
+   * @param workerId - The worker to inspect.
+   * @returns The normalized worker inspection result, or null when missing.
+   */
   async fetchWorker(workerId: string): Promise<WorkerInspectResult | null> {
     let result: Awaited<ReturnType<typeof this.daemon.fetchAgent>>
     try {
@@ -1089,11 +1258,21 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Kills a worker agent.
+   *
+   * @param workerId - The worker to kill.
+   * @returns A promise that resolves when the kill request completes.
+   */
   async killWorker(workerId: string): Promise<void> {
     // Upstream has no dedicated kill; cancelAgent is the closest permanent stop.
     await this.daemon.cancelAgent(workerId)
   }
 
+  /** Updates a worker's metadata and settings.
+   *
+   * @param options - Worker update options.
+   * @returns The normalized worker update result.
+   */
   async updateWorker(options: UpdateWorkerOptions): Promise<WorkerUpdateResult> {
     const errors: string[] = []
     const metadataUpdated = await this.updateWorkerMetadata(options, errors)
@@ -1170,6 +1349,11 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Fetches a worker activity timeline.
+   *
+   * @param options - Worker activity query options.
+   * @returns The normalized worker activity result.
+   */
   async fetchWorkerActivity(options: WorkerActivityOptions): Promise<WorkerActivityResult> {
     try {
       const timeline = await this.daemon.fetchAgentTimeline(options.workerId, {
@@ -1189,6 +1373,11 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Worktree Operations ─────────────────────────────────────────────
 
+  /** Lists worktrees known to the daemon.
+   *
+   * @param options - Worktree list options.
+   * @returns The normalized worktree list result.
+   */
   async listWorktrees(options: WorktreeListOptions): Promise<WorktreeListResult> {
     const result = await this.daemon.getPaseoWorktreeList({
       cwd: options.cwd,
@@ -1197,6 +1386,11 @@ export class PaseoClient implements PaseoTransport {
     return mapWorktreeListResult(result)
   }
 
+  /** Creates a worktree through the daemon.
+   *
+   * @param options - Worktree creation options.
+   * @returns The normalized worktree creation result.
+   */
   async createWorktree(options: WorktreeCreateOptions): Promise<WorktreeCreateResult> {
     const input: Record<string, unknown> = { cwd: options.cwd }
     if (options.projectId !== undefined) input.projectId = options.projectId
@@ -1209,6 +1403,11 @@ export class PaseoClient implements PaseoTransport {
     return mapWorktreeCreateResult(result)
   }
 
+  /** Archives a worktree through the daemon.
+   *
+   * @param options - Worktree archive options.
+   * @returns The normalized worktree archive result.
+   */
   async archiveWorktree(options: WorktreeArchiveOptions): Promise<WorktreeArchiveResult> {
     const result = await this.daemon.archivePaseoWorktree({
       worktreePath: options.worktreePath,
@@ -1219,6 +1418,11 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Loop Operations ─────────────────────────────────────────────────
 
+  /** Starts a daemon loop.
+   *
+   * @param options - Loop run options.
+   * @returns The normalized loop run result.
+   */
   async loopRun(options: LoopRunOptions): Promise<LoopRunResult> {
     const result = await this.daemon.loopRun({
       prompt: options.prompt,
@@ -1239,21 +1443,40 @@ export class PaseoClient implements PaseoTransport {
     return mapLoopRunResult(result)
   }
 
+  /** Lists daemon loops.
+   *
+   * @returns The normalized loop list result.
+   */
   async loopList(): Promise<LoopListResult> {
     const result = await this.daemon.loopList()
     return mapLoopListResult(result)
   }
 
+  /** Inspects a daemon loop.
+   *
+   * @param options - Loop inspection options.
+   * @returns The normalized loop inspection result.
+   */
   async loopInspect(options: LoopInspectOptions): Promise<LoopInspectResult> {
     const result = await this.daemon.loopInspect({ id: options.id })
     return mapLoopInspectResult(result)
   }
 
+  /** Reads logs for a daemon loop.
+   *
+   * @param options - Loop log query options.
+   * @returns The normalized loop log result.
+   */
   async loopLogs(options: LoopLogsOptions): Promise<LoopLogsResult> {
     const result = await this.daemon.loopLogs({ id: options.id, afterSeq: options.afterSeq })
     return mapLoopLogsResult(result)
   }
 
+  /** Stops a daemon loop.
+   *
+   * @param options - Loop stop options.
+   * @returns The normalized loop stop result.
+   */
   async loopStop(options: LoopStopOptions): Promise<LoopStopResult> {
     const result = await this.daemon.loopStop({ id: options.id })
     return mapLoopStopResult(result)
@@ -1261,16 +1484,30 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Schedule Operations ─────────────────────────────────────────────
 
+  /** Lists schedules known to the daemon.
+   *
+   * @returns The normalized schedule list result.
+   */
   async scheduleList(): Promise<ScheduleListResult> {
     const result = await this.daemon.scheduleList()
     return mapScheduleListResult(result)
   }
 
+  /** Inspects a schedule.
+   *
+   * @param options - Schedule inspection options.
+   * @returns The normalized schedule mutation result.
+   */
   async scheduleInspect(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleInspect({ id: options.id })
     return mapScheduleMutationResult(result)
   }
 
+  /** Creates a schedule.
+   *
+   * @param options - Schedule creation options.
+   * @returns The normalized schedule mutation result.
+   */
   async scheduleCreate(options: ScheduleCreateOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleCreate({
       prompt: options.prompt,
@@ -1284,6 +1521,11 @@ export class PaseoClient implements PaseoTransport {
     return mapScheduleMutationResult(result)
   }
 
+  /** Updates a schedule.
+   *
+   * @param options - Schedule update options.
+   * @returns The normalized schedule mutation result.
+   */
   async scheduleUpdate(options: ScheduleUpdateOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleUpdate({
       id: options.id,
@@ -1297,21 +1539,41 @@ export class PaseoClient implements PaseoTransport {
     return mapScheduleMutationResult(result)
   }
 
+  /** Pauses a schedule.
+   *
+   * @param options - Schedule inspection options.
+   * @returns The normalized schedule mutation result.
+   */
   async schedulePause(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.schedulePause({ id: options.id })
     return mapScheduleMutationResult(result)
   }
 
+  /** Resumes a paused schedule.
+   *
+   * @param options - Schedule inspection options.
+   * @returns The normalized schedule mutation result.
+   */
   async scheduleResume(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     const result = await this.daemon.scheduleResume({ id: options.id })
     return mapScheduleMutationResult(result)
   }
 
+  /** Deletes a schedule.
+   *
+   * @param options - Schedule inspection options.
+   * @returns The normalized schedule delete result.
+   */
   async scheduleDelete(options: ScheduleInspectOptions): Promise<ScheduleDeleteResult> {
     const result = await this.daemon.scheduleDelete({ id: options.id })
     return mapScheduleDeleteResult(result)
   }
 
+  /** Triggers a one-off run for a schedule.
+   *
+   * @param options - Schedule inspection options.
+   * @returns The normalized schedule mutation result.
+   */
   async scheduleRunOnce(options: ScheduleInspectOptions): Promise<ScheduleMutationResult> {
     try {
       const result = await this.daemon.scheduleRunOnce({ id: options.id })
@@ -1334,6 +1596,11 @@ export class PaseoClient implements PaseoTransport {
     }
   }
 
+  /** Fetches recent logs for a schedule.
+   *
+   * @param options - Schedule inspection options.
+   * @returns The normalized schedule logs result.
+   */
   async scheduleLogs(options: ScheduleInspectOptions): Promise<ScheduleLogsResult> {
     const result = await this.daemon.scheduleLogs({ id: options.id })
     return mapScheduleLogsResult(result)
@@ -1341,6 +1608,11 @@ export class PaseoClient implements PaseoTransport {
 
   // ─── Event Subscription ──────────────────────────────────────────────
 
+  /** Registers a daemon event listener.
+   *
+   * @param callback - Listener to invoke for normalized daemon events.
+   * @returns A function that removes the listener.
+   */
   onEvent(callback: DaemonEventCallback): () => void {
     this.eventListeners.push(callback)
     return () => {

@@ -13,6 +13,14 @@ function throwIfAborted(signal: AbortSignal): void {
 
 // ─── Terminal List Tool ──────────────────────────────────────────────────────
 
+/**
+ * Create the tool that lists daemon-reported terminals.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTerminalListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -39,6 +47,14 @@ export function createTerminalListTool(state: PluginState, client: PaseoTranspor
 
 // ─── Terminal Create Tool ────────────────────────────────────────────────────
 
+/**
+ * Create the tool that opens a new terminal session.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTerminalCreateTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   let terminalCreateTail: Promise<void> = Promise.resolve()
 
@@ -111,6 +127,14 @@ export function createTerminalCreateTool(state: PluginState, client: PaseoTransp
 
 // ─── Terminal Capture Tool ───────────────────────────────────────────────────
 
+/**
+ * Create the tool that captures terminal output.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTerminalCaptureTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -156,6 +180,14 @@ export function createTerminalCaptureTool(state: PluginState, client: PaseoTrans
 
 // ─── Terminal Send Input Tool ────────────────────────────────────────────────
 
+/**
+ * Create the tool that sends raw input to a terminal.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTerminalSendInputTool(
   state: PluginState,
   client: PaseoTransport,
@@ -199,6 +231,14 @@ export function createTerminalSendInputTool(
 
 // ─── Terminal Send Lines Tool ────────────────────────────────────────────────
 
+/**
+ * Create the tool that sends multiple command lines to a terminal.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTerminalSendLinesTool(
   state: PluginState,
   client: PaseoTransport,
@@ -246,6 +286,14 @@ export function createTerminalSendLinesTool(
 
 // ─── Terminal Kill Tool ──────────────────────────────────────────────────────
 
+/**
+ * Create the tool that kills a terminal session.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTerminalKillTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:

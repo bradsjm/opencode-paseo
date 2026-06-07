@@ -49,6 +49,15 @@ function buildStalledSummary(workerId: string, payload: Record<string, unknown>)
   return `Worker ${workerId} appears stalled while ${rawStatus}`
 }
 
+/**
+ * Create a worker stall monitor for the current plugin state.
+ *
+ * @param state In-memory plugin state used to track workers.
+ * @param logger Logger used for stall lifecycle reporting.
+ * @param config Plugin configuration containing stall thresholds.
+ * @param emitEvent Callback used to emit daemon events when a stall is detected.
+ * @returns A monitor that can seed, observe, start, and stop stall tracking.
+ */
 export function createWorkerStallMonitor(
   state: PluginState,
   logger: Logger,

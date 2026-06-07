@@ -47,6 +47,14 @@ function buildNextAction(state: PluginState, blockingEvents: InboxEvent[]): Next
   return null
 }
 
+/**
+ * Create the tool that reports daemon readiness and next actions.
+ *
+ * @param state In-memory plugin state.
+ * @param _client Paseo transport client, kept for interface symmetry.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createStatusTool(state: PluginState, _client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Check Paseo plugin readiness, daemon status, and next actions",

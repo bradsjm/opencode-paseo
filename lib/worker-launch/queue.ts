@@ -33,6 +33,9 @@ const ROLLBACK_NEEDS_CLEANUP_MESSAGE =
 const ROLLBACK_ROLLED_BACK_MESSAGE =
   "Worker launch failed after creating a worktree. The plugin archived that worktree automatically."
 
+/**
+ * Input required to queue a new worker launch.
+ */
 export interface EnqueueWorkerLaunchInput {
   sessionId: string
   projectRoot: string
@@ -47,6 +50,9 @@ export interface EnqueueWorkerLaunchInput {
   worktreeName?: string
 }
 
+/**
+ * Receipt returned when a worker launch is queued.
+ */
 export interface WorkerLaunchReceipt {
   launchId: string
   status: "queued"
@@ -57,6 +63,9 @@ export interface WorkerLaunchReceipt {
   chatRoom: string | null
 }
 
+/**
+ * Snapshot of a worker launch's current queue or execution state.
+ */
 export interface WorkerLaunchStatusSnapshot {
   launchId: string
   status: WorkerLaunchRecord["status"]
@@ -73,6 +82,9 @@ export interface WorkerLaunchStatusSnapshot {
   rollback?: WorkerLaunchStatusRollbackMetadata
 }
 
+/**
+ * Controller for queuing, draining, observing, and inspecting worker launches.
+ */
 export interface WorkerLaunchQueueController {
   enqueueWorkerLaunch(input: EnqueueWorkerLaunchInput): WorkerLaunchReceipt
   drainWorkerLaunchQueue(): Promise<void>
@@ -82,6 +94,12 @@ export interface WorkerLaunchQueueController {
 
 type WorkerObservedCallback = (worker: WorkerSummary) => void
 
+/**
+ * Extracts the reserved launch ID from a label object.
+ *
+ * @param labels - Candidate label object to inspect.
+ * @returns The launch ID when present and non-empty; otherwise `undefined`.
+ */
 export function getWorkerLaunchIdFromLabels(labels: unknown): string | undefined {
   if (!labels || typeof labels !== "object" || Array.isArray(labels)) {
     return undefined
@@ -91,6 +109,12 @@ export function getWorkerLaunchIdFromLabels(labels: unknown): string | undefined
   return typeof launchId === "string" && launchId.trim() ? launchId : undefined
 }
 
+/**
+ * Extracts the reserved session ID from a label object.
+ *
+ * @param labels - Candidate label object to inspect.
+ * @returns The session ID when present and non-empty; otherwise `undefined`.
+ */
 export function getWorkerSessionIdFromLabels(labels: unknown): string | undefined {
   if (!labels || typeof labels !== "object" || Array.isArray(labels)) {
     return undefined
@@ -235,6 +259,17 @@ function toRollbackCandidate(
   }
 }
 
+/**
+ * Creates the queued worker-launch controller.
+ *
+ * @param state - Shared plugin state used for launch bookkeeping.
+ * @param client - Transport used to create workers and manage rollback worktrees.
+ * @param config - Plugin configuration for the overload that accepts it explicitly.
+ * @param opencodeClient - OpenCode client used to send nudges.
+ * @param logger - Logger used for warnings and diagnostics.
+ * @param onWorkerObserved - Optional callback invoked after a worker is observed.
+ * @returns A controller that can enqueue, drain, and inspect worker launches.
+ */
 export function createWorkerLaunchQueueController(
   state: PluginState,
   client: PaseoTransport,
@@ -243,6 +278,16 @@ export function createWorkerLaunchQueueController(
   logger: Logger,
   onWorkerObserved?: WorkerObservedCallback,
 ): WorkerLaunchQueueController
+/**
+ * Creates the queued worker-launch controller.
+ *
+ * @param state - Shared plugin state used for launch bookkeeping.
+ * @param client - Transport used to create workers and manage rollback worktrees.
+ * @param opencodeClient - OpenCode client used to send nudges.
+ * @param logger - Logger used for warnings and diagnostics.
+ * @param onWorkerObserved - Optional callback invoked after a worker is observed.
+ * @returns A controller that can enqueue, drain, and inspect worker launches.
+ */
 export function createWorkerLaunchQueueController(
   state: PluginState,
   client: PaseoTransport,
@@ -250,6 +295,17 @@ export function createWorkerLaunchQueueController(
   logger: Logger,
   onWorkerObserved?: WorkerObservedCallback,
 ): WorkerLaunchQueueController
+/**
+ * Creates the queued worker-launch controller.
+ *
+ * @param state - Shared plugin state used for launch bookkeeping.
+ * @param client - Transport used to create workers and manage rollback worktrees.
+ * @param configOrOpencodeClient - Plugin config when provided, otherwise the OpenCode client.
+ * @param opencodeClientOrLogger - OpenCode client when config is provided, otherwise the logger.
+ * @param loggerOrOnWorkerObserved - Logger when config is provided, otherwise the optional observation callback.
+ * @param maybeOnWorkerObserved - Optional callback invoked after a worker is observed when config is provided.
+ * @returns A controller that can enqueue, drain, and inspect worker launches.
+ */
 export function createWorkerLaunchQueueController(
   state: PluginState,
   client: PaseoTransport,

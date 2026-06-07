@@ -273,8 +273,14 @@ function buildScheduleUpdatePayload(
   }
 }
 
-// ─── Schedule List Tool ──────────────────────────────────────────────────────
-
+/**
+ * Create the tool that lists all schedules known to the daemon.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -291,8 +297,14 @@ export function createScheduleListTool(state: PluginState, client: PaseoTranspor
   })
 }
 
-// ─── Schedule Inspect Tool ───────────────────────────────────────────────────
-
+/**
+ * Create the tool that inspects a single schedule by ID.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleInspectTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Inspect a specific Paseo schedule by ID. Returns full schedule configuration and status.",
@@ -310,8 +322,15 @@ export function createScheduleInspectTool(state: PluginState, client: PaseoTrans
   })
 }
 
-// ─── Schedule Create Tool ────────────────────────────────────────────────────
-
+/**
+ * Create the tool that schedules a new recurring run.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param opencodeClient OpenCode client used to resolve profile configuration.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleCreateTool(
   state: PluginState,
   client: PaseoTransport,
@@ -405,8 +424,15 @@ export function createScheduleCreateTool(
   })
 }
 
-// ─── Schedule Update Tool ────────────────────────────────────────────────────
-
+/**
+ * Create the tool that updates an existing schedule.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param opencodeClient OpenCode client used to resolve updated new-agent profile configuration.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleUpdateTool(
   state: PluginState,
   client: PaseoTransport,
@@ -450,8 +476,14 @@ export function createScheduleUpdateTool(
   })
 }
 
-// ─── Schedule Pause Tool ─────────────────────────────────────────────────────
-
+/**
+ * Create the tool that pauses a schedule.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createSchedulePauseTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Pause a running Paseo schedule. The schedule remains configured but stops executing.",
@@ -469,8 +501,14 @@ export function createSchedulePauseTool(state: PluginState, client: PaseoTranspo
   })
 }
 
-// ─── Schedule Resume Tool ────────────────────────────────────────────────────
-
+/**
+ * Create the tool that resumes a paused schedule.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleResumeTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Resume a paused Paseo schedule. The schedule resumes executing on its configured cadence.",
@@ -488,8 +526,14 @@ export function createScheduleResumeTool(state: PluginState, client: PaseoTransp
   })
 }
 
-// ─── Schedule Delete Tool ────────────────────────────────────────────────────
-
+/**
+ * Create the tool that deletes a schedule permanently.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleDeleteTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Delete a Paseo schedule permanently. The schedule and its history are removed.",
@@ -507,8 +551,14 @@ export function createScheduleDeleteTool(state: PluginState, client: PaseoTransp
   })
 }
 
-// ─── Schedule Run Once Tool ──────────────────────────────────────────────────
-
+/**
+ * Create the tool that triggers a one-time schedule run.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleRunOnceTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -529,8 +579,14 @@ export function createScheduleRunOnceTool(state: PluginState, client: PaseoTrans
   })
 }
 
-// ─── Schedule Logs Tool ──────────────────────────────────────────────────────
-
+/**
+ * Create the tool that retrieves schedule execution logs.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createScheduleLogsTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Retrieve execution logs for a Paseo schedule. Returns recent run history and outcomes.",

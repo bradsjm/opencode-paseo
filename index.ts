@@ -69,6 +69,13 @@ import { createWorkerStallMonitor } from "./lib/worker-stall-monitor.js"
 import { createChatWatcher } from "./lib/chat/watch.js"
 import { createStartupWarningNotifier } from "./lib/toast.js"
 
+/**
+ * Loads the Paseo plugin, connects to the daemon, hydrates runtime state, and wires the OpenCode hooks and tools.
+ *
+ * @param ctx - OpenCode plugin context used to read configuration, emit toasts, and register plugin hooks.
+ * @returns The plugin hook map, or an empty object when Paseo is disabled or the daemon cannot be reached.
+ * @throws If startup hydration or hook wiring fails before the plugin can return its hook map.
+ */
 const server: Plugin = (async (ctx) => {
   const config = getConfig(ctx)
   if (!config.enabled) return {}

@@ -1,3 +1,4 @@
+/** Re-exports the normalized transport contract types. */
 export type {
   ServerInfo,
   AgentSummary,
@@ -14,4 +15,6 @@ export type {
   DaemonEventCallback,
   PaseoTransport,
 } from "./types.js"
+
+/** Re-exports the Paseo transport client adapter. */
 export { PaseoClient } from "./client.js"

@@ -12,6 +12,12 @@ function requireChatRoom(room: string): string {
   return normalized
 }
 
+/** Create the tool that opens a new Paseo chat room.
+ *
+ * @param client - Transport used to create the chat room.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for creating chat rooms.
+ */
 export function createChatCreateTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Create a new Paseo chat room.",
@@ -32,6 +38,12 @@ export function createChatCreateTool(client: PaseoTransport, logger: Logger): To
   })
 }
 
+/** Create the tool that lists all Paseo chat rooms.
+ *
+ * @param client - Transport used to list chat rooms.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for listing chat rooms.
+ */
 export function createChatListTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "List all Paseo chat rooms.",
@@ -47,6 +59,12 @@ export function createChatListTool(client: PaseoTransport, logger: Logger): Tool
   })
 }
 
+/** Create the tool that inspects a specific Paseo chat room.
+ *
+ * @param client - Transport used to inspect the chat room.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for inspecting chat rooms.
+ */
 export function createChatInspectTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Inspect a specific Paseo chat room.",
@@ -65,6 +83,12 @@ export function createChatInspectTool(client: PaseoTransport, logger: Logger): T
   })
 }
 
+/** Create the tool that deletes a Paseo chat room.
+ *
+ * @param client - Transport used to delete the chat room.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for deleting chat rooms.
+ */
 export function createChatDeleteTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Delete a Paseo chat room permanently.",
@@ -83,6 +107,12 @@ export function createChatDeleteTool(client: PaseoTransport, logger: Logger): To
   })
 }
 
+/** Create the tool that posts a message into a Paseo chat room.
+ *
+ * @param client - Transport used to post the message.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for posting chat messages.
+ */
 export function createChatPostTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Post a message to a Paseo chat room.",
@@ -115,6 +145,12 @@ export function createChatPostTool(client: PaseoTransport, logger: Logger): Tool
   })
 }
 
+/** Create the tool that reads messages from a Paseo chat room.
+ *
+ * @param client - Transport used to read chat messages.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for reading chat messages.
+ */
 export function createChatReadTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Read chat messages from a Paseo room.",
@@ -144,6 +180,12 @@ export function createChatReadTool(client: PaseoTransport, logger: Logger): Tool
   })
 }
 
+/** Create the tool that waits for newer messages in a Paseo chat room.
+ *
+ * @param client - Transport used to wait for chat messages.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for waiting on chat messages.
+ */
 export function createChatWaitTool(client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:

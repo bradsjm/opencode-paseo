@@ -12,6 +12,9 @@ interface WatchedRoomState {
   running: boolean
 }
 
+/**
+ * Controls passive chat-room watchers for observed workers.
+ */
 export interface ChatWatcherController {
   observeWorker(worker: Pick<WorkerSummary, "id" | "chatRoom">): void
   dispose(): Promise<void>
@@ -31,6 +34,16 @@ function buildChatMentionSummary(room: string, message: ChatMessage, maxSummaryL
   return truncateSummary(`Mentioned in room "${room}" by ${author}: ${body}`, maxSummaryLength)
 }
 
+/**
+ * Creates a controller that watches configured chat rooms for mentions.
+ *
+ * @param state - The plugin state used to track watched rooms and inbox events.
+ * @param client - The daemon transport used to read and wait for chat messages.
+ * @param opencodeClient - The OpenCode client used to send nudges.
+ * @param logger - The logger used for watcher diagnostics.
+ * @param config - The plugin configuration controlling inbox and nudge behavior.
+ * @returns A controller that starts and stops room watchers on demand.
+ */
 export function createChatWatcher(
   state: PluginState,
   client: PaseoTransport,

@@ -32,6 +32,9 @@ function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * Counts collected during startup hydration.
+ */
 export interface HydrationResult {
   workers: number
   terminals: number
@@ -39,6 +42,17 @@ export interface HydrationResult {
   inboxSeeded: number
 }
 
+/**
+ * Hydrates daemon state into the plugin state model.
+ *
+ * @param state - The plugin state to populate.
+ * @param client - The daemon transport used to fetch snapshot data.
+ * @param logger - The logger used for hydration diagnostics.
+ * @param output - Output formatting limits used while seeding inbox items.
+ * @param onWorkerObserved - Optional callback invoked for each hydrated worker.
+ * @param onTaskWorkerRestored - Optional callback invoked when a task worker binding is restored.
+ * @returns A promise that resolves to the hydration counts.
+ */
 export async function hydrate(
   state: PluginState,
   client: PaseoTransport,

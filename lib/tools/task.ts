@@ -35,6 +35,9 @@ const BACKGROUND_UPDATED = [
   "Work on non-overlapping tasks, or briefly tell the user what you sent and end your response.",
 ].join("\n")
 
+/**
+ * Long-form instructions that define the Task tool behavior.
+ */
 export const TASK_TOOL_DESCRIPTION = `Launch a new agent to handle complex, multistep tasks autonomously.
 
 When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
@@ -82,6 +85,15 @@ interface TaskMarkerSnapshot {
   labels?: Record<string, string>
 }
 
+/**
+ * Create the tool that launches or resumes delegated task workers.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param opencodeClient OpenCode client used for session and prompt mirroring.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createTaskTool(
   state: PluginState,
   client: PaseoTransport,
@@ -418,6 +430,16 @@ async function mirrorTaskPrompt(
   }
 }
 
+/**
+ * Watch a background task worker and inject completion updates when it finishes.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param opencodeClient OpenCode client used to inject task results.
+ * @param logger Logger used for background task logging.
+ * @param workerId Worker ID to observe.
+ * @returns Nothing.
+ */
 export function watchBackgroundTaskCompletion(
   state: PluginState,
   client: PaseoTransport,
@@ -630,6 +652,18 @@ function resultText(result: WorkerWaitResult): string {
   return result.lastMessage ?? result.error ?? JSON.stringify(result, null, 2)
 }
 
+/**
+ * Notify both task sessions that a background task completed or failed.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param opencodeClient OpenCode client used to inject task results.
+ * @param logger Logger used for completion logging.
+ * @param workerId Worker ID whose task completed.
+ * @param status Completion status to report.
+ * @param text Completion text to inject.
+ * @returns A promise that resolves when notifications are persisted or skipped.
+ */
 export async function notifyTaskCompletion(
   state: PluginState,
   client: PaseoTransport,

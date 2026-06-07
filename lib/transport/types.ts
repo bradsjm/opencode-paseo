@@ -4,6 +4,7 @@
 
 // ─── Server Info ──────────────────────────────────────────────────────────────
 
+/** Normalized daemon server metadata exposed to the plugin. */
 export interface ServerInfo {
   serverId: string
   hostname?: string
@@ -15,6 +16,7 @@ export interface ServerInfo {
 // ─── Agent Summary ────────────────────────────────────────────────────────────
 // Mapped from upstream AgentSnapshotPayload.
 
+/** Normalized worker snapshot used throughout the plugin state layer. */
 export interface AgentSummary {
   id: string
   provider: string
@@ -39,12 +41,14 @@ export interface AgentSummary {
 // ─── Terminal Summary ─────────────────────────────────────────────────────────
 // Mapped from upstream ListTerminalsPayload terminals.
 
+/** Compact terminal summary returned by list operations. */
 export interface TerminalSummary {
   id: string
   name: string
   title?: string
 }
 
+/** Event emitted when a terminal exits. */
 export interface TerminalExitedEvent {
   type: "terminal.exited"
   payload: {
@@ -55,6 +59,7 @@ export interface TerminalExitedEvent {
 // ─── Phase 3 Worker Types ─────────────────────────────────────────────────────
 // Plugin-level shapes for worker (agent) mutation and inspection.
 
+/** Options for creating a new worker agent. */
 export interface CreateWorkerOptions {
   cwd: string
   profile?: string
@@ -67,10 +72,12 @@ export interface CreateWorkerOptions {
   worktreeName?: string
 }
 
+/** Options for running a worker agent with optional background execution. */
 export interface RunWorkerOptions extends CreateWorkerOptions {
   background?: boolean
 }
 
+/** Normalized worker record returned after creation or run requests. */
 export interface CreatedWorker {
   id: string
   provider: string
@@ -80,6 +87,7 @@ export interface CreatedWorker {
   title: string | null
 }
 
+/** Result of waiting for a worker to finish. */
 export interface WorkerWaitResult {
   status: "idle" | "error" | "permission" | "timeout"
   workerId: string
@@ -88,12 +96,14 @@ export interface WorkerWaitResult {
   finalSnapshot: AgentSummary | null
 }
 
+/** Summary of the event that nudged a worker wait operation. */
 export interface WorkerWaitNudgeEvent {
   kind: "worker.stalled" | "agent.status" | "agent.attention" | "chat.mentioned" | "permission.requested"
   workerId: string
   summary: string
 }
 
+/** Normalized summary for a chat room. */
 export interface ChatRoomSummary {
   id: string
   name: string
@@ -104,6 +114,7 @@ export interface ChatRoomSummary {
   lastMessageAt: string | null
 }
 
+/** Normalized chat message representation used by the plugin. */
 export interface ChatMessage {
   id: string
   roomId: string
@@ -114,19 +125,23 @@ export interface ChatMessage {
   createdAt: string
 }
 
+/** Options for creating a chat room. */
 export interface CreateChatRoomOptions {
   name: string
   purpose?: string | null
 }
 
+/** Options for inspecting a chat room. */
 export interface InspectChatRoomOptions {
   room: string
 }
 
+/** Options for deleting a chat room. */
 export interface DeleteChatRoomOptions {
   room: string
 }
 
+/** Options for posting a chat message. */
 export interface PostChatMessageOptions {
   room: string
   body: string
@@ -134,6 +149,7 @@ export interface PostChatMessageOptions {
   replyToMessageId?: string | null
 }
 
+/** Options for reading chat messages. */
 export interface ReadChatMessagesOptions {
   room: string
   limit?: number
@@ -141,36 +157,42 @@ export interface ReadChatMessagesOptions {
   authorAgentId?: string
 }
 
+/** Options for waiting on new chat messages. */
 export interface WaitForChatMessagesOptions {
   room: string
   afterMessageId?: string | null
   timeoutMs?: number
 }
 
+/** Result returned after mutating a chat room. */
 export interface ChatRoomMutationResult {
   requestId: string
   room: ChatRoomSummary | null
   error: string | null
 }
 
+/** Result returned by chat room list operations. */
 export interface ChatRoomListResult {
   requestId: string
   rooms: ChatRoomSummary[]
   error: string | null
 }
 
+/** Result returned after mutating a chat message. */
 export interface ChatMessageMutationResult {
   requestId: string
   message: ChatMessage | null
   error: string | null
 }
 
+/** Result returned by chat message read operations. */
 export interface ChatReadResult {
   requestId: string
   messages: ChatMessage[]
   error: string | null
 }
 
+/** Result returned by chat message wait operations. */
 export interface ChatWaitResult {
   requestId: string
   messages: ChatMessage[]
@@ -178,6 +200,7 @@ export interface ChatWaitResult {
   error: string | null
 }
 
+/** Aggregated result for waiting on multiple workers. */
 export interface MultiWorkerWaitResult {
   waitFor: "any" | "all"
   workerIds: string[]
@@ -188,11 +211,13 @@ export interface MultiWorkerWaitResult {
   timedOut: boolean
 }
 
+/** Record describing an archived worker. */
 export interface ArchivedWorker {
   workerId: string
   archivedAt: string
 }
 
+/** Result returned when inspecting a worker. */
 export interface WorkerInspectResult {
   agent: AgentSummary
   project: Record<string, unknown> | null
@@ -200,11 +225,13 @@ export interface WorkerInspectResult {
 
 // ─── Phase 3 Worktree Types ───────────────────────────────────────────────────
 
+/** Options for listing worktrees. */
 export interface WorktreeListOptions {
   cwd?: string
   repoRoot?: string
 }
 
+/** Options for creating a worktree. */
 export interface WorktreeCreateOptions {
   cwd: string
   projectId?: string
@@ -215,6 +242,7 @@ export interface WorktreeCreateOptions {
   firstAgentContext?: Record<string, unknown>
 }
 
+/** Options for archiving a worktree. */
 export interface WorktreeArchiveOptions {
   worktreePath: string
   cwd: string
@@ -223,6 +251,7 @@ export interface WorktreeArchiveOptions {
 // ─── Phase 2 Result Types ─────────────────────────────────────────────────────
 // Plugin-level shapes returned by terminal and permission operations.
 
+/** Normalized terminal record returned after creation. */
 export interface CreatedTerminal {
   id: string
   name: string
@@ -230,29 +259,34 @@ export interface CreatedTerminal {
   cwd?: string
 }
 
+/** Captured terminal output and metadata. */
 export interface TerminalCapture {
   terminalId: string
   lines: string[]
   totalLines: number
 }
 
+/** Result returned after terminating a terminal. */
 export interface KilledTerminal {
   id: string
   exitCode?: number | null
 }
 
+/** Result returned after responding to a permission request. */
 export interface PermissionResponse {
   workerId: string
   permissionId: string
   behavior: "allow" | "deny"
 }
 
+/** Options for creating a terminal session. */
 export interface CreateTerminalOptions {
   cwd: string
   name?: string
   agentId?: string
 }
 
+/** Options for capturing terminal output. */
 export interface CaptureTerminalOptions {
   terminalId: string
   start?: number
@@ -260,6 +294,7 @@ export interface CaptureTerminalOptions {
   stripAnsi?: boolean
 }
 
+/** Options for responding to a permission request. */
 export interface RespondPermissionOptions {
   workerId: string
   permissionId: string
@@ -272,6 +307,7 @@ export interface RespondPermissionOptions {
 // ─── Loop Types ───────────────────────────────────────────────────────────────
 // Plugin-level shapes for daemon-native loop operations.
 
+/** Single daemon loop log entry. */
 export interface LoopLogEntry extends Record<string, unknown> {
   seq: number
   source?: string
@@ -279,6 +315,7 @@ export interface LoopLogEntry extends Record<string, unknown> {
   text: string
 }
 
+/** Result of a single loop verification check. */
 export interface LoopVerifyCheckResult extends Record<string, unknown> {
   command?: string
   ok?: boolean
@@ -287,12 +324,14 @@ export interface LoopVerifyCheckResult extends Record<string, unknown> {
   error?: string | null
 }
 
+/** Result of a loop verification prompt. */
 export interface LoopVerifyPromptResult extends Record<string, unknown> {
   ok?: boolean
   response?: string | null
   error?: string | null
 }
 
+/** Captures the observed state for one loop iteration. */
 export interface LoopIterationRecord extends Record<string, unknown> {
   iteration?: number
   status?: string
@@ -303,6 +342,7 @@ export interface LoopIterationRecord extends Record<string, unknown> {
   verifyCheckResults?: LoopVerifyCheckResult[]
 }
 
+/** Summary of a loop returned by list operations. */
 export interface LoopListItem extends Record<string, unknown> {
   id: string
   name?: string | null
@@ -314,11 +354,13 @@ export interface LoopListItem extends Record<string, unknown> {
   error?: string | null
 }
 
+/** Full loop record including iteration history. */
 export interface LoopRecord extends LoopListItem {
   stoppedAt?: string | null
   iterations: LoopIterationRecord[]
 }
 
+/** Options for starting a daemon loop. */
 export interface LoopRunOptions {
   prompt: string
   cwd: string
@@ -336,34 +378,41 @@ export interface LoopRunOptions {
   maxTimeMs?: number
 }
 
+/** Options for inspecting a loop. */
 export interface LoopInspectOptions {
   id: string
 }
 
+/** Options for reading loop logs. */
 export interface LoopLogsOptions extends LoopInspectOptions {
   afterSeq?: number
 }
 
+/** Options for stopping a loop. */
 export type LoopStopOptions = LoopInspectOptions
 
+/** Result returned after starting a loop. */
 export interface LoopRunResult {
   requestId: string
   loop: LoopRecord | null
   error: string | null
 }
 
+/** Result returned by loop list operations. */
 export interface LoopListResult {
   requestId: string
   loops: LoopListItem[]
   error: string | null
 }
 
+/** Result returned by loop inspection operations. */
 export interface LoopInspectResult {
   requestId: string
   loop: LoopRecord | null
   error: string | null
 }
 
+/** Result returned by loop log queries. */
 export interface LoopLogsResult {
   requestId: string
   loop: LoopRecord | null
@@ -372,6 +421,7 @@ export interface LoopLogsResult {
   error: string | null
 }
 
+/** Result returned after stopping a loop. */
 export interface LoopStopResult {
   requestId: string
   loop: LoopRecord | null
@@ -382,10 +432,12 @@ export interface LoopStopResult {
 // ─── Schedule Types ───────────────────────────────────────────────────────────
 // Plugin-level shapes for schedule operations (thin wrappers over daemon RPCs).
 
+/** Schedule cadence supported by the transport layer. */
 export type ScheduleCadence =
   | { type: "every"; everyMs: number }
   | { type: "cron"; expression: string; timezone?: string }
 
+/** Configuration used when a schedule spawns a new agent. */
 export interface ScheduleNewAgentConfig {
   provider: string
   cwd: string
@@ -393,18 +445,22 @@ export interface ScheduleNewAgentConfig {
   model?: string
 }
 
+/** Schedule target that binds to an existing agent. */
 export interface ScheduleTargetAgent {
   type: "agent"
   agentId: string
 }
 
+/** Schedule target that creates a new agent. */
 export interface ScheduleTargetNewAgent {
   type: "new-agent"
   config: ScheduleNewAgentConfig
 }
 
+/** Schedule target union accepted by schedule operations. */
 export type ScheduleTarget = ScheduleTargetAgent | ScheduleTargetNewAgent
 
+/** Record describing a single schedule run. */
 export interface ScheduleRunRecord {
   id: string
   scheduledFor: string
@@ -416,6 +472,7 @@ export interface ScheduleRunRecord {
   error: string | null
 }
 
+/** Full schedule record including cadence, target, and run history. */
 export interface ScheduleRecord {
   id: string
   name: string | null
@@ -433,6 +490,7 @@ export interface ScheduleRecord {
   runs: ScheduleRunRecord[]
 }
 
+/** Result returned after mutating a schedule. */
 export interface ScheduleMutationResult {
   requestId: string
   schedule: ScheduleRecord | null
@@ -443,24 +501,28 @@ export interface ScheduleMutationResult {
   nextStep?: string
 }
 
+/** Result returned by schedule list operations. */
 export interface ScheduleListResult {
   requestId: string
   schedules: ScheduleRecord[]
   error: string | null
 }
 
+/** Result returned after deleting a schedule. */
 export interface ScheduleDeleteResult {
   requestId: string
   scheduleId: string
   error: string | null
 }
 
+/** Result returned by schedule log queries. */
 export interface ScheduleLogsResult {
   requestId: string
   runs: ScheduleRunRecord[]
   error: string | null
 }
 
+/** Options for creating a schedule. */
 export interface ScheduleCreateOptions {
   prompt: string
   name?: string
@@ -471,6 +533,7 @@ export interface ScheduleCreateOptions {
   runOnCreate?: boolean
 }
 
+/** Options for updating a schedule. */
 export interface ScheduleUpdateOptions {
   id: string
   name?: string
@@ -486,12 +549,14 @@ export interface ScheduleUpdateOptions {
   expiresAt?: string
 }
 
+/** Options for inspecting a schedule. */
 export interface ScheduleInspectOptions {
   id: string
 }
 
 // ─── Worker Update Types ──────────────────────────────────────────────────────
 
+/** Settings that can be applied to an existing worker. */
 export interface WorkerUpdateSettings {
   modeId?: string
   model?: string | null
@@ -499,6 +564,7 @@ export interface WorkerUpdateSettings {
   features?: Record<string, unknown>
 }
 
+/** Options for updating a worker. */
 export interface UpdateWorkerOptions {
   workerId: string
   name?: string
@@ -506,6 +572,7 @@ export interface UpdateWorkerOptions {
   settings?: WorkerUpdateSettings
 }
 
+/** Result returned after updating a worker. */
 export interface WorkerUpdateResult {
   workerId: string
   updated: boolean
@@ -516,11 +583,13 @@ export interface WorkerUpdateResult {
 
 // ─── Worker Activity Types ────────────────────────────────────────────────────
 
+/** Options for fetching worker activity. */
 export interface WorkerActivityOptions {
   workerId: string
   limit?: number
 }
 
+/** Summary for a single worker activity entry. */
 export interface WorkerActivityEntrySummary {
   kind: string
   timestamp?: string
@@ -529,11 +598,13 @@ export interface WorkerActivityEntrySummary {
   summary: string
 }
 
+/** Normalized worker activity timeline returned by the transport layer. */
 export interface WorkerActivitySummary {
   entries: WorkerActivityEntrySummary[]
   hasMore: boolean
 }
 
+/** Result returned by worker activity queries. */
 export interface WorkerActivityResult {
   workerId: string
   activity: WorkerActivitySummary | null
@@ -543,11 +614,13 @@ export interface WorkerActivityResult {
 // The adapter translates upstream DaemonClient events into this shape
 // before delivering them to plugin consumers.
 
+/** Payload for worker-related normalized daemon events. */
 export interface WorkerEventPayload extends Record<string, unknown> {
   workerId: string
   summary?: string
 }
 
+/** Payload carried by normalized agent update events. */
 export type AgentUpdatePayload =
   | {
       kind: "upsert"
@@ -560,6 +633,7 @@ export type AgentUpdatePayload =
       agentId: string
     }
 
+/** Payload carried by normalized worker activity events. */
 export interface WorkerActivityPayload extends Record<string, unknown> {
   workerId: string
   timestamp?: string
@@ -567,63 +641,75 @@ export interface WorkerActivityPayload extends Record<string, unknown> {
   summary?: string
 }
 
+/** Payload carried by normalized permission request events. */
 export interface PermissionRequestedPayload extends Record<string, unknown> {
   workerId: string
   permissionId?: string
   request: Record<string, unknown>
 }
 
+/** Payload carried by normalized permission resolution events. */
 export interface PermissionResolvedPayload extends Record<string, unknown> {
   workerId: string
   permissionId: string
   resolution: Record<string, unknown>
 }
 
+/** Normalized event emitted when the daemon connects. */
 export interface DaemonConnectedEvent {
   type: "daemon.connected"
   payload: Record<string, never>
 }
 
+/** Normalized event emitted when the daemon disconnects. */
 export interface DaemonDisconnectedEvent {
   type: "daemon.disconnected"
   payload: Record<string, never>
 }
 
+/** Normalized daemon error event. */
 export interface DaemonErrorEvent {
   type: "daemon.error"
   payload: { message: string }
 }
 
+/** Upstream agent update event preserved for translation. */
 export interface AgentUpdateEvent {
   type: "agent_update"
   payload: AgentUpdatePayload
 }
 
+/** Upstream agent deletion event preserved for translation. */
 export interface AgentDeletedEvent {
   type: "agent_deleted"
   payload: { agentId: string }
 }
 
+/** Normalized event emitted when a worker stalls. */
 export interface WorkerStalledEvent {
   type: "worker.stalled"
   payload: WorkerEventPayload
 }
 
+/** Upstream worker activity stream event preserved for translation. */
 export interface WorkerActivityEvent {
   type: "agent_stream"
   payload: WorkerActivityPayload
 }
 
+/** Upstream permission request event preserved for translation. */
 export interface PermissionRequestedEvent {
   type: "agent_permission_request"
   payload: PermissionRequestedPayload
 }
 
+/** Upstream permission resolution event preserved for translation. */
 export interface PermissionResolvedEvent {
   type: "agent_permission_resolved"
   payload: PermissionResolvedPayload
 }
 
+/** Normalized event union emitted to plugin consumers. */
 export type DaemonEvent =
   | DaemonConnectedEvent
   | DaemonDisconnectedEvent
@@ -636,10 +722,12 @@ export type DaemonEvent =
   | PermissionRequestedEvent
   | PermissionResolvedEvent
 
+/** Callback invoked for normalized daemon events. */
 export type DaemonEventCallback = (event: DaemonEvent) => void
 
 // ─── Fetch Agents Options ─────────────────────────────────────────────────────
 
+/** Options for fetching agents from the daemon. */
 export interface FetchAgentsOptions {
   subscribe?: { subscriptionId: string }
 }
@@ -647,6 +735,7 @@ export interface FetchAgentsOptions {
 // ─── Transport Contract ───────────────────────────────────────────────────────
 // The minimal interface the plugin needs from a Paseo daemon connection.
 
+/** Transport contract implemented by the Paseo daemon client adapter. */
 export interface PaseoTransport {
   connect(): Promise<void>
   close(): Promise<void>
@@ -712,11 +801,13 @@ export interface PaseoTransport {
   scheduleLogs(options: ScheduleInspectOptions): Promise<ScheduleLogsResult>
 }
 
+/** Error returned by worktree operations. */
 export interface WorktreeOperationError {
   code: "NOT_GIT_REPO" | "NOT_ALLOWED" | "MERGE_CONFLICT" | "UNKNOWN"
   message: string
 }
 
+/** Single worktree entry returned by list operations. */
 export interface WorktreeListEntry {
   worktreePath: string
   createdAt: string
@@ -724,12 +815,14 @@ export interface WorktreeListEntry {
   head?: string | null
 }
 
+/** Result returned by worktree list operations. */
 export interface WorktreeListResult {
   requestId: string
   worktrees: WorktreeListEntry[]
   error: WorktreeOperationError | null
 }
 
+/** Script or service entry associated with a worktree. */
 export interface WorktreeScriptEntry {
   scriptName: string
   type: "script" | "service"
@@ -744,11 +837,13 @@ export interface WorktreeScriptEntry {
   terminalId: string | null
 }
 
+/** Aggregate file change counts for a worktree. */
 export interface WorktreeDiffStat {
   additions: number
   deletions: number
 }
 
+/** Git runtime metadata associated with a worktree. */
 export interface WorktreeGitRuntime {
   currentBranch?: string | null
   remoteUrl?: string | null
@@ -759,6 +854,7 @@ export interface WorktreeGitRuntime {
   behindOfOrigin?: number | null
 }
 
+/** GitHub check summary associated with a worktree. */
 export interface WorktreeGithubCheck {
   name: string
   status: "success" | "failure" | "pending" | "skipped" | "cancelled"
@@ -767,6 +863,7 @@ export interface WorktreeGithubCheck {
   duration?: string
 }
 
+/** GitHub pull request summary associated with a worktree. */
 export interface WorktreeGithubPullRequest {
   title: string
   url: string
@@ -785,6 +882,7 @@ export interface WorktreeGithubPullRequest {
   github?: unknown
 }
 
+/** GitHub runtime metadata associated with a worktree. */
 export interface WorktreeGithubRuntime {
   error?: { message: string } | null
   pullRequest?: WorktreeGithubPullRequest | null
@@ -792,6 +890,7 @@ export interface WorktreeGithubRuntime {
   refreshedAt?: string | null
 }
 
+/** Full worktree workspace record returned by the daemon. */
 export interface WorktreeWorkspaceRecord {
   id: string
   projectId: string
@@ -811,12 +910,14 @@ export interface WorktreeWorkspaceRecord {
   githubRuntime?: WorktreeGithubRuntime | null
 }
 
+/** Result returned after creating a worktree. */
 export interface WorktreeCreateResult {
   requestId: string
   workspace: WorktreeWorkspaceRecord | null
   error: string | null
 }
 
+/** Result returned after archiving a worktree. */
 export interface WorktreeArchiveResult {
   requestId: string
   success: boolean

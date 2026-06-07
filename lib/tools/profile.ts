@@ -10,6 +10,12 @@ import {
 
 // ─── Profile List Tool ───────────────────────────────────────────────────────
 
+/** Create the tool that lists available OpenCode profiles.
+ *
+ * @param opencodeClient - OpenCode client used to load profile definitions.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for listing profiles.
+ */
 export function createProfileListTool(opencodeClient: OpencodeClient, logger: Logger): ToolDefinition {
   return tool({
     description:

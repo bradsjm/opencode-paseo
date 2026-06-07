@@ -16,6 +16,12 @@ const inboxEventKinds = [
   "daemon.disconnected",
 ] as const
 
+/** Create the tool that reads Paseo inbox events.
+ *
+ * @param state - Plugin state used to read inbox events.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for reading inbox events.
+ */
 export function createInboxReadTool(state: PluginState, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -54,6 +60,12 @@ export function createInboxReadTool(state: PluginState, logger: Logger): ToolDef
 
 // ─── Inbox Status Tool ───────────────────────────────────────────────────────
 
+/** Create the tool that summarizes the Paseo inbox.
+ *
+ * @param state - Plugin state used to compute inbox status.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for summarizing inbox status.
+ */
 export function createInboxStatusTool(state: PluginState, logger: Logger): ToolDefinition {
   return tool({
     description: "Get a summary of the Paseo inbox: unread count, blocking count, and breakdowns by kind and resource.",

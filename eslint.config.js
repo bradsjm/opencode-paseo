@@ -1,6 +1,7 @@
 import js from "@eslint/js"
 import globals from "globals"
 import tseslint from "typescript-eslint"
+import jsdoc from "eslint-plugin-jsdoc"
 
 export default tseslint.config(
   {
@@ -19,9 +20,6 @@ export default tseslint.config(
     },
     rules: {
       complexity: ["error", 10],
-      "no-console": "off",
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-empty-object-type": "off",
       "@typescript-eslint/consistent-type-imports": [
         "error",
         {
@@ -42,6 +40,7 @@ export default tseslint.config(
   {
     files: ["index.ts", "lib/**/*.ts", "tsup.config.ts"],
     extends: [...tseslint.configs.recommendedTypeChecked],
+    plugins: { jsdoc },
     languageOptions: {
       parserOptions: {
         project: ["./tsconfig.json"],
@@ -53,6 +52,22 @@ export default tseslint.config(
       "@typescript-eslint/no-misused-promises": "error",
       "@typescript-eslint/await-thenable": "error",
       "@typescript-eslint/require-await": "error",
+      "jsdoc/require-jsdoc": [
+        "error",
+        {
+          publicOnly: true,
+          require: {
+            ArrowFunctionExpression: false,
+            ClassDeclaration: true,
+            FunctionDeclaration: true,
+            MethodDefinition: true,
+          },
+          contexts: ["TSInterfaceDeclaration", "TSTypeAliasDeclaration", "TSEnumDeclaration"],
+        },
+      ],
+      "jsdoc/require-param": "error",
+      "jsdoc/require-returns": "error",
+      "jsdoc/check-param-names": "error",
     },
   },
   {
@@ -65,6 +80,7 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-floating-promises": "off",
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
 )

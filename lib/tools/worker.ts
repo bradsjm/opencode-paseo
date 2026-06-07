@@ -59,6 +59,15 @@ function isWorkerMissingUpstreamError(err: unknown): err is Error {
 
 // ─── Worker List Tool ────────────────────────────────────────────────────────
 
+/**
+ * Create the tool that lists known workers and refreshes local state.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @param onWorkerObserved Optional callback invoked for each observed worker.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerListTool(
   state: PluginState,
   client: PaseoTransport,
@@ -117,6 +126,14 @@ export function createWorkerListTool(
 
 // ─── Worker Create Tool ──────────────────────────────────────────────────────
 
+/**
+ * Create the tool that queues a new worker launch.
+ *
+ * @param opencodeClient OpenCode client used to resolve profile configuration.
+ * @param workerLaunchQueue Worker launch queue controller.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerCreateTool(
   opencodeClient: OpencodeClient,
   workerLaunchQueue: WorkerLaunchQueueController,
@@ -221,6 +238,13 @@ export function createWorkerCreateTool(
   })
 }
 
+/**
+ * Create the tool that reports queued worker launch status.
+ *
+ * @param workerLaunchQueue Worker launch queue controller.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerLaunchStatusTool(
   workerLaunchQueue: WorkerLaunchQueueController,
   logger: Logger,
@@ -266,6 +290,14 @@ export function createWorkerLaunchStatusTool(
 
 // ─── Worker Send Tool ────────────────────────────────────────────────────────
 
+/**
+ * Create the tool that sends a message to an existing worker.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerSendTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Send a message to an existing Paseo worker. Does not wait for a response.",
@@ -495,6 +527,15 @@ function isInboxNudgeKind(kind: string): kind is WorkerWaitNudgeEvent["kind"] {
   )
 }
 
+/**
+ * Create the tool that waits on one or more workers.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param config Plugin configuration used for wait behavior.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerWaitTool(
   state: PluginState,
   client: PaseoTransport,
@@ -711,6 +752,14 @@ function buildWorkerWaitPayload(waitContext: WorkerWaitExecutionContext, timedOu
 
 // ─── Worker Cancel Tool ──────────────────────────────────────────────────────
 
+/**
+ * Create the tool that cancels or kills a worker.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerCancelTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -786,6 +835,14 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
 
 // ─── Worker Archive Tool ─────────────────────────────────────────────────────
 
+/**
+ * Create the tool that archives a worker.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description:
@@ -832,6 +889,15 @@ export function createWorkerArchiveTool(state: PluginState, client: PaseoTranspo
 
 // ─── Worker Update Tool ──────────────────────────────────────────────────────
 
+/**
+ * Create the tool that updates worker metadata and runtime settings.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @param onWorkerObserved Optional callback invoked after a refreshed worker is observed.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerUpdateTool(
   state: PluginState,
   client: PaseoTransport,
@@ -912,6 +978,15 @@ export function createWorkerUpdateTool(
 
 // ─── Worker Inspect Tool ─────────────────────────────────────────────────────
 
+/**
+ * Create the tool that inspects a worker and its recent activity.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @param onWorkerObserved Optional callback invoked after a refreshed worker is observed.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorkerInspectTool(
   state: PluginState,
   client: PaseoTransport,

@@ -7,6 +7,14 @@ import { collapseNull, compactDefined, nullableOptional, optionalNonBlankString,
 
 // ─── Worktree List Tool ──────────────────────────────────────────────────────
 
+/**
+ * Create the tool that lists worktrees for a project.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorktreeListTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "List Paseo worktrees for a project. Requires explicit directory context via cwd.",
@@ -31,6 +39,14 @@ export function createWorktreeListTool(state: PluginState, client: PaseoTranspor
 
 // ─── Worktree Create Tool ────────────────────────────────────────────────────
 
+/**
+ * Create the tool that creates a new worktree.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorktreeCreateTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Create a new Paseo worktree. Requires explicit directory context for the project.",
@@ -77,6 +93,14 @@ export function createWorktreeCreateTool(state: PluginState, client: PaseoTransp
 
 // ─── Worktree Archive Tool ───────────────────────────────────────────────────
 
+/**
+ * Create the tool that archives a worktree.
+ *
+ * @param state In-memory plugin state.
+ * @param client Paseo transport client.
+ * @param logger Logger used for invocation tracing.
+ * @returns The OpenCode tool definition.
+ */
 export function createWorktreeArchiveTool(state: PluginState, client: PaseoTransport, logger: Logger): ToolDefinition {
   return tool({
     description: "Archive a Paseo worktree. Requires explicit directory context for the project.",

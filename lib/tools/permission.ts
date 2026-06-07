@@ -7,6 +7,13 @@ import { collapseNull, compactDefined, nullableOptional } from "./args.js"
 
 // ─── Permission Respond Tool ─────────────────────────────────────────────────
 
+/** Create the tool that responds to a pending permission request.
+ *
+ * @param state - Plugin state used to update inbox and worker bookkeeping.
+ * @param client - Transport used to send the permission response.
+ * @param logger - Logger used to record tool activity.
+ * @returns A tool definition for responding to permission requests.
+ */
 export function createPermissionRespondTool(
   state: PluginState,
   client: PaseoTransport,

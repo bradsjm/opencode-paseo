@@ -1,9 +1,12 @@
 // ─── Paseo Domain Types ──────────────────────────────────────────────────────
 
+/** Terminal lifecycle states tracked by the plugin. */
 export type TerminalStatus = "running" | "exited" | "killed" | "unknown"
 
+/** Worker lifecycle states tracked by the plugin. */
 export type WorkerStatus = "initializing" | "idle" | "running" | "error" | "closed" | "unknown"
 
+/** Inbox event kinds emitted by the Paseo daemon. */
 export type InboxEventKind =
   | "worker.stalled"
   | "agent.status"
@@ -13,6 +16,7 @@ export type InboxEventKind =
   | "daemon.connected"
   | "daemon.disconnected"
 
+/** A normalized inbox event stored in plugin state. */
 export interface InboxEvent {
   id: string
   kind: InboxEventKind
@@ -24,6 +28,7 @@ export interface InboxEvent {
   metadata?: Record<string, unknown>
 }
 
+/** Summary data tracked for a terminal session. */
 export interface TerminalSessionSummary {
   id: string
   title: string
@@ -33,6 +38,7 @@ export interface TerminalSessionSummary {
   lastReadCursor: number
 }
 
+/** Summary data tracked for a worker. */
 export interface WorkerSummary {
   id: string
   title: string
@@ -58,6 +64,7 @@ export interface WorkerSummary {
   updatedAt?: string
 }
 
+/** Session-local bindings and unread state for a connected OpenCode session. */
 export interface SessionMapping {
   opencodeSessionId: string
   projectRoot: string
@@ -71,6 +78,7 @@ export interface SessionMapping {
   updatedAt: number
 }
 
+/** Record for a worker run that is not managed as a durable launch. */
 export interface EphemeralWorkerRunRecord {
   workerId: string
   sessionId: string
@@ -78,6 +86,7 @@ export interface EphemeralWorkerRunRecord {
   createdAt: number
 }
 
+/** Record for a visible OpenCode task session backed by a Paseo worker. */
 export interface TaskRunRecord {
   taskSessionId: string
   parentSessionId: string
@@ -90,6 +99,7 @@ export interface TaskRunRecord {
   createdAt: number
 }
 
+/** Worker launch lifecycle states tracked by the queue. */
 export type WorkerLaunchStatus =
   | "queued"
   | "starting"
@@ -98,17 +108,20 @@ export type WorkerLaunchStatus =
   | "failed_rolled_back"
   | "failed_needs_cleanup"
 
+/** Snapshot entry describing a worktree at launch rollback time. */
 export interface WorkerLaunchRollbackSnapshotEntry {
   worktreePath: string
   branchName: string | null
 }
 
+/** Candidate worktree that may need cleanup after a failed launch. */
 export interface WorkerLaunchRollbackCandidate {
   worktreePath: string
   branchName: string | null
   archiveError?: string
 }
 
+/** Metadata describing the outcome of a launch rollback attempt. */
 export interface WorkerLaunchRollbackMetadata {
   baselineSnapshot: WorkerLaunchRollbackSnapshotEntry[] | null
   attempted: boolean
@@ -118,8 +131,10 @@ export interface WorkerLaunchRollbackMetadata {
   candidateWorktrees?: WorkerLaunchRollbackCandidate[]
 }
 
+/** Rollback metadata recorded on launch status updates. */
 export type WorkerLaunchStatusRollbackMetadata = Omit<WorkerLaunchRollbackMetadata, "baselineSnapshot">
 
+/** Durable record of a queued or completed worker launch. */
 export interface WorkerLaunchRecord {
   launchId: string
   status: WorkerLaunchStatus
@@ -144,14 +159,17 @@ export interface WorkerLaunchRecord {
 
 // ─── Plugin State ────────────────────────────────────────────────────────────
 
+/** Snapshot of daemon capabilities discovered during connect. */
 export interface CapabilitySnapshot {
   version?: string
   features: string[]
   fetchedAt: number
 }
 
+/** Connection lifecycle states for the daemon transport. */
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error"
 
+/** Watch state for a worker-attached chat room. */
 export interface ChatRoomWatchState {
   name: string
   lastMessageId: string | null
@@ -159,6 +177,7 @@ export interface ChatRoomWatchState {
   watching: boolean
 }
 
+/** In-memory plugin state for sessions, workers, terminals, and launches. */
 export interface PluginState {
   /** Current connection status to the Paseo daemon */
   connectionStatus: ConnectionStatus

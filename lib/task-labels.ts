@@ -1,10 +1,22 @@
+/** Label key that stores the task session ID on a worker. */
 export const TASK_SESSION_LABEL = "opencodePaseo.taskSessionId"
+
+/** Label key that stores the parent session ID for a task worker. */
 export const TASK_PARENT_SESSION_LABEL = "opencodePaseo.parentSessionId"
+
+/** Label key that stores the task description on a worker. */
 export const TASK_DESCRIPTION_LABEL = "opencodePaseo.taskDescription"
+
+/** Label key that stores the subagent type used for a task worker. */
 export const TASK_SUBAGENT_LABEL = "opencodePaseo.taskSubagentType"
+
+/** Label key that marks a task worker as deferred. */
 export const TASK_DEFERRED_LABEL = "opencodePaseo.taskDeferred"
+
+/** Label key that marks a task worker as already having its completion injected. */
 export const TASK_COMPLETION_INJECTED_LABEL = "opencodePaseo.taskCompletionInjected"
 
+/** Normalized task metadata recovered from worker labels. */
 export interface TaskLabelInfo {
   taskSessionId: string
   parentSessionId: string
@@ -14,6 +26,12 @@ export interface TaskLabelInfo {
   completionInjected?: boolean
 }
 
+/**
+ * Builds the label set used to mark a worker as a task run.
+ *
+ * @param input - Normalized task metadata to encode into labels.
+ * @returns A label map containing the task session and parent session identifiers, plus optional metadata labels.
+ */
 export function taskRunLabels(input: TaskLabelInfo): Record<string, string> {
   return {
     [TASK_SESSION_LABEL]: input.taskSessionId,
@@ -23,6 +41,12 @@ export function taskRunLabels(input: TaskLabelInfo): Record<string, string> {
   }
 }
 
+/**
+ * Extracts task metadata from a worker's label map when the required labels are present.
+ *
+ * @param labels - Worker labels to inspect.
+ * @returns The parsed task metadata, or `null` when the required task labels are missing.
+ */
 export function getTaskLabelInfo(labels: Record<string, string> | undefined): TaskLabelInfo | null {
   const taskSessionId = taskLabelValue(labels, TASK_SESSION_LABEL)
   const parentSessionId = taskLabelValue(labels, TASK_PARENT_SESSION_LABEL)

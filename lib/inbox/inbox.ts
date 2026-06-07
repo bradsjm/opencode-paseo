@@ -3,6 +3,9 @@ import { markEventRead } from "../state/state.js"
 
 // ─── Inbox Query Operations ──────────────────────────────────────────────────
 
+/**
+ * Options for querying and paginating inbox events.
+ */
 export interface InboxReadOptions {
   unreadOnly?: boolean
   kind?: InboxEventKind
@@ -12,6 +15,9 @@ export interface InboxReadOptions {
   markRead?: boolean
 }
 
+/**
+ * Result returned from an inbox read operation.
+ */
 export interface InboxReadResult {
   events: InboxEvent[]
   nextCursor: number | null
@@ -19,6 +25,9 @@ export interface InboxReadResult {
   unreadCount: number
 }
 
+/**
+ * Aggregate unread and blocking counts for the inbox.
+ */
 export interface InboxStatusResult {
   unreadCount: number
   blockingCount: number
@@ -26,6 +35,13 @@ export interface InboxStatusResult {
   byResource: Record<string, number>
 }
 
+/**
+ * Reads inbox events from plugin state using the requested filters.
+ *
+ * @param state - The plugin state containing inbox events.
+ * @param options - Optional filters, pagination settings, and read-marking behavior.
+ * @returns The paginated inbox events and unread count.
+ */
 export function readInbox(state: PluginState, options: InboxReadOptions = {}): InboxReadResult {
   const { unreadOnly = false, kind, resourceId, cursor = 0, limit = 50, markRead = false } = options
   const events = filteredInboxEvents(state, { unreadOnly, kind, resourceId })
@@ -73,6 +89,12 @@ function countUnreadInboxEvents(state: PluginState): number {
   return Array.from(state.inbox.values()).filter((event) => !event.read).length
 }
 
+/**
+ * Computes unread and blocking inbox counts grouped by kind and resource.
+ *
+ * @param state - The plugin state containing inbox events.
+ * @returns The unread totals and per-kind and per-resource breakdowns.
+ */
 export function getInboxStatus(state: PluginState): InboxStatusResult {
   const events = Array.from(state.inbox.values())
   const unread = events.filter((e) => !e.read)

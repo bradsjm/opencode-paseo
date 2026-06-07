@@ -2,6 +2,11 @@ import type { InboxEvent, InboxEventKind, PluginState, WorkerStatus } from "./ty
 
 const DEDUPED_WORKER_EVENT_KINDS = new Set<InboxEventKind>(["worker.stalled", "agent.status", "agent.attention"])
 
+/**
+ * Sync the cached unread-event count for a worker resource.
+ * @param state
+ * @param resourceId
+ */
 function syncWorkerUnreadEventCount(state: PluginState, resourceId: string): void {
   const worker = state.workers.get(resourceId)
   if (!worker) {
@@ -11,6 +16,12 @@ function syncWorkerUnreadEventCount(state: PluginState, resourceId: string): voi
   worker.unreadEventCount = getUnreadEventCountForResource(state, resourceId)
 }
 
+/**
+ * Return the most recent unread event for a resource, if any.
+ * @param state
+ * @param resourceId
+ * @returns The latest unread event for the resource, or null if none exist.
+ */
 function getLatestUnreadEventForResource(state: PluginState, resourceId: string): InboxEvent | null {
   let latest: InboxEvent | null = null
   for (const event of state.inbox.values()) {
@@ -21,6 +32,12 @@ function getLatestUnreadEventForResource(state: PluginState, resourceId: string)
   return latest
 }
 
+/**
+ * Determine whether an event should be suppressed as a duplicate lifecycle update.
+ * @param state
+ * @param event
+ * @returns True if the event is a duplicate of the latest unread event for the resource.
+ */
 function shouldSuppressLifecycleDuplicate(state: PluginState, event: InboxEvent): boolean {
   if (!DEDUPED_WORKER_EVENT_KINDS.has(event.kind)) {
     return false
@@ -33,6 +50,11 @@ function shouldSuppressLifecycleDuplicate(state: PluginState, event: InboxEvent)
   return true
 }
 
+/**
+ * Remove an event from every session-scoped reference set.
+ * @param state
+ * @param eventId
+ */
 function removeEventReferencesFromSessions(state: PluginState, eventId: string): void {
   for (const session of state.sessions.values()) {
     session.unreadEvents.delete(eventId)
@@ -40,6 +62,10 @@ function removeEventReferencesFromSessions(state: PluginState, eventId: string):
   }
 }
 
+/**
+ * Evict the oldest inbox event from global state.
+ * @param state
+ */
 function evictOldestInboxEvent(state: PluginState): void {
   let oldestId: string | null = null
   let oldestTimestamp = Number.POSITIVE_INFINITY
@@ -63,6 +89,13 @@ function evictOldestInboxEvent(state: PluginState): void {
   }
 }
 
+/**
+ * Count unread inbox events for a given resource ID.
+ *
+ * @param state - Plugin state to read from.
+ * @param resourceId - Resource ID to count unread events for.
+ * @returns The unread event count for the resource.
+ */
 export function getUnreadEventCountForResource(state: PluginState, resourceId: string): number {
   let count = 0
   for (const event of state.inbox.values()) {
@@ -73,6 +106,14 @@ export function getUnreadEventCountForResource(state: PluginState, resourceId: s
   return count
 }
 
+/**
+ * Insert an inbox event unless it is a duplicate or suppressed lifecycle update.
+ *
+ * @param state - Plugin state to update.
+ * @param event - Inbox event to insert.
+ * @param maxInboxItems - Maximum number of inbox items to retain.
+ * @returns `true` when the event was inserted, otherwise `false`.
+ */
 export function insertInboxEvent(
   state: PluginState,
   event: InboxEvent,
@@ -104,6 +145,13 @@ export function insertInboxEvent(
   return true
 }
 
+/**
+ * Mark a single inbox event as read and clear its session references.
+ *
+ * @param state - Plugin state to update.
+ * @param eventId - Inbox event ID to mark as read.
+ * @returns Nothing.
+ */
 export function markEventRead(state: PluginState, eventId: string): void {
   const event = state.inbox.get(eventId)
   if (event) {
@@ -116,6 +164,12 @@ export function markEventRead(state: PluginState, eventId: string): void {
   }
 }
 
+/**
+ * Mark every inbox event as read and clear unread session state.
+ *
+ * @param state - Plugin state to update.
+ * @returns Nothing.
+ */
 export function markAllRead(state: PluginState): void {
   for (const event of state.inbox.values()) {
     event.read = true
@@ -129,6 +183,13 @@ export function markAllRead(state: PluginState): void {
   }
 }
 
+/**
+ * Mark unread worker-stalled events for a worker as read.
+ *
+ * @param state - Plugin state to update.
+ * @param workerId - Worker ID whose stalled events should be marked read.
+ * @returns Nothing.
+ */
 export function markUnreadStallEventsRead(state: PluginState, workerId: string): void {
   for (const [eventId, event] of state.inbox) {
     if (event.kind === "worker.stalled" && event.resourceId === workerId && !event.read) {
@@ -137,6 +198,13 @@ export function markUnreadStallEventsRead(state: PluginState, workerId: string):
   }
 }
 
+/**
+ * Mark all unread events for a resource as read.
+ *
+ * @param state - Plugin state to update.
+ * @param resourceId - Resource ID whose events should be marked read.
+ * @returns Nothing.
+ */
 export function markResourceEventsRead(state: PluginState, resourceId: string): void {
   for (const [eventId, event] of state.inbox) {
     if (event.resourceId === resourceId && !event.read) {
@@ -145,6 +213,13 @@ export function markResourceEventsRead(state: PluginState, resourceId: string): 
   }
 }
 
+/**
+ * Find session IDs that are bound to a resource.
+ *
+ * @param state - Plugin state to read from.
+ * @param resourceId - Resource ID to search for.
+ * @returns Session IDs that are bound to the resource.
+ */
 export function findSessionsForResource(state: PluginState, resourceId: string): string[] {
   const result: string[] = []
   for (const session of state.sessions.values()) {
@@ -155,6 +230,13 @@ export function findSessionsForResource(state: PluginState, resourceId: string):
   return result
 }
 
+/**
+ * Find background session IDs that are bound to a resource.
+ *
+ * @param state - Plugin state to read from.
+ * @param resourceId - Resource ID to search for.
+ * @returns Session IDs that are bound to the resource as background work.
+ */
 export function findBackgroundSessionsForResource(state: PluginState, resourceId: string): string[] {
   const result: string[] = []
   for (const session of state.sessions.values()) {
@@ -165,6 +247,14 @@ export function findBackgroundSessionsForResource(state: PluginState, resourceId
   return result
 }
 
+/**
+ * Build metadata for a blocking inbox event.
+ *
+ * @param kind - Inbox event kind.
+ * @param resourceId - Resource ID associated with the event.
+ * @param extra - Additional metadata to include.
+ * @returns Blocking metadata for the event.
+ */
 export function buildBlockingMetadata(
   kind: InboxEventKind,
   resourceId: string,
@@ -182,6 +272,15 @@ export function buildBlockingMetadata(
   return extra ?? {}
 }
 
+/**
+ * Compute the blocking action for a worker-like state snapshot.
+ *
+ * @param w - Worker-like state snapshot to inspect.
+ * @param w.status
+ * @param w.pendingPermissionIds
+ * @param w.requiresAttention
+ * @returns The blocking action name, or `null` when none applies.
+ */
 export function getBlockingAction(w: {
   status: WorkerStatus
   pendingPermissionIds: string[]

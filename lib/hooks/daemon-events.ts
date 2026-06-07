@@ -104,6 +104,17 @@ function handlePermissionResolved(state: PluginState, event: PermissionResolvedE
   }
 }
 
+/**
+ * Create a daemon event handler that updates plugin state and inbox items.
+ *
+ * @param state In-memory plugin state used to sync workers, sessions, and inbox items.
+ * @param logger Logger used for daemon event reporting.
+ * @param config Plugin configuration used for summary limits and nudge behavior.
+ * @param opencodeClient Optional OpenCode client used to deliver nudges.
+ * @param onWorkerObserved Optional callback invoked when a worker is observed.
+ * @param onTaskWorkerObserved Optional callback invoked when a task worker is observed.
+ * @returns A daemon event handler that processes incoming daemon events.
+ */
 export function createDaemonEventHandler(
   state: PluginState,
   logger: Logger,

@@ -14,6 +14,7 @@ import { mapDaemonWorkerStatus } from "./status.js"
 
 const INTERNAL_WORKER_LABEL_PREFIX = "opencodePaseo."
 
+/** Re-export inbox state helpers for public state consumers. */
 export {
   insertInboxEvent,
   markEventRead,
@@ -27,6 +28,13 @@ export {
   markResourceEventsRead,
 } from "./inbox-state.js"
 
+/**
+ * Create a new session mapping with fresh binding and inbox state.
+ *
+ * @param opencodeSessionId - OpenCode session ID to associate with the mapping.
+ * @param projectRoot - Root directory for the associated project.
+ * @returns A new session mapping.
+ */
 export function createSessionMapping(opencodeSessionId: string, projectRoot: string): SessionMapping {
   const now = Date.now()
   return {
@@ -42,6 +50,11 @@ export function createSessionMapping(opencodeSessionId: string, projectRoot: str
   }
 }
 
+/**
+ * Create a clean plugin state snapshot.
+ *
+ * @returns A newly initialized plugin state.
+ */
 export function createPluginState(): PluginState {
   return {
     connectionStatus: "disconnected",
@@ -62,6 +75,12 @@ export function createPluginState(): PluginState {
   }
 }
 
+/**
+ * Reset an existing plugin state object back to its initial values.
+ *
+ * @param state - Plugin state to reset in place.
+ * @returns Nothing.
+ */
 export function resetPluginState(state: PluginState): void {
   state.connectionStatus = "disconnected"
   state.lastError = undefined
@@ -80,6 +99,14 @@ export function resetPluginState(state: PluginState): void {
   state.eventCounter = 0
 }
 
+/**
+ * Update the daemon connection status and optional last error.
+ *
+ * @param state - Plugin state to update.
+ * @param status - New connection status.
+ * @param error - Optional connection error message.
+ * @returns Nothing.
+ */
 export function setConnectionStatus(state: PluginState, status: ConnectionStatus, error?: string): void {
   state.connectionStatus = status
   if (error !== undefined) {
@@ -89,10 +116,25 @@ export function setConnectionStatus(state: PluginState, status: ConnectionStatus
   }
 }
 
+/**
+ * Store a fresh capability snapshot on plugin state.
+ *
+ * @param state - Plugin state to update.
+ * @param caps - Capability snapshot to store.
+ * @returns Nothing.
+ */
 export function setCapabilities(state: PluginState, caps: CapabilitySnapshot): void {
   state.capabilities = caps
 }
 
+/**
+ * Get an existing session mapping or create one on demand.
+ *
+ * @param state - Plugin state to read from and update.
+ * @param sessionId - OpenCode session ID to look up.
+ * @param projectRoot - Project root to record for a new mapping.
+ * @returns The existing or newly created session mapping.
+ */
 export function getOrCreateSession(state: PluginState, sessionId: string, projectRoot: string): SessionMapping {
   let mapping = state.sessions.get(sessionId)
   if (!mapping) {
@@ -104,10 +146,24 @@ export function getOrCreateSession(state: PluginState, sessionId: string, projec
 
 // ─── Terminal / Worker Updates ───────────────────────────────────────────────
 
+/**
+ * Insert or replace a terminal summary in global state.
+ *
+ * @param state - Plugin state to update.
+ * @param terminal - Terminal summary to store.
+ * @returns Nothing.
+ */
 export function upsertTerminal(state: PluginState, terminal: TerminalSessionSummary): void {
   state.terminals.set(terminal.id, terminal)
 }
 
+/**
+ * Insert or replace a worker summary in global state.
+ *
+ * @param state - Plugin state to update.
+ * @param worker - Worker summary to store.
+ * @returns Nothing.
+ */
 export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
   state.workers.set(worker.id, worker)
   if (worker.chatRoom) {
@@ -124,10 +180,14 @@ export function upsertWorker(state: PluginState, worker: WorkerSummary): void {
 }
 
 // ─── Session-Terminal Binding ────────────────────────────────────────────────
-// Records a newly created terminal in both the global terminal map and the
-// session's createdTerminalIds so that subsequent inbox events for this
-// terminal are routed to the correct session.
-
+/**
+ * Record a terminal as created by a session and bind it for inbox routing.
+ *
+ * @param state - Plugin state to update.
+ * @param sessionId - OpenCode session ID that created the terminal.
+ * @param terminal - Terminal summary to register.
+ * @returns Nothing.
+ */
 export function recordCreatedTerminal(state: PluginState, sessionId: string, terminal: TerminalSessionSummary): void {
   state.terminals.set(terminal.id, terminal)
   const session = state.sessions.get(sessionId)
@@ -138,10 +198,14 @@ export function recordCreatedTerminal(state: PluginState, sessionId: string, ter
 }
 
 // ─── Session-Worker Binding ─────────────────────────────────────────────────────
-// Records a newly created worker in both the global workers map and the
-// session's createdWorkerIds so that subsequent inbox events for this
-// worker are routed to the correct session.
-
+/**
+ * Record a worker as created by a session and bind it for inbox routing.
+ *
+ * @param state - Plugin state to update.
+ * @param sessionId - OpenCode session ID that created the worker.
+ * @param worker - Worker summary to register.
+ * @returns Nothing.
+ */
 export function recordCreatedWorker(state: PluginState, sessionId: string, worker: WorkerSummary): void {
   upsertWorker(state, worker)
   const session = state.sessions.get(sessionId)
@@ -151,6 +215,14 @@ export function recordCreatedWorker(state: PluginState, sessionId: string, worke
   }
 }
 
+/**
+ * Mark a created worker as background work for the owning session.
+ *
+ * @param state - Plugin state to update.
+ * @param sessionId - OpenCode session ID that owns the worker.
+ * @param workerId - Worker ID to mark as background work.
+ * @returns Nothing.
+ */
 export function recordBackgroundWorker(state: PluginState, sessionId: string, workerId: string): void {
   const session = state.sessions.get(sessionId)
   if (!session || !session.createdWorkerIds.has(workerId)) return
@@ -158,6 +230,14 @@ export function recordBackgroundWorker(state: PluginState, sessionId: string, wo
   session.updatedAt = Date.now()
 }
 
+/**
+ * Remove a worker from the background-worker set for a session.
+ *
+ * @param state - Plugin state to update.
+ * @param sessionId - OpenCode session ID that owns the worker.
+ * @param workerId - Worker ID to remove from background tracking.
+ * @returns Nothing.
+ */
 export function unrecordBackgroundWorker(state: PluginState, sessionId: string, workerId: string): void {
   const session = state.sessions.get(sessionId)
   if (!session) return
@@ -165,6 +245,17 @@ export function unrecordBackgroundWorker(state: PluginState, sessionId: string, 
   session.updatedAt = Date.now()
 }
 
+/**
+ * Store an ephemeral worker run record.
+ *
+ * @param state - Plugin state to update.
+ * @param sessionId - OpenCode session ID associated with the run.
+ * @param workerId - Worker ID for the run.
+ * @param options - Ephemeral run options, including background mode and creation time.
+ * @param options.background
+ * @param options.createdAt
+ * @returns Nothing.
+ */
 export function registerEphemeralWorkerRun(
   state: PluginState,
   sessionId: string,
@@ -179,26 +270,61 @@ export function registerEphemeralWorkerRun(
   })
 }
 
+/**
+ * Remove and return an ephemeral worker run record by worker ID.
+ *
+ * @param state - Plugin state to update.
+ * @param workerId - Worker ID to remove.
+ * @returns The removed run record, or `undefined` if none existed.
+ */
 export function removeEphemeralWorkerRun(state: PluginState, workerId: string): EphemeralWorkerRunRecord | undefined {
   const record = state.ephemeralWorkerRuns.get(workerId)
   state.ephemeralWorkerRuns.delete(workerId)
   return record
 }
 
+/**
+ * Store a task-run record keyed by the visible task session ID.
+ *
+ * @param state - Plugin state to update.
+ * @param record - Task run record to store.
+ * @returns Nothing.
+ */
 export function recordTaskRun(state: PluginState, record: TaskRunRecord): void {
   state.taskRuns.set(record.taskSessionId, record)
 }
 
+/**
+ * Look up a task-run record by task session ID.
+ *
+ * @param state - Plugin state to read from.
+ * @param taskSessionId - Task session ID to look up.
+ * @returns The matching task run record, or `undefined` if none exists.
+ */
 export function getTaskRun(state: PluginState, taskSessionId: string): TaskRunRecord | undefined {
   return state.taskRuns.get(taskSessionId)
 }
 
+/**
+ * Remove and return a task-run record by task session ID.
+ *
+ * @param state - Plugin state to update.
+ * @param taskSessionId - Task session ID to remove.
+ * @returns The removed task run record, or `undefined` if none existed.
+ */
 export function removeTaskRun(state: PluginState, taskSessionId: string): TaskRunRecord | undefined {
   const record = state.taskRuns.get(taskSessionId)
   state.taskRuns.delete(taskSessionId)
   return record
 }
 
+/**
+ * Find the task-run record associated with a worker ID.
+ *
+ * @param state - Plugin state to read from.
+ * @param workerId - Worker ID to search for.
+ * @returns The matching task run record, or `undefined` if none exists.
+ */
 export function findTaskRunByWorkerId(state: PluginState, workerId: string): TaskRunRecord | undefined {
   for (const taskRun of state.taskRuns.values()) {
     if (taskRun.workerId === workerId) return taskRun
@@ -206,12 +332,26 @@ export function findTaskRunByWorkerId(state: PluginState, workerId: string): Tas
   return undefined
 }
 
+/**
+ * List task-run records attached to a session or its parent session.
+ *
+ * @param state - Plugin state to read from.
+ * @param sessionId - Session ID to match.
+ * @returns Task run records associated with the session.
+ */
 export function listTaskRunsForSession(state: PluginState, sessionId: string): TaskRunRecord[] {
   return Array.from(state.taskRuns.values()).filter(
     (taskRun) => taskRun.taskSessionId === sessionId || taskRun.parentSessionId === sessionId,
   )
 }
 
+/**
+ * List ephemeral worker IDs created for a session.
+ *
+ * @param state - Plugin state to read from.
+ * @param sessionId - Session ID to match.
+ * @returns Worker IDs for ephemeral runs created by the session.
+ */
 export function listEphemeralWorkerIdsForSession(state: PluginState, sessionId: string): string[] {
   const workerIds: string[] = []
   for (const run of state.ephemeralWorkerRuns.values()) {
@@ -225,9 +365,11 @@ export function listEphemeralWorkerIdsForSession(state: PluginState, sessionId: 
 // ─── Session Lifecycle Helpers ───────────────────────────────────────────────
 
 /**
- * Remove a session mapping and clear its unread/pending references.
- * This is the canonical cleanup helper for session.deleted and dispose paths.
- * It does NOT delete global worker/terminal entries — only session bindings.
+ * Remove a session mapping and clear its session-scoped references.
+ *
+ * @param state - Plugin state to update.
+ * @param sessionId - OpenCode session ID to remove.
+ * @returns `true` when a session mapping was removed, otherwise `false`.
  */
 export function removeSession(state: PluginState, sessionId: string): boolean {
   const session = state.sessions.get(sessionId)
@@ -245,9 +387,11 @@ export function removeSession(state: PluginState, sessionId: string): boolean {
 }
 
 /**
- * Remove a worker ID from all session bindings.
- * Used when a worker is archived or otherwise permanently removed.
- * Does NOT delete the worker from state.workers — caller handles that.
+ * Remove a worker ID from every session binding.
+ *
+ * @param state - Plugin state to update.
+ * @param workerId - Worker ID to unbind.
+ * @returns Nothing.
  */
 export function unbindWorkerFromSessions(state: PluginState, workerId: string): void {
   for (const session of state.sessions.values()) {
@@ -257,8 +401,11 @@ export function unbindWorkerFromSessions(state: PluginState, workerId: string): 
 }
 
 /**
- * Permanently remove a worker from local state and clear session-scoped
- * actionable references for that worker. Global inbox history is preserved.
+ * Remove a worker from local state and clear session-scoped references.
+ *
+ * @param state - Plugin state to update.
+ * @param workerId - Worker ID to remove.
+ * @returns Nothing.
  */
 export function removeWorkerFromState(state: PluginState, workerId: string): void {
   state.workers.delete(workerId)
@@ -282,9 +429,11 @@ export function removeWorkerFromState(state: PluginState, workerId: string): voi
 }
 
 /**
- * Remove a terminal ID from all session bindings.
- * Used when a terminal is killed or otherwise permanently removed.
- * Does NOT delete the terminal from state.terminals — caller handles that.
+ * Remove a terminal ID from every session binding.
+ *
+ * @param state - Plugin state to update.
+ * @param terminalId - Terminal ID to unbind.
+ * @returns Nothing.
  */
 export function unbindTerminalFromSessions(state: PluginState, terminalId: string): void {
   for (const session of state.sessions.values()) {
@@ -293,9 +442,12 @@ export function unbindTerminalFromSessions(state: PluginState, terminalId: strin
 }
 
 // ─── Agent → WorkerSummary Mapper ────────────────────────────────────────────
-// Shared mapper used by hydration, event syncing, and tool responses to
-// produce a consistent WorkerSummary from a transport-level AgentSummary.
-
+/**
+ * Map a transport-level agent summary into a normalized worker summary.
+ *
+ * @param agent - Transport-level agent summary to convert.
+ * @returns A normalized worker summary.
+ */
 export function mapAgentToWorkerSummary(agent: AgentSummary): WorkerSummary {
   const pendingPermissions = agent.pendingPermissions ?? []
   return {

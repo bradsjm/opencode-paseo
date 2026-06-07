@@ -33,9 +33,18 @@ function compactData(data: unknown): string {
   }
 }
 
+/**
+ * Writes timestamped Paseo log lines to the daily log file when debug mode is enabled.
+ */
 export class Logger {
   private enabled: boolean
 
+  /**
+   * Creates a logger instance.
+   *
+   * @param debug - Whether this logger writes to disk.
+   * @returns A logger instance configured with the requested debug setting.
+   */
   constructor(debug: boolean) {
     this.enabled = debug
   }
@@ -56,18 +65,46 @@ export class Logger {
     }
   }
 
+  /**
+   * Writes a log line with INFO severity.
+   *
+   * @param message - Message to append.
+   * @param data - Optional structured data to serialize alongside the message.
+   * @returns Nothing.
+   */
   info(message: string, data?: unknown): void {
     this.write("INFO", message, data)
   }
 
+  /**
+   * Writes a log line with DEBUG severity.
+   *
+   * @param message - Message to append.
+   * @param data - Optional structured data to serialize alongside the message.
+   * @returns Nothing.
+   */
   debug(message: string, data?: unknown): void {
     this.write("DEBUG", message, data)
   }
 
+  /**
+   * Writes a log line with WARN severity.
+   *
+   * @param message - Message to append.
+   * @param data - Optional structured data to serialize alongside the message.
+   * @returns Nothing.
+   */
   warn(message: string, data?: unknown): void {
     this.write("WARN", message, data)
   }
 
+  /**
+   * Writes a log line with ERROR severity.
+   *
+   * @param message - Message to append.
+   * @param data - Optional structured data to serialize alongside the message.
+   * @returns Nothing.
+   */
   error(message: string, data?: unknown): void {
     this.write("ERROR", message, data)
   }
