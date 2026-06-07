@@ -1,9 +1,9 @@
 [![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](custom_components/semantic_home/manifest.json)
-[![License](https://img.shields.io/github/license/bradsjm/opencode-paseo.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/bradsjm/opencode-paseo/ci.yml)
 ![NPM Last Update](https://img.shields.io/npm/last-update/%40bradsjm%2Fopencode-paseo)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bradsjm/opencode-paseo)
 [![Coding Harness](https://img.shields.io/badge/coding_harness-opencode-orange)](https://opencode.ai/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bradsjm/opencode-paseo)
 
 # Paseo plugin for OpenCode.
 
