@@ -235,7 +235,7 @@ test("projectTimeline projects compact activity summaries", async (t) => {
 // ─── Event Translation ───────────────────────────────────────────────────────
 
 test("translateUpstreamEvent normalizes daemon events", async (t) => {
-  await t.test("agent_update upsert with running status → worker.started", () => {
+  await t.test("agent_update upsert preserves running status", () => {
     const result = translateUpstreamEvent({
       type: "agent_update",
       agentId: "a1",
@@ -245,11 +245,15 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
       },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.started")
-    assert.equal(result.payload.workerId, "a1")
+    assert.equal(result.type, "agent_update")
+    assert.equal(result.payload.kind, "upsert")
+    if (result.type === "agent_update" && result.payload.kind === "upsert") {
+      assert.equal(result.payload.agentId, "a1")
+      assert.equal(result.payload.agent.status, "running")
+    }
   })
 
-  await t.test("agent_update upsert with error status → worker.failed", () => {
+  await t.test("agent_update upsert preserves error status", () => {
     const result = translateUpstreamEvent({
       type: "agent_update",
       agentId: "a1",
@@ -259,10 +263,13 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
       },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.failed")
+    assert.equal(result.type, "agent_update")
+    if (result.type === "agent_update" && result.payload.kind === "upsert") {
+      assert.equal(result.payload.agent.status, "error")
+    }
   })
 
-  await t.test("agent_update upsert with closed status → worker.finished", () => {
+  await t.test("agent_update upsert preserves closed status", () => {
     const result = translateUpstreamEvent({
       type: "agent_update",
       agentId: "a1",
@@ -272,10 +279,13 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
       },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.finished")
+    assert.equal(result.type, "agent_update")
+    if (result.type === "agent_update" && result.payload.kind === "upsert") {
+      assert.equal(result.payload.agent.status, "closed")
+    }
   })
 
-  await t.test("agent_update with permission attention → worker.blocked", () => {
+  await t.test("agent_update preserves permission attention without lifecycle remap", () => {
     const result = translateUpstreamEvent({
       type: "agent_update",
       agentId: "a1",
@@ -291,9 +301,12 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
       },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.blocked")
-    assert.equal(result.payload.workerId, "a1")
-    assert.equal(result.payload.summary, "permission")
+    assert.equal(result.type, "agent_update")
+    if (result.type === "agent_update" && result.payload.kind === "upsert") {
+      assert.equal(result.payload.agent.requiresAttention, true)
+      assert.equal(result.payload.agent.attentionReason, "permission")
+      assert.deepEqual(result.payload.agent.pendingPermissions, [{ id: "p1" }])
+    }
   })
 
   await t.test("agent_update without agent payload is ignored", () => {
@@ -305,25 +318,25 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
     assert.equal(result, null)
   })
 
-  await t.test("agent_update remove → worker.finished", () => {
+  await t.test("agent_update remove preserves remove payload", () => {
     const result = translateUpstreamEvent({
       type: "agent_update",
       agentId: "a1",
       payload: { kind: "remove", agentId: "a1" },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.finished")
-    assert.equal(result.payload.workerId, "a1")
+    assert.equal(result.type, "agent_update")
+    assert.deepEqual(result.payload, { kind: "remove", agentId: "a1" })
   })
 
-  await t.test("agent_deleted → worker.finished", () => {
+  await t.test("agent_deleted preserves upstream delete event", () => {
     const result = translateUpstreamEvent({
       type: "agent_deleted",
       agentId: "a1",
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.finished")
-    assert.equal(result.payload.workerId, "a1")
+    assert.equal(result.type, "agent_deleted")
+    assert.equal(result.payload.agentId, "a1")
   })
 
   await t.test("terminal_stream_exit → terminal.exited", () => {
@@ -336,19 +349,19 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
     assert.equal(result.payload.terminalId, "term-1")
   })
 
-  await t.test("agent_permission_request → permission.requested", () => {
+  await t.test("agent_permission_request preserves upstream event name", () => {
     const result = translateUpstreamEvent({
       type: "agent_permission_request",
       agentId: "a1",
       request: { id: "p1", kind: "tool", summary: "Write file" },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "permission.requested")
+    assert.equal(result.type, "agent_permission_request")
     assert.equal(result.payload.workerId, "a1")
     assert.equal(result.payload.permissionId, "p1")
   })
 
-  await t.test("agent_permission_resolved → permission.resolved", () => {
+  await t.test("agent_permission_resolved preserves upstream event name", () => {
     const result = translateUpstreamEvent({
       type: "agent_permission_resolved",
       agentId: "a1",
@@ -356,12 +369,12 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
       resolution: { decision: "allow" },
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "permission.resolved")
+    assert.equal(result.type, "agent_permission_resolved")
     assert.equal(result.payload.workerId, "a1")
     assert.equal(result.payload.permissionId, "p1")
   })
 
-  await t.test("agent_stream → worker.activity", () => {
+  await t.test("agent_stream preserves upstream event name with compact activity", () => {
     const result = translateUpstreamEvent({
       type: "agent_stream",
       agentId: "a1",
@@ -369,7 +382,7 @@ test("translateUpstreamEvent normalizes daemon events", async (t) => {
       timestamp: "2024-01-01T00:00:00Z",
     } as any)
     assert.ok(result)
-    assert.equal(result.type, "worker.activity")
+    assert.equal(result.type, "agent_stream")
     assert.deepEqual(result.payload, {
       workerId: "a1",
       timestamp: "2024-01-01T00:00:00Z",

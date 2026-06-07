@@ -25,7 +25,7 @@ test("paseo_inbox_read", async (t) => {
     const state = createPluginState()
     insertInboxEvent(state, {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "worker started",

@@ -2,17 +2,14 @@
 
 export type TerminalStatus = "running" | "exited" | "killed" | "unknown"
 
-export type WorkerStatus = "running" | "idle" | "blocked" | "failed" | "finished" | "canceled" | "unknown"
+export type WorkerStatus = "initializing" | "idle" | "running" | "error" | "closed" | "unknown"
 
 export type InboxEventKind =
-  | "worker.started"
   | "worker.stalled"
-  | "worker.finished"
-  | "worker.failed"
-  | "worker.blocked"
+  | "agent.status"
+  | "agent.attention"
   | "chat.mentioned"
   | "permission.requested"
-  | "permission.resolved"
   | "daemon.connected"
   | "daemon.disconnected"
 
@@ -67,6 +64,7 @@ export interface SessionMapping {
   worktreePath?: string
   createdTerminalIds: Set<string>
   createdWorkerIds: Set<string>
+  backgroundWorkerIds: Set<string>
   unreadEvents: Map<string, InboxEvent>
   pendingPermissions: Map<string, InboxEvent>
   createdAt: number

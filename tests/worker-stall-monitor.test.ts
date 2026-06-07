@@ -12,9 +12,10 @@ type IntervalCallback = () => void
 const TEST_CONFIG: PluginConfig = {
   enabled: true,
   debug: false,
+  nudgeEnabled: true,
+  workerStallThresholdMs: 10000,
   daemon: { host: "127.0.0.1", port: 6767, connectionTimeoutMs: 3000 },
   output: { maxInboxItems: 100, maxSummaryLength: 500 },
-  notifications: { enabled: true, blockingOnly: false, stalledThresholdMs: 10000 },
   agents: {},
   task: { enabled: false },
 }
@@ -116,7 +117,7 @@ test("createWorkerStallMonitor", async (t) => {
     sweep!()
 
     monitor.observeEvent({
-      type: "worker.activity",
+      type: "agent_stream",
       payload: {
         workerId: worker.id,
         timestamp: new Date().toISOString(),
@@ -132,7 +133,7 @@ test("createWorkerStallMonitor", async (t) => {
 
   await t.test("ineligible workers do not stall", () => {
     const state = createPluginState()
-    seedWorker(state, { rawStatus: "idle" })
+    seedWorker(state, { status: "idle", rawStatus: "idle" })
     const emitted: DaemonEvent[] = []
     let sweep: (() => void) | undefined
     globalThis.setInterval = (fn: IntervalCallback) => {

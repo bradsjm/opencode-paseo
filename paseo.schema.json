@@ -19,6 +19,18 @@
       "default": false,
       "description": "Enable debug logging"
     },
+    "nudgeEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Send background-worker nudges into owning OpenCode sessions for actionable events"
+    },
+    "workerStallThresholdMs": {
+      "type": "integer",
+      "minimum": 10000,
+      "maximum": 3600000,
+      "default": 120000,
+      "description": "Best-effort inactivity threshold before a running worker is marked stalled"
+    },
     "daemon": {
       "type": "object",
       "additionalProperties": false,
@@ -68,30 +80,6 @@
           "maximum": 5000,
           "default": 500,
           "description": "Maximum character length for event summaries"
-        }
-      }
-    },
-    "notifications": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Notification and TUI toast settings",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable TUI notifications for Paseo events"
-        },
-        "blockingOnly": {
-          "type": "boolean",
-          "default": false,
-          "description": "Only notify for blocking events (e.g., pending permissions)"
-        },
-        "stalledThresholdMs": {
-          "type": "integer",
-          "minimum": 10000,
-          "maximum": 3600000,
-          "default": 120000,
-          "description": "Best-effort inactivity threshold before a running worker is marked stalled"
         }
       }
     },

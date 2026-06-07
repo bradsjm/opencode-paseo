@@ -7,12 +7,11 @@ import { collapseNull, compactDefined, nullableOptional, optionalNumber } from "
 // ─── Inbox Read Tool ─────────────────────────────────────────────────────────
 
 const inboxEventKinds = [
-  "worker.started",
-  "worker.finished",
-  "worker.failed",
-  "worker.blocked",
+  "agent.status",
+  "agent.attention",
+  "worker.stalled",
+  "chat.mentioned",
   "permission.requested",
-  "permission.resolved",
   "daemon.connected",
   "daemon.disconnected",
 ] as const

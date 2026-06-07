@@ -5,6 +5,7 @@ import {
   getOrCreateSession,
   getUnreadEventCountForResource,
   mapAgentToWorkerSummary,
+  recordBackgroundWorker,
   recordCreatedWorker,
   upsertWorker,
 } from "../state/state.js"
@@ -20,6 +21,7 @@ import type {
 import type { CreatedWorker, PaseoTransport, WorktreeListEntry } from "../transport/types.js"
 import type { Logger } from "../logger.js"
 import type { OpencodeClient } from "../profile.js"
+import type { PluginConfig } from "../config.js"
 
 const LAUNCH_ID_PREFIX = "launch"
 const RESERVED_LAUNCH_ID_LABEL = "opencodePaseo.launchId"
@@ -78,6 +80,8 @@ export interface WorkerLaunchQueueController {
   observeWorker(worker: WorkerSummary, observedLaunchId?: string): void
 }
 
+type WorkerObservedCallback = (worker: WorkerSummary) => void
+
 export function getWorkerLaunchIdFromLabels(labels: unknown): string | undefined {
   if (!labels || typeof labels !== "object" || Array.isArray(labels)) {
     return undefined
@@ -85,6 +89,15 @@ export function getWorkerLaunchIdFromLabels(labels: unknown): string | undefined
 
   const launchId = (labels as Record<string, unknown>)[RESERVED_LAUNCH_ID_LABEL]
   return typeof launchId === "string" && launchId.trim() ? launchId : undefined
+}
+
+export function getWorkerSessionIdFromLabels(labels: unknown): string | undefined {
+  if (!labels || typeof labels !== "object" || Array.isArray(labels)) {
+    return undefined
+  }
+
+  const sessionId = (labels as Record<string, unknown>)[RESERVED_SESSION_ID_LABEL]
+  return typeof sessionId === "string" && sessionId.trim() ? sessionId : undefined
 }
 
 function generateLaunchId(): string {
@@ -225,10 +238,33 @@ function toRollbackCandidate(
 export function createWorkerLaunchQueueController(
   state: PluginState,
   client: PaseoTransport,
+  config: PluginConfig,
   opencodeClient: OpencodeClient,
   logger: Logger,
-  onWorkerObserved?: (worker: WorkerSummary) => void,
+  onWorkerObserved?: WorkerObservedCallback,
+): WorkerLaunchQueueController
+export function createWorkerLaunchQueueController(
+  state: PluginState,
+  client: PaseoTransport,
+  opencodeClient: OpencodeClient,
+  logger: Logger,
+  onWorkerObserved?: WorkerObservedCallback,
+): WorkerLaunchQueueController
+export function createWorkerLaunchQueueController(
+  state: PluginState,
+  client: PaseoTransport,
+  configOrOpencodeClient: PluginConfig | OpencodeClient,
+  opencodeClientOrLogger: OpencodeClient | Logger,
+  loggerOrOnWorkerObserved?: Logger | WorkerObservedCallback,
+  maybeOnWorkerObserved?: WorkerObservedCallback,
 ): WorkerLaunchQueueController {
+  const hasConfig = "nudgeEnabled" in configOrOpencodeClient
+  const config = hasConfig ? configOrOpencodeClient : { nudgeEnabled: true }
+  const opencodeClient = hasConfig ? (opencodeClientOrLogger as OpencodeClient) : configOrOpencodeClient
+  const logger = hasConfig ? (loggerOrOnWorkerObserved as Logger) : (opencodeClientOrLogger as Logger)
+  const onWorkerObserved = hasConfig
+    ? maybeOnWorkerObserved
+    : (loggerOrOnWorkerObserved as WorkerObservedCallback | undefined)
   let draining = false
 
   function observeWorker(worker: WorkerSummary, observedLaunchId?: string): void {
@@ -245,6 +281,7 @@ export function createWorkerLaunchQueueController(
     record.workerId = worker.id
     record.startedAt ??= new Date().toISOString()
     record.finishedAt ??= new Date().toISOString()
+    recordBackgroundWorker(state, record.sessionId, worker.id)
   }
 
   async function drainWorkerLaunchQueue(): Promise<void> {
@@ -297,7 +334,7 @@ export function createWorkerLaunchQueueController(
       markWorkerLaunchCreated(record, created)
       recordLaunchFallbackWorker(launchId, record, created)
       await enrichCreatedWorker(launchId, created.id)
-      sendNudge(opencodeClient, [record.sessionId], buildCreatedNudgeMessage(launchId, created.id), logger)
+      sendLaunchNudge(record.sessionId, buildCreatedNudgeMessage(launchId, created.id))
     } catch (err: unknown) {
       await applyWorkerLaunchFailureRollback(launchId, record, err, rollbackBaseline)
       throw err
@@ -338,6 +375,7 @@ export function createWorkerLaunchQueueController(
       const worker = buildFallbackWorker(record, created)
       getOrCreateSession(state, record.sessionId, record.projectRoot)
       recordCreatedWorker(state, record.sessionId, worker)
+      recordBackgroundWorker(state, record.sessionId, worker.id)
       onWorkerObserved?.(worker)
     } catch (err: unknown) {
       logger.warn("Worker launch bookkeeping failed", { launchId, workerId: created.id, error: toErrorMessage(err) })
@@ -362,12 +400,12 @@ export function createWorkerLaunchQueueController(
     record.error = error
     record.finishedAt = new Date().toISOString()
     logger.warn("Worker launch failed", { launchId, error, rollbackOutcome: record.rollback?.outcome ?? null })
-    sendNudge(
-      opencodeClient,
-      [record.sessionId],
-      buildFailedNudgeMessageForOutcome(launchId, record.status, error),
-      logger,
-    )
+    sendLaunchNudge(record.sessionId, buildFailedNudgeMessageForOutcome(launchId, record.status, error))
+  }
+
+  function sendLaunchNudge(sessionId: string, message: string): void {
+    if (!config.nudgeEnabled) return
+    sendNudge(opencodeClient, [sessionId], message, logger)
   }
 
   async function applyWorkerLaunchFailureRollback(

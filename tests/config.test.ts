@@ -122,6 +122,8 @@ test("getConfig", async (t) => {
     assert.deepEqual(config, {
       enabled: true,
       debug: false,
+      nudgeEnabled: true,
+      workerStallThresholdMs: 120000,
       daemon: {
         host: "127.0.0.1",
         port: 6767,
@@ -130,11 +132,6 @@ test("getConfig", async (t) => {
       output: {
         maxInboxItems: 100,
         maxSummaryLength: 500,
-      },
-      notifications: {
-        enabled: true,
-        blockingOnly: false,
-        stalledThresholdMs: 120000,
       },
       agents: {},
       task: {
@@ -154,7 +151,7 @@ test("getConfig", async (t) => {
       join(configDir, "paseo.jsonc"),
       JSON.stringify({
         daemon: { port: 12345, connectionTimeoutMs: 6000 },
-        notifications: { blockingOnly: true },
+        nudgeEnabled: false,
       }),
       "utf-8",
     )
@@ -181,9 +178,8 @@ test("getConfig", async (t) => {
     assert.equal(config.daemon.connectionTimeoutMs, 6000)
     assert.equal(config.output.maxInboxItems, 25)
     assert.equal(config.output.maxSummaryLength, 500)
-    assert.equal(config.notifications.enabled, true)
-    assert.equal(config.notifications.blockingOnly, true)
-    assert.equal(config.notifications.stalledThresholdMs, 120000)
+    assert.equal(config.nudgeEnabled, false)
+    assert.equal(config.workerStallThresholdMs, 120000)
     assert.equal(config.agents.defaultAgent, "worker-a")
     assert.equal(config.agents.defaultModel, undefined)
     assert.equal(config.task.enabled, false)
@@ -208,14 +204,10 @@ test("getConfig", async (t) => {
     assert.ok(errors.some((error) => error.key === "task"))
   })
 
-  await t.test("accepts notifications.stalledThresholdMs overrides", async () => {
+  await t.test("accepts workerStallThresholdMs overrides", async () => {
     const configDir = join(tempDir, "config")
     mkdirSync(configDir, { recursive: true })
-    writeFileSync(
-      join(configDir, "paseo.jsonc"),
-      JSON.stringify({ notifications: { stalledThresholdMs: 600000 } }),
-      "utf-8",
-    )
+    writeFileSync(join(configDir, "paseo.jsonc"), JSON.stringify({ workerStallThresholdMs: 600000 }), "utf-8")
 
     process.env.OPENCODE_CONFIG_DIR = configDir
     const mod = await loadConfigModule("stalled-threshold-override")
@@ -223,17 +215,13 @@ test("getConfig", async (t) => {
     ctx.directory = tempDir
 
     const config = mod.getConfig(ctx as any)
-    assert.equal(config.notifications.stalledThresholdMs, 600000)
+    assert.equal(config.workerStallThresholdMs, 600000)
   })
 
   await t.test("warns and skips invalid stalled threshold", async () => {
     const configDir = join(tempDir, "config")
     mkdirSync(configDir, { recursive: true })
-    writeFileSync(
-      join(configDir, "paseo.jsonc"),
-      JSON.stringify({ notifications: { stalledThresholdMs: 5000 } }),
-      "utf-8",
-    )
+    writeFileSync(join(configDir, "paseo.jsonc"), JSON.stringify({ workerStallThresholdMs: 5000 }), "utf-8")
 
     process.env.OPENCODE_CONFIG_DIR = configDir
     const mod = await loadConfigModule("stalled-threshold-invalid")
@@ -242,11 +230,11 @@ test("getConfig", async (t) => {
 
     await withImmediateTimers(() => {
       const config = mod.getConfig(ctx as any)
-      assert.equal(config.notifications.stalledThresholdMs, 120000)
+      assert.equal(config.workerStallThresholdMs, 120000)
     })
 
     assert.equal(messages.length, 1)
-    assert.match(getMessage(messages, 0), /notifications\.stalledThresholdMs/i)
+    assert.match(getMessage(messages, 0), /workerStallThresholdMs/i)
   })
 
   await t.test("warns on malformed config files instead of silently dropping them", async () => {

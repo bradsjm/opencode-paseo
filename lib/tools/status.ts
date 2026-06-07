@@ -112,5 +112,5 @@ function countSuggestedTool(summary: BlockingSummary, event: InboxEvent): void {
 function countBlockingKind(summary: BlockingSummary, event: InboxEvent): void {
   const actionKind = event.metadata?.actionKind as string | undefined
   if (actionKind === "permission" || event.kind === "permission.requested") summary.permissionRequests++
-  if (actionKind === "worker-question" || event.kind === "worker.blocked") summary.blockedWorkers++
+  if (actionKind === "worker-question" || event.kind === "agent.attention") summary.blockedWorkers++
 }

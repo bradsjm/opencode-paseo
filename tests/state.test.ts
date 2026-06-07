@@ -58,7 +58,7 @@ test("resetPluginState", async (t) => {
     setConnectionStatus(state, "connected")
     state.inbox.set("evt-1", {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "test",
@@ -160,7 +160,7 @@ test("insertInboxEvent", async (t) => {
     const state = createPluginState()
     const event: InboxEvent = {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "Worker started",
@@ -177,7 +177,7 @@ test("insertInboxEvent", async (t) => {
     const state = createPluginState()
     const event: InboxEvent = {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "Worker started",
@@ -197,7 +197,7 @@ test("insertInboxEvent", async (t) => {
 
     const event: InboxEvent = {
       id: "evt-1",
-      kind: "worker.blocked",
+      kind: "agent.attention",
       resourceId: "w1",
       blocking: true,
       summary: "Worker blocked",
@@ -218,7 +218,7 @@ test("insertInboxEvent", async (t) => {
       state,
       {
         id: "evt-1",
-        kind: "worker.blocked",
+        kind: "agent.attention",
         resourceId: "w1",
         blocking: true,
         summary: "oldest",
@@ -231,7 +231,7 @@ test("insertInboxEvent", async (t) => {
       state,
       {
         id: "evt-2",
-        kind: "worker.started",
+        kind: "agent.status",
         resourceId: "w1",
         blocking: false,
         summary: "newest",
@@ -254,7 +254,7 @@ test("markEventRead", async (t) => {
     const state = createPluginState()
     const event: InboxEvent = {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "test",
@@ -284,7 +284,7 @@ test("markUnreadStallEventsRead", async (t) => {
     })
     insertInboxEvent(state, {
       id: "evt-other",
-      kind: "worker.finished",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "finished",
@@ -307,7 +307,7 @@ test("markAllRead", async (t) => {
     for (let i = 0; i < 5; i++) {
       insertInboxEvent(state, {
         id: `evt-${i}`,
-        kind: "worker.started",
+        kind: "agent.status",
         resourceId: `w${i}`,
         blocking: false,
         summary: "test",
@@ -427,7 +427,7 @@ test("recordCreatedWorker", async (t) => {
 
     const event: InboxEvent = {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "Worker started",
@@ -473,7 +473,7 @@ test("mapAgentToWorkerSummary", async (t) => {
     assert.equal(worker.pendingPermissions.length, 1)
   })
 
-  await t.test("derives blocked status from pending permissions", () => {
+  await t.test("preserves raw status while tracking pending permission attention", () => {
     const agent: AgentSummary = {
       id: "a2",
       provider: "codex",
@@ -488,10 +488,11 @@ test("mapAgentToWorkerSummary", async (t) => {
     }
 
     const worker = mapAgentToWorkerSummary(agent)
-    assert.equal(worker.status, "blocked")
+    assert.equal(worker.status, "running")
     assert.equal(worker.rawStatus, "running")
     assert.equal(worker.requiresAttention, true)
     assert.equal(worker.attentionReason, "permission")
+    assert.deepEqual(worker.pendingPermissionIds, ["p1"])
   })
 
   await t.test("handles missing optional fields", () => {
@@ -545,7 +546,7 @@ test("removeSession", async (t) => {
     // Add an unread event to the session
     const event: InboxEvent = {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "test",
@@ -693,7 +694,7 @@ test("removeWorkerFromState", async (t) => {
 
     insertInboxEvent(state, {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "worker event",
@@ -702,7 +703,7 @@ test("removeWorkerFromState", async (t) => {
     })
     insertInboxEvent(state, {
       id: "evt-2",
-      kind: "worker.blocked",
+      kind: "agent.attention",
       resourceId: "w1",
       blocking: true,
       summary: "permission needed",
@@ -711,7 +712,7 @@ test("removeWorkerFromState", async (t) => {
     })
     insertInboxEvent(state, {
       id: "evt-3",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w2",
       blocking: false,
       summary: "other worker event",
@@ -743,7 +744,7 @@ test("removeWorkerFromState", async (t) => {
     session.createdWorkerIds.add("ghost")
     session.unreadEvents.set("evt-ghost", {
       id: "evt-ghost",
-      kind: "worker.finished",
+      kind: "agent.status",
       resourceId: "ghost",
       blocking: false,
       summary: "ghost worker",

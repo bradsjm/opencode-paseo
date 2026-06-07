@@ -125,6 +125,8 @@ function createMockTransport(overrides: Partial<PaseoTransport> = {}): PaseoTran
 const TEST_CONFIG: PluginConfig = {
   enabled: true,
   debug: false,
+  nudgeEnabled: true,
+  workerStallThresholdMs: 120000,
   daemon: {
     host: "127.0.0.1",
     port: 6767,
@@ -133,11 +135,6 @@ const TEST_CONFIG: PluginConfig = {
   output: {
     maxInboxItems: 100,
     maxSummaryLength: 500,
-  },
-  notifications: {
-    enabled: true,
-    blockingOnly: false,
-    stalledThresholdMs: 120000,
   },
   agents: {},
   task: { enabled: false },
@@ -174,6 +171,7 @@ function seedWorker(state: ReturnType<typeof createPluginState>, id: string): Wo
     projectRoot: "/tmp",
     createdTerminalIds: new Set(),
     createdWorkerIds: new Set([id]),
+    backgroundWorkerIds: new Set([id]),
     unreadEvents: new Map(),
     pendingPermissions: new Map(),
     createdAt: Date.now(),
@@ -432,8 +430,8 @@ test("paseo_worker_wait", async (t) => {
       },
       waitForWorker: async (workerId) => {
         listener?.({
-          type: "worker.blocked",
-          payload: { workerId, summary: "needs permission" },
+          type: "agent_permission_request",
+          payload: { workerId, permissionId: "perm-1", request: { id: "perm-1", summary: "needs permission" } },
         } satisfies DaemonEvent)
         return {
           status: "timeout",
@@ -450,7 +448,7 @@ test("paseo_worker_wait", async (t) => {
     const output = JSON.parse((result as { output: string }).output)
 
     assert.equal(output.interruptedByNudge, true)
-    assert.equal(output.nudgeEvent.kind, "worker.blocked")
+    assert.equal(output.nudgeEvent.kind, "permission.requested")
     assert.equal(output.nudgeEvent.workerId, "w1")
     assert.equal(output.timedOut, false)
   })
@@ -532,6 +530,42 @@ test("paseo_worker_wait", async (t) => {
     assert.equal(output.nudgeEvent.workerId, "w1")
   })
 
+  await t.test("unread background status nudge wins over same-slice wait completion", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    seedWorker(state, "w2")
+    const client = createMockTransport({
+      waitForWorker: async (workerId) => {
+        insertInboxEvent(state, {
+          id: "evt-status",
+          kind: "agent.status",
+          resourceId: "w2",
+          blocking: false,
+          summary: "Worker w2 is idle",
+          read: false,
+          timestamp: Date.now(),
+          metadata: { status: "idle" },
+        })
+        return {
+          status: "idle",
+          workerId,
+          error: null,
+          lastMessage: "done",
+          finalSnapshot: null,
+        }
+      },
+    })
+
+    const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+    const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
+    const output = JSON.parse((result as { output: string }).output)
+
+    assert.equal(output.interruptedByNudge, true)
+    assert.equal(output.nudgeEvent.kind, "agent.status")
+    assert.equal(output.nudgeEvent.workerId, "w2")
+    assert.equal(output.results[0]?.workerId, "w1")
+  })
+
   await t.test("early exit on owned worker nudge for different owned worker", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
@@ -547,12 +581,11 @@ test("paseo_worker_wait", async (t) => {
       waitForWorker: async (workerId) => {
         if (workerId === "w1") {
           listener?.({
-            type: "permission.requested",
+            type: "agent_permission_request",
             payload: {
               workerId: "w2",
               permissionId: "perm-1",
               request: {},
-              summary: "approval needed",
             },
           } satisfies DaemonEvent)
         }
@@ -607,7 +640,7 @@ test("paseo_worker_wait", async (t) => {
 test("paseo_worker_cancel", async (t) => {
   const logger = new Logger(false)
 
-  await t.test("default cancel sets status to canceled and keeps worker in state", async () => {
+  await t.test("default cancel closes local status and keeps worker in state", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
     let cancelCalled = false
@@ -622,7 +655,8 @@ test("paseo_worker_cancel", async (t) => {
 
     assert.ok(cancelCalled)
     assert.ok(state.workers.has("w1"))
-    assert.equal(state.workers.get("w1")!.status, "canceled")
+    assert.equal(state.workers.get("w1")!.status, "closed")
+    assert.equal(state.workers.get("w1")!.rawStatus, "canceled")
     const output = JSON.parse((result as { output: string }).output)
     assert.equal(output.action, "canceled")
   })
@@ -655,7 +689,7 @@ test("paseo_worker_cancel", async (t) => {
     seedWorker(state, "w1")
     insertInboxEvent(state, {
       id: "evt-kill",
-      kind: "worker.blocked",
+      kind: "agent.attention",
       resourceId: "w1",
       blocking: true,
       summary: "needs approval",
@@ -738,7 +772,7 @@ test("paseo_worker_archive", async (t) => {
     seedWorker(state, "w1")
     insertInboxEvent(state, {
       id: "evt-1",
-      kind: "worker.blocked",
+      kind: "agent.attention",
       resourceId: "w1",
       blocking: true,
       summary: "needs approval",
@@ -766,7 +800,7 @@ test("paseo_worker_archive", async (t) => {
     seedWorker(state, "w1")
     insertInboxEvent(state, {
       id: "evt-1",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w1",
       blocking: false,
       summary: "started",
@@ -870,12 +904,12 @@ test("paseo_worker_list", async (t) => {
   await t.test("successful refresh prunes workers missing from daemon results", async () => {
     const state = createPluginState()
     const stale = seedWorker(state, "w-stale")
-    stale.status = "finished"
+    stale.status = "closed"
     seedWorker(state, "w-live")
     state.sessions.get("sess-1")?.createdWorkerIds.add("w-stale")
     insertInboxEvent(state, {
       id: "evt-stale",
-      kind: "worker.blocked",
+      kind: "agent.attention",
       resourceId: "w-stale",
       blocking: true,
       summary: "stale worker event",
@@ -947,7 +981,7 @@ test("paseo_worker_list", async (t) => {
     state.workers.get("w-live")!.unreadEventCount = 99
     state.inbox.set("evt-1", {
       id: "evt-1",
-      kind: "worker.finished",
+      kind: "agent.status",
       resourceId: "w-live",
       blocking: false,
       summary: "done",
@@ -1974,7 +2008,7 @@ test("paseo_worker_inspect", async (t) => {
 
     const output = JSON.parse((result as { output: string }).output)
     assert.equal(output.worker.title, "Fresh Title")
-    assert.equal(output.worker.status, "blocked")
+    assert.equal(output.worker.status, "initializing")
     assert.equal(output.worker.rawStatus, "initializing")
     assert.equal(output.worker.source, "daemon")
     assert.equal(output.attention.requiresAttention, true)

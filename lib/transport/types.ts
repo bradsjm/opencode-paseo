@@ -89,13 +89,7 @@ export interface WorkerWaitResult {
 }
 
 export interface WorkerWaitNudgeEvent {
-  kind:
-    | "worker.stalled"
-    | "worker.finished"
-    | "worker.failed"
-    | "worker.blocked"
-    | "chat.mentioned"
-    | "permission.requested"
+  kind: "worker.stalled" | "agent.status" | "agent.attention" | "chat.mentioned" | "permission.requested"
   workerId: string
   summary: string
 }
@@ -554,6 +548,18 @@ export interface WorkerEventPayload extends Record<string, unknown> {
   summary?: string
 }
 
+export type AgentUpdatePayload =
+  | {
+      kind: "upsert"
+      agentId: string
+      agent: AgentSummary
+      project?: Record<string, unknown> | null
+    }
+  | {
+      kind: "remove"
+      agentId: string
+    }
+
 export interface WorkerActivityPayload extends Record<string, unknown> {
   workerId: string
   timestamp?: string
@@ -588,9 +594,14 @@ export interface DaemonErrorEvent {
   payload: { message: string }
 }
 
-export interface WorkerStartedEvent {
-  type: "worker.started"
-  payload: WorkerEventPayload
+export interface AgentUpdateEvent {
+  type: "agent_update"
+  payload: AgentUpdatePayload
+}
+
+export interface AgentDeletedEvent {
+  type: "agent_deleted"
+  payload: { agentId: string }
 }
 
 export interface WorkerStalledEvent {
@@ -599,32 +610,17 @@ export interface WorkerStalledEvent {
 }
 
 export interface WorkerActivityEvent {
-  type: "worker.activity"
+  type: "agent_stream"
   payload: WorkerActivityPayload
 }
 
-export interface WorkerFinishedEvent {
-  type: "worker.finished"
-  payload: WorkerEventPayload
-}
-
-export interface WorkerFailedEvent {
-  type: "worker.failed"
-  payload: WorkerEventPayload
-}
-
-export interface WorkerBlockedEvent {
-  type: "worker.blocked"
-  payload: WorkerEventPayload
-}
-
 export interface PermissionRequestedEvent {
-  type: "permission.requested"
+  type: "agent_permission_request"
   payload: PermissionRequestedPayload
 }
 
 export interface PermissionResolvedEvent {
-  type: "permission.resolved"
+  type: "agent_permission_resolved"
   payload: PermissionResolvedPayload
 }
 
@@ -633,12 +629,10 @@ export type DaemonEvent =
   | DaemonDisconnectedEvent
   | DaemonErrorEvent
   | TerminalExitedEvent
-  | WorkerStartedEvent
+  | AgentUpdateEvent
+  | AgentDeletedEvent
   | WorkerStalledEvent
   | WorkerActivityEvent
-  | WorkerFinishedEvent
-  | WorkerFailedEvent
-  | WorkerBlockedEvent
   | PermissionRequestedEvent
   | PermissionResolvedEvent
 

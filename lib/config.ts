@@ -14,9 +14,8 @@ const connectionTimeoutSchema = z.number().int().min(500).max(30000)
 const passwordSchema = z.string()
 const maxInboxItemsSchema = z.number().int().min(1).max(500)
 const maxSummaryLengthSchema = z.number().int().min(50).max(5000)
-const notificationsEnabledSchema = z.boolean()
-const notificationsBlockingOnlySchema = z.boolean()
-const notificationsStalledThresholdSchema = z.number().int().min(10000).max(3600000)
+const nudgeEnabledSchema = z.boolean()
+const workerStallThresholdSchema = z.number().int().min(10000).max(3600000)
 const defaultAgentSchema = z.string()
 const defaultModelSchema = z.string()
 const taskEnabledSchema = z.boolean()
@@ -33,12 +32,6 @@ const outputShape = {
   maxSummaryLength: maxSummaryLengthSchema.default(500),
 } as const
 
-const notificationsShape = {
-  enabled: notificationsEnabledSchema.default(true),
-  blockingOnly: notificationsBlockingOnlySchema.default(false),
-  stalledThresholdMs: notificationsStalledThresholdSchema.default(120000),
-} as const
-
 const agentsShape = {
   defaultAgent: defaultAgentSchema.optional(),
   defaultModel: defaultModelSchema.optional(),
@@ -50,7 +43,6 @@ const taskShape = {
 
 const daemonRuntimeSchema = z.object(daemonShape).strict()
 const outputRuntimeSchema = z.object(outputShape).strict()
-const notificationsRuntimeSchema = z.object(notificationsShape).strict()
 const agentsRuntimeSchema = z.object(agentsShape).strict()
 const taskRuntimeSchema = z.object(taskShape).strict()
 
@@ -67,14 +59,6 @@ const outputLayerSchema = z
   .object({
     maxInboxItems: maxInboxItemsSchema.optional(),
     maxSummaryLength: maxSummaryLengthSchema.optional(),
-  })
-  .strict()
-
-const notificationsLayerSchema = z
-  .object({
-    enabled: notificationsEnabledSchema.optional(),
-    blockingOnly: notificationsBlockingOnlySchema.optional(),
-    stalledThresholdMs: notificationsStalledThresholdSchema.optional(),
   })
   .strict()
 
@@ -95,9 +79,10 @@ const configRuntimeSchema = z
   .object({
     enabled: enabledSchema.default(true),
     debug: debugSchema.default(false),
+    nudgeEnabled: nudgeEnabledSchema.default(true),
+    workerStallThresholdMs: workerStallThresholdSchema.default(120000),
     daemon: z.preprocess((value) => value ?? {}, daemonRuntimeSchema),
     output: z.preprocess((value) => value ?? {}, outputRuntimeSchema),
-    notifications: z.preprocess((value) => value ?? {}, notificationsRuntimeSchema),
     agents: z.preprocess((value) => value ?? {}, agentsRuntimeSchema),
     task: z.preprocess((value) => value ?? {}, taskRuntimeSchema),
   })
@@ -108,9 +93,10 @@ const configLayerSchema = z
     $schema: z.string().optional(),
     enabled: enabledSchema.optional(),
     debug: debugSchema.optional(),
+    nudgeEnabled: nudgeEnabledSchema.optional(),
+    workerStallThresholdMs: workerStallThresholdSchema.optional(),
     daemon: daemonLayerSchema.optional(),
     output: outputLayerSchema.optional(),
-    notifications: notificationsLayerSchema.optional(),
     agents: agentsLayerSchema.optional(),
     task: taskLayerSchema.optional(),
   })
@@ -118,7 +104,6 @@ const configLayerSchema = z
 
 export type DaemonConfig = z.infer<typeof daemonRuntimeSchema>
 export type OutputConfig = z.infer<typeof outputRuntimeSchema>
-export type NotificationsConfig = z.infer<typeof notificationsRuntimeSchema>
 export type AgentsConfig = z.infer<typeof agentsRuntimeSchema>
 export type TaskConfig = z.infer<typeof taskRuntimeSchema>
 export type PluginConfig = z.infer<typeof configRuntimeSchema>
@@ -231,7 +216,6 @@ function mergeLayer(config: PluginConfig, data: ConfigLayer): PluginConfig {
     ...configData,
     daemon: { ...config.daemon, ...configData.daemon },
     output: { ...config.output, ...configData.output },
-    notifications: { ...config.notifications, ...configData.notifications },
     agents: { ...config.agents, ...configData.agents },
     task: { ...config.task, ...configData.task },
   })

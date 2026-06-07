@@ -106,6 +106,7 @@ test("paseo_worktree_archive", async (t) => {
       projectRoot: "/tmp",
       createdTerminalIds: new Set(),
       createdWorkerIds: new Set(["w-removed", "w-keep"]),
+      backgroundWorkerIds: new Set(),
       unreadEvents: new Map(),
       pendingPermissions: new Map(),
       createdAt: Date.now(),
@@ -113,7 +114,7 @@ test("paseo_worktree_archive", async (t) => {
     })
     insertInboxEvent(state, {
       id: "evt-removed",
-      kind: "worker.blocked",
+      kind: "agent.attention",
       resourceId: "w-removed",
       blocking: true,
       summary: "removed worker event",
@@ -122,7 +123,7 @@ test("paseo_worktree_archive", async (t) => {
     })
     insertInboxEvent(state, {
       id: "evt-keep",
-      kind: "worker.started",
+      kind: "agent.status",
       resourceId: "w-keep",
       blocking: false,
       summary: "keep worker event",

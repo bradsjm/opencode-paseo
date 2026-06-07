@@ -3,7 +3,12 @@ import assert from "node:assert/strict"
 import { createChatWatcher } from "../lib/chat/watch.js"
 import { Logger } from "../lib/logger.js"
 import type { OpencodeClient } from "../lib/profile.js"
-import { createPluginState, getOrCreateSession, recordCreatedWorker } from "../lib/state/state.js"
+import {
+  createPluginState,
+  getOrCreateSession,
+  recordBackgroundWorker,
+  recordCreatedWorker,
+} from "../lib/state/state.js"
 import type { PluginConfig } from "../lib/config.js"
 import type { PaseoTransport, ChatMessage } from "../lib/transport/types.js"
 import type { WorkerSummary } from "../lib/state/types.js"
@@ -14,6 +19,8 @@ type MockPromptInput = { body: { parts: MockPromptPart[] } }
 const TEST_CONFIG: PluginConfig = {
   enabled: true,
   debug: false,
+  nudgeEnabled: true,
+  workerStallThresholdMs: 120000,
   daemon: {
     host: "127.0.0.1",
     port: 6767,
@@ -22,11 +29,6 @@ const TEST_CONFIG: PluginConfig = {
   output: {
     maxInboxItems: 100,
     maxSummaryLength: 500,
-  },
-  notifications: {
-    enabled: true,
-    blockingOnly: false,
-    stalledThresholdMs: 120000,
   },
   agents: {},
   task: { enabled: false },
@@ -77,6 +79,7 @@ function attachOwnedWorker(
   getOrCreateSession(state, sessionId, "/tmp")
   const worker = buildWorker(workerId, chatRoom)
   recordCreatedWorker(state, sessionId, worker)
+  recordBackgroundWorker(state, sessionId, worker.id)
   return worker
 }
 

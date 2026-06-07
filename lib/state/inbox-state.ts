@@ -1,11 +1,6 @@
 import type { InboxEvent, InboxEventKind, PluginState, WorkerStatus } from "./types.js"
 
-const DEDUPED_WORKER_EVENT_KINDS = new Set<InboxEventKind>([
-  "worker.started",
-  "worker.stalled",
-  "worker.finished",
-  "worker.failed",
-])
+const DEDUPED_WORKER_EVENT_KINDS = new Set<InboxEventKind>(["worker.stalled", "agent.status", "agent.attention"])
 
 function syncWorkerUnreadEventCount(state: PluginState, resourceId: string): void {
   const worker = state.workers.get(resourceId)
@@ -32,7 +27,10 @@ function shouldSuppressLifecycleDuplicate(state: PluginState, event: InboxEvent)
   }
 
   const latest = getLatestUnreadEventForResource(state, event.resourceId)
-  return latest?.kind === event.kind
+  if (latest?.kind !== event.kind) return false
+  if (event.kind === "agent.status") return latest.metadata?.status === event.metadata?.status
+  if (event.kind === "agent.attention") return latest.metadata?.attentionReason === event.metadata?.attentionReason
+  return true
 }
 
 function removeEventReferencesFromSessions(state: PluginState, eventId: string): void {
@@ -157,6 +155,16 @@ export function findSessionsForResource(state: PluginState, resourceId: string):
   return result
 }
 
+export function findBackgroundSessionsForResource(state: PluginState, resourceId: string): string[] {
+  const result: string[] = []
+  for (const session of state.sessions.values()) {
+    if (session.backgroundWorkerIds.has(resourceId)) {
+      result.push(session.opencodeSessionId)
+    }
+  }
+  return result
+}
+
 export function buildBlockingMetadata(
   kind: InboxEventKind,
   resourceId: string,
@@ -171,23 +179,16 @@ export function buildBlockingMetadata(
       suggestedTool: "paseo_permission_respond",
     }
   }
-  if (kind === "worker.blocked") {
-    return {
-      ...extra,
-      actionKind: "worker-question",
-      workerId: resourceId,
-      suggestedTool: "paseo_worker_send",
-    }
-  }
   return extra ?? {}
 }
 
-export function getBlockingAction(w: { status: WorkerStatus; pendingPermissionIds: string[] }): string | null {
-  if (w.status === "blocked") {
-    if (w.pendingPermissionIds.length > 0) {
-      return "paseo_permission_respond"
-    }
-    return "paseo_worker_send"
+export function getBlockingAction(w: {
+  status: WorkerStatus
+  pendingPermissionIds: string[]
+  requiresAttention?: boolean
+}): string | null {
+  if (w.pendingPermissionIds.length > 0) {
+    return "paseo_permission_respond"
   }
   return null
 }

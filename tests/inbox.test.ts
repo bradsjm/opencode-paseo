@@ -7,7 +7,7 @@ function seedInbox(state: ReturnType<typeof createPluginState>, count: number): 
   for (let i = 0; i < count; i++) {
     insertInboxEvent(state, {
       id: `evt-${i}`,
-      kind: i % 3 === 0 ? "worker.blocked" : "worker.started",
+      kind: i % 3 === 0 ? "agent.attention" : "agent.status",
       resourceId: `w${i % 5}`,
       blocking: i % 3 === 0,
       summary: `Event ${i}`,
@@ -38,8 +38,8 @@ test("readInbox", async (t) => {
   await t.test("filters by kind", () => {
     const state = createPluginState()
     seedInbox(state, 10)
-    const result = readInbox(state, { kind: "worker.blocked" })
-    assert.ok(result.events.every((e) => e.kind === "worker.blocked"))
+    const result = readInbox(state, { kind: "agent.attention" })
+    assert.ok(result.events.every((e) => e.kind === "agent.attention"))
   })
 
   await t.test("filters by resourceId", () => {

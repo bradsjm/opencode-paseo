@@ -147,22 +147,21 @@ Example stub:
 }
 ```
 
-| Key                                | Type      | Default       | Notes                                                              |
-| ---------------------------------- | --------- | ------------- | ------------------------------------------------------------------ |
-| `enabled`                          | `boolean` | `true`        | Enables or disables the plugin entirely.                           |
-| `debug`                            | `boolean` | `false`       | Enables plugin debug logging.                                      |
-| `daemon.host`                      | `string`  | `"127.0.0.1"` | Localhost-only daemon host: `127.0.0.1`, `localhost`, or `::1`.    |
-| `daemon.port`                      | `number`  | `6767`        | Daemon port.                                                       |
-| `daemon.password`                  | `string`  | unset         | Optional daemon authentication password.                           |
-| `daemon.connectionTimeoutMs`       | `number`  | `3000`        | WebSocket connection timeout.                                      |
-| `output.maxInboxItems`             | `number`  | `100`         | Maximum inbox items retained in memory.                            |
-| `output.maxSummaryLength`          | `number`  | `500`         | Maximum summary length for inbox text.                             |
-| `notifications.enabled`            | `boolean` | `true`        | Enables OpenCode nudges from plugin events.                        |
-| `notifications.blockingOnly`       | `boolean` | `false`       | Restricts nudges to blocking events only.                          |
-| `notifications.stalledThresholdMs` | `number`  | `120000`      | Quiet-period threshold before emitting synthetic `worker.stalled`. |
-| `agents.defaultAgent`              | `string`  | unset         | Optional default agent name.                                       |
-| `agents.defaultModel`              | `string`  | unset         | Optional default model name.                                       |
-| `task.enabled`                     | `boolean` | `false`       | Registers a Paseo-backed `task` override for OpenCode subagents.   |
+| Key                          | Type      | Default       | Notes                                                              |
+| ---------------------------- | --------- | ------------- | ------------------------------------------------------------------ |
+| `enabled`                    | `boolean` | `true`        | Enables or disables the plugin entirely.                           |
+| `debug`                      | `boolean` | `false`       | Enables plugin debug logging.                                      |
+| `daemon.host`                | `string`  | `"127.0.0.1"` | Localhost-only daemon host: `127.0.0.1`, `localhost`, or `::1`.    |
+| `daemon.port`                | `number`  | `6767`        | Daemon port.                                                       |
+| `daemon.password`            | `string`  | unset         | Optional daemon authentication password.                           |
+| `daemon.connectionTimeoutMs` | `number`  | `3000`        | WebSocket connection timeout.                                      |
+| `nudgeEnabled`               | `boolean` | `true`        | Enables session nudges for actionable owned background workers.    |
+| `workerStallThresholdMs`     | `number`  | `120000`      | Quiet-period threshold before emitting synthetic `worker.stalled`. |
+| `output.maxInboxItems`       | `number`  | `100`         | Maximum inbox items retained in memory.                            |
+| `output.maxSummaryLength`    | `number`  | `500`         | Maximum summary length for inbox text.                             |
+| `agents.defaultAgent`        | `string`  | unset         | Optional default agent name.                                       |
+| `agents.defaultModel`        | `string`  | unset         | Optional default model name.                                       |
+| `task.enabled`               | `boolean` | `false`       | Registers a Paseo-backed `task` override for OpenCode subagents.   |
 
 Malformed config files or invalid values trigger a warning toast and that config layer is ignored.
 

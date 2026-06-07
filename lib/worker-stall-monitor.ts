@@ -2,7 +2,7 @@ import type { PluginConfig } from "./config.js"
 import type { Logger } from "./logger.js"
 import { markUnreadStallEventsRead } from "./state/state.js"
 import type { PluginState, WorkerSummary } from "./state/types.js"
-import type { DaemonEvent, WorkerEventPayload } from "./transport/types.js"
+import type { DaemonEvent, AgentSummary } from "./transport/types.js"
 
 interface WorkerMonitorEntry {
   lastActivityAtMs: number
@@ -36,17 +36,12 @@ function pickSeedTimestamp(worker: WorkerSummary, nowMs: number): { ms: number; 
 
 function isWorkerEligible(worker: WorkerSummary | undefined): worker is WorkerSummary {
   return Boolean(
-    worker &&
-    worker.status === "running" &&
-    worker.rawStatus !== "idle" &&
-    worker.pendingPermissionIds.length === 0 &&
-    !worker.requiresAttention,
+    worker && worker.status === "running" && worker.pendingPermissionIds.length === 0 && !worker.requiresAttention,
   )
 }
 
-function getSnapshotUpdatedAt(payload: WorkerEventPayload): string | null {
-  const agent = payload.agent as Record<string, unknown> | undefined
-  return typeof agent?.updatedAt === "string" ? agent.updatedAt : null
+function getSnapshotUpdatedAt(agent: AgentSummary): string | null {
+  return agent.updatedAt ?? null
 }
 
 function buildStalledSummary(workerId: string, payload: Record<string, unknown>): string {
@@ -61,7 +56,7 @@ export function createWorkerStallMonitor(
   emitEvent: (event: DaemonEvent) => void,
 ): WorkerStallMonitor {
   const entries = new Map<string, WorkerMonitorEntry>()
-  const sweepIntervalMs = Math.max(10_000, Math.min(30_000, config.notifications.stalledThresholdMs / 2))
+  const sweepIntervalMs = Math.max(10_000, Math.min(30_000, config.workerStallThresholdMs / 2))
   let intervalHandle: ReturnType<typeof setInterval> | null = null
 
   const clearStall = (workerId: string, reason: string): void => {
@@ -108,14 +103,14 @@ export function createWorkerStallMonitor(
     clearStall(workerId, reason)
   }
 
-  const observeSnapshotUpdate = (payload: WorkerEventPayload, reason: string): void => {
-    const updatedAt = getSnapshotUpdatedAt(payload)
+  const observeSnapshotUpdate = (agent: AgentSummary, reason: string): void => {
+    const updatedAt = getSnapshotUpdatedAt(agent)
     if (!updatedAt) return
 
-    const entry = ensureEntry(payload.workerId)
+    const entry = ensureEntry(agent.id)
     if (!entry.lastSeenUpdatedAt || updatedAt > entry.lastSeenUpdatedAt) {
       entry.lastSeenUpdatedAt = updatedAt
-      recordActivity(payload.workerId, updatedAt, reason)
+      recordActivity(agent.id, updatedAt, reason)
     }
   }
 
@@ -141,7 +136,7 @@ export function createWorkerStallMonitor(
       const entry = ensureEntry(workerId, worker)
       if (entry.stallActive) continue
 
-      if (nowMs - entry.lastActivityAtMs < config.notifications.stalledThresholdMs) {
+      if (nowMs - entry.lastActivityAtMs < config.workerStallThresholdMs) {
         continue
       }
 
@@ -151,7 +146,7 @@ export function createWorkerStallMonitor(
         type: "worker.stalled",
         payload: {
           workerId,
-          thresholdMs: config.notifications.stalledThresholdMs,
+          thresholdMs: config.workerStallThresholdMs,
           lastActivityAt: entry.lastActivityAtIso,
           detectedAt,
           detector: "plugin-heuristic",
@@ -163,44 +158,39 @@ export function createWorkerStallMonitor(
     }
   }
 
-  function observeActivityEvent(payload: Extract<DaemonEvent, { type: "worker.activity" }>["payload"]): void {
+  function observeActivityEvent(payload: Extract<DaemonEvent, { type: "agent_stream" }>["payload"]): void {
     recordActivity(payload.workerId, payload.timestamp, "activity")
   }
 
-  function observeWorkerStartedEvent(payload: Extract<DaemonEvent, { type: "worker.started" }>["payload"]): void {
-    observeSnapshotUpdate(payload, "snapshot-update")
-    clearIfIneligible(payload.workerId, "started-state-change")
+  function observeAgentUpdateEvent(payload: Extract<DaemonEvent, { type: "agent_update" }>["payload"]): void {
+    if (payload.kind === "remove") {
+      clearStall(payload.agentId, "agent-update-remove")
+      entries.delete(payload.agentId)
+      return
+    }
+    observeSnapshotUpdate(payload.agent, "snapshot-update")
+    clearIfIneligible(payload.agentId, "agent-status-change")
   }
 
-  function observeWorkerBlockedEvent(payload: Extract<DaemonEvent, { type: "worker.blocked" }>["payload"]): void {
-    observeSnapshotUpdate(payload, "blocked-update")
-    clearIfIneligible(payload.workerId, "blocked")
-  }
-
-  function observeTerminalWorkerEvent(
-    payload: Extract<DaemonEvent, { type: "worker.finished" | "worker.failed" }>["payload"],
-    reason: "worker.finished" | "worker.failed",
+  function observePermissionEvent(
+    workerId: string,
+    reason: "agent_permission_request" | "agent_permission_resolved",
   ): void {
-    observeSnapshotUpdate(payload, "terminal-update")
-    clearIfIneligible(payload.workerId, reason)
-  }
-
-  function observePermissionEvent(workerId: string, reason: "permission.requested" | "permission.resolved"): void {
     clearIfIneligible(workerId, reason)
   }
 
   function observeWorkerMonitorEvent(event: DaemonEvent): boolean {
-    if (event.type === "worker.activity") observeActivityEvent(event.payload)
-    else if (event.type === "worker.started") observeWorkerStartedEvent(event.payload)
-    else if (event.type === "worker.blocked") observeWorkerBlockedEvent(event.payload)
-    else if (event.type === "worker.finished" || event.type === "worker.failed")
-      observeTerminalWorkerEvent(event.payload, event.type)
-    else return false
+    if (event.type === "agent_stream") observeActivityEvent(event.payload)
+    else if (event.type === "agent_update") observeAgentUpdateEvent(event.payload)
+    else if (event.type === "agent_deleted") {
+      clearStall(event.payload.agentId, "agent-deleted")
+      entries.delete(event.payload.agentId)
+    } else return false
     return true
   }
 
   function observePermissionMonitorEvent(event: DaemonEvent): boolean {
-    if (event.type !== "permission.requested" && event.type !== "permission.resolved") return false
+    if (event.type !== "agent_permission_request" && event.type !== "agent_permission_resolved") return false
     observePermissionEvent(event.payload.workerId, event.type)
     return true
   }

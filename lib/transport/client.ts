@@ -375,8 +375,8 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerm
 
     case "agent_deleted":
       return {
-        type: "worker.finished",
-        payload: { workerId: event.agentId },
+        type: "agent_deleted",
+        payload: { agentId: event.agentId },
       }
 
     case "terminal_stream_exit":
@@ -405,40 +405,28 @@ export function translateUpstreamEvent(event: UpstreamDaemonEvent | UpstreamTerm
 function translateAgentUpdateEvent(event: Extract<UpstreamDaemonEvent, { type: "agent_update" }>): DaemonEvent | null {
   const payload = event.payload as Record<string, unknown>
   if ((payload.kind as string | undefined) === "remove") {
-    return { type: "worker.finished", payload: { ...payload, workerId: event.agentId } }
+    return { type: "agent_update", payload: { kind: "remove", agentId: event.agentId } }
   }
 
   const agent = payload.agent as Record<string, unknown> | undefined
   if (!agent) return null
-  return translateAgentStatusPayload(payload, agent)
-}
-
-function translateAgentStatusPayload(payload: Record<string, unknown>, agent: Record<string, unknown>): DaemonEvent {
-  const workerId = agent.id as string
-  if (agentRequiresPermissionAttention(agent)) {
-    return {
-      type: "worker.blocked",
-      payload: { ...payload, workerId, summary: agent.attentionReason as string | undefined },
-    }
+  const mappedAgent = mapAgentSnapshot(agent)
+  return {
+    type: "agent_update",
+    payload: {
+      kind: "upsert",
+      agentId: mappedAgent.id,
+      agent: mappedAgent,
+      ...("project" in payload ? { project: asRecord(payload.project) } : {}),
+    },
   }
-  if (agent.status === "error") return { type: "worker.failed", payload: { ...payload, workerId } }
-  if (agent.status === "closed") return { type: "worker.finished", payload: { ...payload, workerId } }
-  return { type: "worker.started", payload: { ...payload, workerId } }
-}
-
-function agentRequiresPermissionAttention(agent: Record<string, unknown>): boolean {
-  return Boolean(
-    agent.requiresAttention &&
-    (agent.attentionReason === "permission" ||
-      (Array.isArray(agent.pendingPermissions) && agent.pendingPermissions.length > 0)),
-  )
 }
 
 function translateAgentStreamEvent(event: Extract<UpstreamDaemonEvent, { type: "agent_stream" }>): DaemonEvent {
   const streamEvent = asRecord(event.event)
   const summary = firstString(streamEvent)
   return {
-    type: "worker.activity",
+    type: "agent_stream",
     payload: {
       workerId: event.agentId,
       ...(typeof event.timestamp === "string" ? { timestamp: event.timestamp } : {}),
@@ -461,7 +449,7 @@ function translatePermissionRequestEvent(
 ): DaemonEvent {
   const request = asRecord(event.request) ?? {}
   return {
-    type: "permission.requested",
+    type: "agent_permission_request",
     payload: {
       workerId: event.agentId,
       ...(typeof request.id === "string" ? { permissionId: request.id } : {}),
@@ -474,7 +462,7 @@ function translatePermissionResolvedEvent(
   event: Extract<UpstreamDaemonEvent, { type: "agent_permission_resolved" }>,
 ): DaemonEvent {
   return {
-    type: "permission.resolved",
+    type: "agent_permission_resolved",
     payload: {
       workerId: event.agentId,
       permissionId: event.requestId,

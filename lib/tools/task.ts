@@ -8,10 +8,12 @@ import {
   findTaskRunByWorkerId,
   getOrCreateSession,
   getTaskRun,
+  recordBackgroundWorker,
   recordCreatedWorker,
   recordTaskRun,
   registerEphemeralWorkerRun,
   removeEphemeralWorkerRun,
+  unrecordBackgroundWorker,
 } from "../state/state.js"
 import { mergePaseoParentAgentLabel } from "../parent-agent-label.js"
 import { TASK_COMPLETION_INJECTED_LABEL, TASK_DEFERRED_LABEL, getTaskLabelInfo, taskRunLabels } from "../task-labels.js"
@@ -196,6 +198,7 @@ async function prepareTaskResume(
   taskRun.background = runInBackground
   taskRun.completionInjected = false
   taskRun.labels = labels
+  setTaskBackgroundOwnership(state, taskRun, runInBackground)
   return snapshot
 }
 
@@ -218,6 +221,7 @@ async function rollbackTaskResumeMarkers(
   taskRun.background = snapshot.background
   taskRun.completionInjected = snapshot.completionInjected
   taskRun.labels = snapshot.labels
+  setTaskBackgroundOwnership(state, taskRun, snapshot.background)
 }
 
 async function resolveTaskProfile(
@@ -315,6 +319,8 @@ async function launchNewTask(
     labels,
     createdAt: Date.now(),
   })
+  const taskRun = getTaskRun(state, taskSessionId)
+  if (taskRun) setTaskBackgroundOwnership(state, taskRun, args.background === true)
   registerEphemeralWorkerRun(state, taskSessionId, createdWorker.id, { background: args.background === true })
   logger.info("Tool: task launched via Paseo", { taskSessionId, workerId: createdWorker.id })
 
@@ -337,7 +343,7 @@ function workerSummaryFromCreated(createdWorker: CreatedWorker, profile: Profile
     id: createdWorker.id,
     title: createdWorker.title ?? createdWorker.model ?? createdWorker.id,
     agent: createdWorker.provider,
-    status: "running",
+    status: createdWorker.status === "initializing" ? "initializing" : "running",
     rawStatus: createdWorker.status,
     cwd: createdWorker.cwd,
     provider: createdWorker.provider,
@@ -502,6 +508,17 @@ async function markTaskWorkerDeferred(
   }
   taskRun.background = true
   taskRun.labels = labels
+  setTaskBackgroundOwnership(state, taskRun, true)
+}
+
+function setTaskBackgroundOwnership(
+  state: PluginState,
+  taskRun: { taskSessionId: string; parentSessionId: string; workerId: string },
+  background: boolean,
+): void {
+  const update = background ? recordBackgroundWorker : unrecordBackgroundWorker
+  update(state, taskRun.taskSessionId, taskRun.workerId)
+  update(state, taskRun.parentSessionId, taskRun.workerId)
 }
 
 function setupAbort(client: PaseoTransport, logger: Logger, context: ToolContext, workerId: string) {
@@ -670,6 +687,7 @@ async function persistTaskCompletionMarker(
   taskRun.background = false
   taskRun.completionInjected = true
   taskRun.labels = labels
+  setTaskBackgroundOwnership(state, taskRun, false)
 }
 
 async function injectTaskResult(

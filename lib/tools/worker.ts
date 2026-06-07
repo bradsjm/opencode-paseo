@@ -2,7 +2,6 @@ import { tool, type ToolDefinition, type ToolContext } from "@opencode-ai/plugin
 import type { PluginState, WorkerStatus, WorkerSummary } from "../state/types.js"
 import type { PluginConfig } from "../config.js"
 import { appendChatRoomCoordinationPrompt, normalizeChatRoom } from "../chat/worker-room.js"
-import { shouldNudge } from "../notifier.js"
 import type { WorkerLaunchQueueController } from "../worker-launch/queue.js"
 import type {
   DaemonEvent,
@@ -338,7 +337,7 @@ interface WorkerInspectResponse {
 }
 
 function isTerminalWorkerStatus(status: string | undefined): boolean {
-  return status === "finished" || status === "failed" || status === "canceled"
+  return status === "idle" || status === "error" || status === "closed"
 }
 
 function deriveActivityState(
@@ -348,6 +347,7 @@ function deriveActivityState(
 ): InspectActivityState {
   if (workerIsBlocked(worker)) return "blocked"
   if (isTerminalWorkerStatus(worker.status)) return "finished"
+  if (worker.status === "initializing") return "quiet"
   if (worker.status === "running") return runningActivityState(activity, activityFetched)
   return hasProjectedActivity(activity) ? "active" : "unknown"
 }
@@ -355,7 +355,7 @@ function deriveActivityState(
 function workerIsBlocked(
   worker: Pick<WorkerSummary, "status" | "pendingPermissionIds" | "requiresAttention">,
 ): boolean {
-  return worker.requiresAttention || worker.pendingPermissionIds.length > 0 || worker.status === "blocked"
+  return worker.requiresAttention || worker.pendingPermissionIds.length > 0
 }
 
 function hasProjectedActivity(activity: WorkerActivitySummary | null): boolean {
@@ -368,10 +368,8 @@ function runningActivityState(activity: WorkerActivitySummary | null, activityFe
 }
 
 function deriveReadyForDependentWork(status: string): ReadyForDependentWork {
-  if (status === "finished") return true
-  if (status === "running" || status === "blocked" || status === "failed" || status === "canceled") {
-    return false
-  }
+  if (status === "idle") return true
+  if (status === "running" || status === "initializing" || status === "error") return false
   return "unknown"
 }
 
@@ -410,7 +408,9 @@ function blockedProgress(worker: Pick<WorkerSummary, "pendingPermissionIds" | "a
 }
 
 function finishedProgress(status: string): { summary: string; lastMeaningfulUpdate: string | null } {
-  return progressSummary(status === "failed" ? "Worker failed" : "Worker reached a terminal state")
+  if (status === "error") return progressSummary("Worker failed")
+  if (status === "idle") return progressSummary("Worker is idle")
+  return progressSummary("Worker reached a terminal state")
 }
 
 function syncWorkerFromFinalSnapshot(state: PluginState, result: WorkerWaitResult): void {
@@ -431,28 +431,21 @@ function getNudgeEventFromDaemonEvent(
   ownedWorkerIds: Set<string>,
   config: PluginConfig,
 ): WorkerWaitNudgeEvent | null {
+  if (!config.nudgeEnabled) return null
   if (!isDaemonNudgeEvent(event)) return null
   const workerId = event.payload.workerId
-  if (!ownedWorkerIds.has(workerId) || !shouldNudge(event.type, config.notifications)) return null
-  return { kind: event.type, workerId, summary: daemonNudgeSummary(event, workerId) }
+  if (!ownedWorkerIds.has(workerId)) return null
+  return { kind: daemonEventToNudgeKind(event), workerId, summary: daemonNudgeSummary(event, workerId) }
 }
-
-type DaemonWorkerWaitNudgeKind = Extract<WorkerWaitNudgeEvent["kind"], DaemonEvent["type"]>
 
 function isDaemonNudgeEvent(
   event: DaemonEvent,
-): event is Extract<DaemonEvent, { payload: { workerId: string } }> & { type: DaemonWorkerWaitNudgeKind } {
-  return isDaemonNudgeKind(event.type)
+): event is Extract<DaemonEvent, { type: "worker.stalled" | "agent_permission_request" }> {
+  return event.type === "worker.stalled" || event.type === "agent_permission_request"
 }
 
-function isDaemonNudgeKind(kind: DaemonEvent["type"]): kind is DaemonWorkerWaitNudgeKind {
-  return (
-    kind === "worker.stalled" ||
-    kind === "worker.finished" ||
-    kind === "worker.failed" ||
-    kind === "worker.blocked" ||
-    kind === "permission.requested"
-  )
+function daemonEventToNudgeKind(event: Extract<DaemonEvent, { type: "worker.stalled" | "agent_permission_request" }>) {
+  return event.type === "agent_permission_request" ? "permission.requested" : event.type
 }
 
 function daemonNudgeSummary(event: Extract<DaemonEvent, { payload: { workerId: string } }>, workerId: string): string {
@@ -474,7 +467,7 @@ function getExistingUnreadNudge(
   }
 
   for (const inboxEvent of session.unreadEvents.values()) {
-    if (!isUnreadInboxNudge(inboxEvent, session.createdWorkerIds, config)) continue
+    if (!isUnreadInboxNudge(inboxEvent, session.backgroundWorkerIds, config)) continue
     return { kind: inboxEvent.kind, workerId: inboxEvent.resourceId, summary: inboxEvent.summary }
   }
 
@@ -486,19 +479,14 @@ function isUnreadInboxNudge(
   createdWorkerIds: Set<string>,
   config: PluginConfig,
 ): inboxEvent is { kind: WorkerWaitNudgeEvent["kind"]; resourceId: string; summary: string } {
-  return (
-    createdWorkerIds.has(inboxEvent.resourceId) &&
-    isInboxNudgeKind(inboxEvent.kind) &&
-    shouldNudge(inboxEvent.kind, config.notifications)
-  )
+  return config.nudgeEnabled && createdWorkerIds.has(inboxEvent.resourceId) && isInboxNudgeKind(inboxEvent.kind)
 }
 
 function isInboxNudgeKind(kind: string): kind is WorkerWaitNudgeEvent["kind"] {
   return (
     kind === "worker.stalled" ||
-    kind === "worker.finished" ||
-    kind === "worker.failed" ||
-    kind === "worker.blocked" ||
+    kind === "agent.status" ||
+    kind === "agent.attention" ||
     kind === "chat.mentioned" ||
     kind === "permission.requested"
   )
@@ -568,7 +556,7 @@ function createWorkerWaitContext(
     waitFor: collapseNull(args.waitFor) ?? "all",
     workerIds,
     timeout: optionalNumber(args.timeout) ?? DEFAULT_WAIT_TIMEOUT_MS,
-    ownedWorkerIds: session?.createdWorkerIds ?? new Set<string>(),
+    ownedWorkerIds: session?.backgroundWorkerIds ?? new Set<string>(),
     pendingWorkerIds: [...workerIds],
     completedResults: new Map<string, WorkerWaitResult>(),
     interruptedByNudge: nudgeEvent !== undefined,
@@ -620,9 +608,10 @@ async function pollWorkerWait(
     const stop = workerWaitEarlyStop(waitContext, deadline)
     if (stop) return stop
     await runWorkerWaitSlice(state, client, waitContext, deadline)
+    markUnreadWaitNudge(state, config, waitContext)
+    if (waitContext.nudgeEvent) return workerWaitResponse(waitContext, false)
     const complete = workerWaitCompletionResponse(waitContext)
     if (complete) return complete
-    markUnreadWaitNudge(state, config, waitContext)
   }
   return workerWaitResponse(waitContext, false)
 }
@@ -752,7 +741,8 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
       // Update local state
       const worker = state.workers.get(args.workerId)
       if (worker) {
-        worker.status = "canceled"
+        worker.status = "closed"
+        worker.rawStatus = "canceled"
       }
 
       return {
@@ -761,7 +751,7 @@ export function createWorkerCancelTool(state: PluginState, client: PaseoTranspor
           {
             workerId: args.workerId,
             action: "canceled",
-            status: "canceled",
+            status: "closed",
           },
           null,
           2,

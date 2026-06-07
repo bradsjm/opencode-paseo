@@ -19,6 +19,7 @@ export {
   markEventRead,
   markAllRead,
   findSessionsForResource,
+  findBackgroundSessionsForResource,
   buildBlockingMetadata,
   getBlockingAction,
   getUnreadEventCountForResource,
@@ -33,6 +34,7 @@ export function createSessionMapping(opencodeSessionId: string, projectRoot: str
     projectRoot,
     createdTerminalIds: new Set(),
     createdWorkerIds: new Set(),
+    backgroundWorkerIds: new Set(),
     unreadEvents: new Map(),
     pendingPermissions: new Map(),
     createdAt: now,
@@ -149,6 +151,20 @@ export function recordCreatedWorker(state: PluginState, sessionId: string, worke
   }
 }
 
+export function recordBackgroundWorker(state: PluginState, sessionId: string, workerId: string): void {
+  const session = state.sessions.get(sessionId)
+  if (!session || !session.createdWorkerIds.has(workerId)) return
+  session.backgroundWorkerIds.add(workerId)
+  session.updatedAt = Date.now()
+}
+
+export function unrecordBackgroundWorker(state: PluginState, sessionId: string, workerId: string): void {
+  const session = state.sessions.get(sessionId)
+  if (!session) return
+  session.backgroundWorkerIds.delete(workerId)
+  session.updatedAt = Date.now()
+}
+
 export function registerEphemeralWorkerRun(
   state: PluginState,
   sessionId: string,
@@ -222,6 +238,7 @@ export function removeSession(state: PluginState, sessionId: string): boolean {
   session.pendingPermissions.clear()
   session.createdTerminalIds.clear()
   session.createdWorkerIds.clear()
+  session.backgroundWorkerIds.clear()
 
   state.sessions.delete(sessionId)
   return true
@@ -235,6 +252,7 @@ export function removeSession(state: PluginState, sessionId: string): boolean {
 export function unbindWorkerFromSessions(state: PluginState, workerId: string): void {
   for (const session of state.sessions.values()) {
     session.createdWorkerIds.delete(workerId)
+    session.backgroundWorkerIds.delete(workerId)
   }
 }
 
@@ -247,6 +265,7 @@ export function removeWorkerFromState(state: PluginState, workerId: string): voi
 
   for (const session of state.sessions.values()) {
     session.createdWorkerIds.delete(workerId)
+    session.backgroundWorkerIds.delete(workerId)
 
     for (const [eventId, event] of session.unreadEvents.entries()) {
       if (event.resourceId === workerId) {

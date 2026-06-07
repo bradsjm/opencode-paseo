@@ -163,18 +163,37 @@ test("hydrate", async (t) => {
     assert.ok(state.capabilities)
   })
 
-  await t.test("seeds blocking inbox items for blocked workers", async () => {
+  await t.test("seeds non-permission attention inbox items", async () => {
     const state = createPluginState()
-    const client = createMockTransport()
+    const client = createMockTransport({
+      fetchAgents: async () => [
+        {
+          id: "w-attention",
+          title: "Attention worker",
+          provider: "general",
+          status: "running",
+          cwd: "/tmp",
+          model: null,
+          labels: {
+            [TASK_SESSION_LABEL]: "task-attention",
+            [TASK_PARENT_SESSION_LABEL]: "parent-attention",
+            [TASK_SUBAGENT_LABEL]: "general",
+          },
+          requiresAttention: true,
+          attentionReason: "needs user input",
+          pendingPermissions: [],
+        },
+      ],
+    })
 
     const result = await hydrate(state, client, logger, outputConfig)
 
-    // w2 is blocked = 1 blocking event
     assert.ok(result.inboxSeeded >= 1)
-    const blockingEvents = Array.from(state.inbox.values()).filter((e) => e.blocking)
-    assert.ok(blockingEvents.length >= 1)
-    assert.equal(blockingEvents[0]?.kind, "worker.blocked")
-    assert.equal(blockingEvents[0]?.metadata?.suggestedTool, "paseo_worker_send")
+    const attentionEvents = Array.from(state.inbox.values()).filter((e) => e.kind === "agent.attention")
+    assert.ok(attentionEvents.length >= 1)
+    assert.equal(attentionEvents[0]?.blocking, false)
+    assert.equal(attentionEvents[0]?.metadata?.attentionReason, "needs user input")
+    assert.equal(attentionEvents[0]?.metadata?.suggestedTool, undefined)
   })
 
   await t.test("seeds permission.requested for permission-blocked workers", async () => {
@@ -188,10 +207,17 @@ test("hydrate", async (t) => {
           status: "running",
           cwd: "/tmp",
           model: null,
-          labels: {},
+          labels: {
+            [TASK_SESSION_LABEL]: "task-perm",
+            [TASK_PARENT_SESSION_LABEL]: "parent-perm",
+            [TASK_SUBAGENT_LABEL]: "general",
+          },
           requiresAttention: true,
           attentionReason: "A very long permission request summary that should truncate",
-          pendingPermissions: [{ id: "perm-1", type: "write" }],
+          pendingPermissions: [
+            { id: "perm-1", type: "write", summary: "Write file" },
+            { id: "perm-2", type: "bash", summary: "Run command" },
+          ],
         },
       ],
     })
@@ -204,6 +230,97 @@ test("hydrate", async (t) => {
     assert.equal(event.metadata?.permissionId, "perm-1")
     assert.equal(event.metadata?.suggestedTool, "paseo_permission_respond")
     assert.ok(event.summary.length <= outputConfig.maxSummaryLength)
+    assert.equal(state.inbox.get("hydration-permission-perm-2")?.metadata?.permissionId, "perm-2")
+  })
+
+  await t.test("seeds status before attention for actionable snapshots", async () => {
+    const state = createPluginState()
+    const client = createMockTransport({
+      fetchAgents: async () => [
+        {
+          id: "w-error",
+          title: "Errored worker",
+          provider: "general",
+          status: "error",
+          cwd: "/tmp",
+          model: null,
+          labels: {
+            [TASK_SESSION_LABEL]: "task-error",
+            [TASK_PARENT_SESSION_LABEL]: "parent-error",
+            [TASK_SUBAGENT_LABEL]: "general",
+          },
+          requiresAttention: true,
+          attentionReason: "error",
+          pendingPermissions: [],
+        },
+      ],
+    })
+
+    await hydrate(state, client, logger, outputConfig)
+
+    const event = state.inbox.get("hydration-agent-status-w-error-error")
+    assert.ok(event)
+    assert.equal(event.kind, "agent.status")
+    assert.equal(event.metadata?.status, "error")
+    assert.equal(
+      Array.from(state.inbox.values()).some((item) => item.kind === "agent.attention"),
+      false,
+    )
+  })
+
+  await t.test("seeds actionable status and all pending permissions together", async () => {
+    const state = createPluginState()
+    const client = createMockTransport({
+      fetchAgents: async () => [
+        {
+          id: "w-error-perm",
+          title: "Errored permission worker",
+          provider: "general",
+          status: "error",
+          cwd: "/tmp",
+          model: null,
+          labels: {
+            [TASK_SESSION_LABEL]: "task-error-perm",
+            [TASK_PARENT_SESSION_LABEL]: "parent-error-perm",
+            [TASK_SUBAGENT_LABEL]: "general",
+          },
+          requiresAttention: true,
+          attentionReason: "permission",
+          pendingPermissions: [{ id: "perm-1" }, { id: "perm-2" }],
+        },
+      ],
+    })
+
+    await hydrate(state, client, logger, outputConfig)
+
+    assert.equal(state.inbox.get("hydration-agent-status-w-error-perm-error")?.kind, "agent.status")
+    assert.equal(state.inbox.get("hydration-permission-perm-1")?.kind, "permission.requested")
+    assert.equal(state.inbox.get("hydration-permission-perm-2")?.kind, "permission.requested")
+  })
+
+  await t.test("restores durable worker ownership from launch session label", async () => {
+    const state = createPluginState()
+    const client = createMockTransport({
+      fetchAgents: async () => [
+        {
+          id: "w-durable",
+          title: "Durable worker",
+          provider: "general",
+          status: "idle",
+          cwd: "/tmp",
+          model: null,
+          labels: { "opencodePaseo.sessionId": "sess-durable" },
+          requiresAttention: false,
+          pendingPermissions: [],
+        },
+      ],
+    })
+
+    await hydrate(state, client, logger, outputConfig)
+
+    assert.equal(state.sessions.get("sess-durable")?.createdWorkerIds.has("w-durable"), true)
+    assert.equal(state.sessions.get("sess-durable")?.backgroundWorkerIds.has("w-durable"), true)
+    assert.equal(state.inbox.get("hydration-agent-status-w-durable-idle")?.kind, "agent.status")
   })
 
   await t.test("restores task worker bindings from labels", async () => {

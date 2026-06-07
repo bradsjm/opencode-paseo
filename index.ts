@@ -107,7 +107,7 @@ const server: Plugin = (async (ctx) => {
     chatWatcher.observeWorker(worker)
   }
 
-  const workerLaunchQueue = createWorkerLaunchQueueController(state, client, ctx.client, logger, (worker) =>
+  const workerLaunchQueue = createWorkerLaunchQueueController(state, client, config, ctx.client, logger, (worker) =>
     chatWatcher.observeWorker(worker),
   )
   const observeWorker = (worker: WorkerSummary, observedLaunchId?: string) => {
@@ -125,8 +125,8 @@ const server: Plugin = (async (ctx) => {
   function shouldWatchTaskWorker(worker: WorkerSummary, options: { allowIdleRecovery?: boolean } = {}): boolean {
     const taskRun = findTaskRunByWorkerId(state, worker.id)
     if (!taskRun?.background || taskRun.completionInjected) return false
-    if (worker.status === "idle" || worker.status === "failed") return options.allowIdleRecovery === true
-    return worker.status !== "finished" && worker.status !== "canceled"
+    if (worker.status === "idle" || worker.status === "error") return options.allowIdleRecovery === true
+    return worker.status !== "closed"
   }
   const stallMonitor = createWorkerStallMonitor(state, logger, config, daemonEventHandler)
   stallMonitor.seedFromWorkers()

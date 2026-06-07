@@ -1,8 +1,8 @@
 import { truncateSummary } from "../inbox/summary.js"
 import type { Logger } from "../logger.js"
-import { formatNudgeMessage, sendNudge, shouldNudge } from "../notifier.js"
+import { formatNudgeMessage, sendNudge } from "../notifier.js"
 import type { OpencodeClient } from "../profile.js"
-import { insertInboxEvent } from "../state/state.js"
+import { findBackgroundSessionsForResource, insertInboxEvent } from "../state/state.js"
 import type { ChatMessage, PaseoTransport } from "../transport/types.js"
 import type { PluginConfig } from "../config.js"
 import type { InboxEvent, PluginState, WorkerSummary } from "../state/types.js"
@@ -134,11 +134,16 @@ export function createChatWatcher(
           continue
         }
 
-        if (!shouldNudge(event.kind, config.notifications)) {
+        if (!config.nudgeEnabled) {
           continue
         }
 
-        sendNudge(opencodeClient, sessionIds, formatNudgeMessage(event.kind, workerId, event.summary), logger)
+        const backgroundSessionIds = findBackgroundSessionsForResource(state, workerId)
+        if (backgroundSessionIds.length === 0) {
+          continue
+        }
+
+        sendNudge(opencodeClient, backgroundSessionIds, formatNudgeMessage(event.kind, workerId, event.summary), logger)
       }
     }
   }

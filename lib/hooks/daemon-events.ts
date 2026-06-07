@@ -2,18 +2,21 @@ import type { PluginConfig } from "../config.js"
 import { getHydrationPermissionEventId } from "../inbox/ids.js"
 import { truncateSummary } from "../inbox/summary.js"
 import type { Logger } from "../logger.js"
-import { shouldNudge, formatNudgeMessage, sendNudge } from "../notifier.js"
+import { formatNudgeMessage, sendNudge } from "../notifier.js"
 import {
   buildBlockingMetadata,
+  findBackgroundSessionsForResource,
   findSessionsForResource,
-  getUnreadEventCountForResource,
   getOrCreateSession,
   getTaskRun,
+  getUnreadEventCountForResource,
   insertInboxEvent,
   markEventRead,
   mapAgentToWorkerSummary,
+  recordBackgroundWorker,
   recordCreatedWorker,
   recordTaskRun,
+  removeWorkerFromState,
   setConnectionStatus,
   upsertWorker,
 } from "../state/state.js"
@@ -23,189 +26,13 @@ import type {
   DaemonEvent,
   PermissionRequestedEvent,
   PermissionResolvedEvent,
-  WorkerBlockedEvent,
-  WorkerEventPayload,
-  WorkerFailedEvent,
-  WorkerFinishedEvent,
-  WorkerStartedEvent,
 } from "../transport/types.js"
 import type { OpencodeClient } from "../profile.js"
 import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
 import { getTaskLabelInfo } from "../task-labels.js"
 
-function syncWorkerFromPayload(
-  state: PluginState,
-  type:
-    | WorkerStartedEvent["type"]
-    | WorkerFinishedEvent["type"]
-    | WorkerFailedEvent["type"]
-    | WorkerBlockedEvent["type"],
-  payload: WorkerEventPayload,
-): WorkerSummary {
-  const workerId = payload.workerId
-  const current = state.workers.get(workerId)
-  const agent = payload.agent as Record<string, unknown> | undefined
-  const merged = mergeAgentSummary(workerId, current, agent)
-
-  const worker = mapAgentToWorkerSummary(merged)
-  worker.unreadEventCount = getUnreadEventCountForResource(state, workerId)
-  preserveCurrentChatRoom(worker, current)
-
-  applyStatusFallback(worker, type, agent)
-
-  upsertWorker(state, worker)
-  return worker
-}
-
-function mergeAgentSummary(
-  workerId: string,
-  current: WorkerSummary | undefined,
-  agent: Record<string, unknown> | undefined,
-): AgentSummary {
-  return {
-    ...mergeAgentCoreFields(workerId, current, agent),
-    ...mergeAttentionFields(agent),
-    ...mergeCapabilityFields(agent),
-    ...mergeRuntimeFields(agent, current),
-    ...mergeWorktreeFields(agent, current),
-    ...mergeTimestampFields(agent, current),
-  }
-}
-
-function mergeAgentCoreFields(
-  workerId: string,
-  current: WorkerSummary | undefined,
-  agent: Record<string, unknown> | undefined,
-): Pick<AgentSummary, "id" | "provider" | "cwd" | "model" | "status" | "title" | "labels" | "pendingPermissions"> {
-  return {
-    id: workerId,
-    provider: stringFieldWithDefault(agent, current, "provider", "provider", "unknown"),
-    cwd: stringFieldWithDefault(agent, current, "cwd", "cwd", ""),
-    model: modelField(agent, current),
-    status: stringField(agent, "status") ?? current?.status ?? "unknown",
-    title: titleField(agent, current),
-    labels: labelsField(agent, current),
-    pendingPermissions: pendingPermissionsField(agent, current),
-  }
-}
-
-function stringFieldWithDefault(
-  agent: Record<string, unknown> | undefined,
-  current: WorkerSummary | undefined,
-  agentKey: string,
-  currentKey: "provider" | "cwd",
-  fallback: string,
-): string {
-  return stringField(agent, agentKey) || current?.[currentKey] || fallback
-}
-
-function modelField(agent: Record<string, unknown> | undefined, current: WorkerSummary | undefined): string | null {
-  return stringField(agent, "model") || current?.model || null
-}
-
-function titleField(agent: Record<string, unknown> | undefined, current: WorkerSummary | undefined): string | null {
-  return stringField(agent, "title") || current?.title || null
-}
-
-function labelsField(
-  agent: Record<string, unknown> | undefined,
-  current: WorkerSummary | undefined,
-): Record<string, string> {
-  if (agent?.labels && typeof agent.labels === "object" && !Array.isArray(agent.labels)) {
-    return agent.labels as Record<string, string>
-  }
-  return Object.fromEntries((current?.labels ?? []).map((label) => [label, label]))
-}
-
-function pendingPermissionsField(
-  agent: Record<string, unknown> | undefined,
-  current: WorkerSummary | undefined,
-): Array<Record<string, unknown>> {
-  return (agent?.pendingPermissions as Array<Record<string, unknown>>) ?? current?.pendingPermissions ?? []
-}
-
-function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
-  const value = record?.[key]
-  return typeof value === "string" ? value : undefined
-}
-
-function mergeAttentionFields(agent: Record<string, unknown> | undefined): Partial<AgentSummary> {
-  return {
-    ...(typeof agent?.requiresAttention === "boolean" ? { requiresAttention: agent.requiresAttention } : {}),
-    ...(agent?.attentionReason !== undefined ? { attentionReason: agent.attentionReason as string | null } : {}),
-  }
-}
-
-function mergeCapabilityFields(agent: Record<string, unknown> | undefined): Partial<AgentSummary> {
-  return agent?.capabilities !== undefined ? { capabilities: agent.capabilities as Record<string, unknown> } : {}
-}
-
-function mergeRuntimeFields(
-  agent: Record<string, unknown> | undefined,
-  current: WorkerSummary | undefined,
-): Partial<AgentSummary> {
-  if (agent?.runtimeInfo !== undefined) return { runtimeInfo: agent.runtimeInfo as Record<string, unknown> }
-  return current?.runtimeInfo !== null && current?.runtimeInfo !== undefined ? { runtimeInfo: current.runtimeInfo } : {}
-}
-
-function mergeWorktreeFields(
-  agent: Record<string, unknown> | undefined,
-  current: WorkerSummary | undefined,
-): Partial<AgentSummary> {
-  return {
-    ...optionalStringField("worktreePath", stringField(agent, "worktreePath") || current?.worktreePath),
-    ...optionalStringField("branchName", stringField(agent, "branchName") || current?.branchName),
-  }
-}
-
-function mergeTimestampFields(
-  agent: Record<string, unknown> | undefined,
-  current: WorkerSummary | undefined,
-): Partial<AgentSummary> {
-  return {
-    ...optionalStringField("createdAt", stringField(agent, "createdAt") ?? current?.createdAt),
-    ...optionalStringField("updatedAt", stringField(agent, "updatedAt") ?? current?.updatedAt),
-  }
-}
-
-function optionalStringField(
-  key: "worktreePath" | "branchName" | "createdAt" | "updatedAt",
-  value: string | undefined,
-) {
-  return value ? { [key]: value } : {}
-}
-
-function preserveCurrentChatRoom(worker: WorkerSummary, current: WorkerSummary | undefined): void {
-  if (!worker.chatRoom && current?.chatRoom) worker.chatRoom = current.chatRoom
-}
-
-function applyStatusFallback(
-  worker: WorkerSummary,
-  type: DaemonEvent["type"],
-  agent: Record<string, unknown> | undefined,
-): void {
-  if (agent?.status) return
-  if (type === "worker.finished") worker.status = "finished"
-  if (type === "worker.failed") worker.status = "failed"
-  if (type === "worker.blocked") worker.status = "blocked"
-}
-
-function getWorkerEventSummary(
-  type: DaemonEvent["type"],
-  resourceId: string,
-  payload: Record<string, unknown>,
-): string {
-  const rawSummary =
-    (typeof payload.summary === "string" && payload.summary) ||
-    (typeof payload.message === "string" && payload.message) ||
-    (type === "daemon.connected"
-      ? "Daemon connected"
-      : type === "daemon.disconnected"
-        ? "Daemon disconnected"
-        : `${type} for ${resourceId}`)
-
-  return rawSummary
-}
+type WorkerObservedCallback = (worker: WorkerSummary, observedLaunchId?: string) => void
+type TaskWorkerObservedCallback = (worker: WorkerSummary) => void
 
 function createInboxEvent(
   state: PluginState,
@@ -218,7 +45,7 @@ function createInboxEvent(
     id: `evt-${state.eventCounter + 1}-${kind}-${resourceId}`,
     kind,
     resourceId,
-    blocking: kind === "worker.blocked" || kind === "permission.requested",
+    blocking: kind === "permission.requested",
     summary,
     read: false,
     timestamp: Date.now(),
@@ -230,15 +57,25 @@ function assertNever(value: never): never {
   throw new Error(`Unhandled daemon event: ${JSON.stringify(value)}`)
 }
 
+function workerFromAgent(state: PluginState, agent: AgentSummary): WorkerSummary {
+  const current = state.workers.get(agent.id)
+  const worker = mapAgentToWorkerSummary(agent)
+  worker.unreadEventCount = getUnreadEventCountForResource(state, worker.id)
+  if (!worker.chatRoom && current?.chatRoom) worker.chatRoom = current.chatRoom
+  return worker
+}
+
 function handlePermissionRequested(state: PluginState, event: PermissionRequestedEvent): void {
   const worker = state.workers.get(event.payload.workerId)
   const permId = event.payload.permissionId
-  if (!worker || !permId || worker.pendingPermissionIds.includes(permId)) {
-    return
-  }
+  if (!worker) return
 
-  worker.pendingPermissionIds = [...worker.pendingPermissionIds, permId]
-  worker.pendingPermissions = [...worker.pendingPermissions, event.payload.request]
+  worker.requiresAttention = true
+  worker.attentionReason = "permission"
+  if (permId && !worker.pendingPermissionIds.includes(permId)) {
+    worker.pendingPermissionIds = [...worker.pendingPermissionIds, permId]
+    worker.pendingPermissions = [...worker.pendingPermissions, event.payload.request]
+  }
 }
 
 function handlePermissionResolved(state: PluginState, event: PermissionResolvedEvent): void {
@@ -249,6 +86,7 @@ function handlePermissionResolved(state: PluginState, event: PermissionResolvedE
     if (
       inboxEvent.kind === "permission.requested" &&
       inboxEvent.resourceId === event.payload.workerId &&
+      inboxEvent.metadata?.permissionId === permId &&
       !inboxEvent.read
     ) {
       markEventRead(state, id)
@@ -256,12 +94,14 @@ function handlePermissionResolved(state: PluginState, event: PermissionResolvedE
   }
 
   const worker = state.workers.get(event.payload.workerId)
-  if (!worker) {
-    return
-  }
+  if (!worker) return
 
   worker.pendingPermissionIds = worker.pendingPermissionIds.filter((id) => id !== permId)
   worker.pendingPermissions = worker.pendingPermissions.filter((permission) => permission.id !== permId)
+  if (worker.pendingPermissionIds.length === 0 && worker.attentionReason === "permission") {
+    worker.requiresAttention = false
+    worker.attentionReason = null
+  }
 }
 
 export function createDaemonEventHandler(
@@ -269,8 +109,8 @@ export function createDaemonEventHandler(
   logger: Logger,
   config: PluginConfig,
   opencodeClient?: OpencodeClient,
-  onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
-  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
+  onWorkerObserved?: WorkerObservedCallback,
+  onTaskWorkerObserved?: TaskWorkerObservedCallback,
 ) {
   return (daemonEvent: DaemonEvent) => {
     const inboxEvent = handleDaemonEvent(state, logger, config, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
@@ -283,44 +123,67 @@ function handleDaemonEvent(
   logger: Logger,
   config: PluginConfig,
   daemonEvent: DaemonEvent,
-  onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
-  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
+  onWorkerObserved?: WorkerObservedCallback,
+  onTaskWorkerObserved?: TaskWorkerObservedCallback,
 ): InboxEvent | null {
-  if (isWorkerLifecycleEvent(daemonEvent))
-    return handleWorkerLifecycleEvent(state, config, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
-  if (daemonEvent.type === "permission.requested") return handlePermissionRequestedEvent(state, config, daemonEvent)
-  if (daemonEvent.type === "permission.resolved") return handlePermissionResolvedEvent(state, config, daemonEvent)
+  switch (daemonEvent.type) {
+    case "agent_update":
+      return handleAgentUpdate(state, config, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
+    case "agent_deleted":
+      removeWorkerFromState(state, daemonEvent.payload.agentId)
+      return null
+    case "agent_permission_request":
+      return handlePermissionRequestedEvent(state, config, daemonEvent)
+    case "agent_permission_resolved":
+      handlePermissionResolved(state, daemonEvent)
+      return null
+    default:
+      return handleNonAgentDaemonEvent(state, logger, config, daemonEvent)
+  }
+}
+
+function handleNonAgentDaemonEvent(
+  state: PluginState,
+  logger: Logger,
+  config: PluginConfig,
+  daemonEvent: Exclude<
+    DaemonEvent,
+    Extract<
+      DaemonEvent,
+      { type: "agent_update" | "agent_deleted" | "agent_permission_request" | "agent_permission_resolved" }
+    >
+  >,
+): InboxEvent | null {
   switch (daemonEvent.type) {
     case "terminal.exited":
       return handleTerminalExited(state, daemonEvent)
+    case "daemon.connected":
+    case "daemon.disconnected":
+    case "daemon.error":
+      return handleDaemonLifecycleEvent(state, logger, config, daemonEvent)
+    case "agent_stream":
+      return null
+    case "worker.stalled":
+      return handleWorkerStalled(state, config, daemonEvent)
+    default:
+      assertNever(daemonEvent)
+  }
+}
+
+function handleDaemonLifecycleEvent(
+  state: PluginState,
+  logger: Logger,
+  config: PluginConfig,
+  daemonEvent: Extract<DaemonEvent, { type: "daemon.connected" | "daemon.disconnected" | "daemon.error" }>,
+): InboxEvent | null {
+  switch (daemonEvent.type) {
     case "daemon.connected":
       return handleDaemonConnected(state, logger, config)
     case "daemon.disconnected":
       return handleDaemonDisconnected(state, logger, config)
     case "daemon.error":
       return handleDaemonError(state, logger, daemonEvent)
-    case "worker.activity":
-      return null
-    default:
-      assertNever(daemonEvent)
   }
-}
-
-function isWorkerLifecycleEvent(
-  daemonEvent: DaemonEvent,
-): daemonEvent is
-  | WorkerStartedEvent
-  | Extract<DaemonEvent, { type: "worker.stalled" }>
-  | WorkerFinishedEvent
-  | WorkerFailedEvent
-  | WorkerBlockedEvent {
-  return (
-    daemonEvent.type === "worker.started" ||
-    daemonEvent.type === "worker.stalled" ||
-    daemonEvent.type === "worker.finished" ||
-    daemonEvent.type === "worker.failed" ||
-    daemonEvent.type === "worker.blocked"
-  )
 }
 
 function handleTerminalExited(
@@ -366,61 +229,53 @@ function handleDaemonError(
   return null
 }
 
-function handleWorkerLifecycleEvent(
+function handleAgentUpdate(
   state: PluginState,
   config: PluginConfig,
-  daemonEvent:
-    | WorkerStartedEvent
-    | Extract<DaemonEvent, { type: "worker.stalled" }>
-    | WorkerFinishedEvent
-    | WorkerFailedEvent
-    | WorkerBlockedEvent,
-  onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
-  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
-): InboxEvent {
-  if (daemonEvent.type !== "worker.stalled")
-    observeWorkerLifecyclePayload(state, daemonEvent, onWorkerObserved, onTaskWorkerObserved)
-  const resourceId = daemonEvent.payload.workerId
-  const summary = summarizeDaemonEvent(config, daemonEvent.type, resourceId, daemonEvent.payload)
-  return createInboxEvent(state, daemonEvent.type, resourceId, summary, workerLifecycleMetadata(daemonEvent))
-}
+  daemonEvent: Extract<DaemonEvent, { type: "agent_update" }>,
+  onWorkerObserved?: WorkerObservedCallback,
+  onTaskWorkerObserved?: TaskWorkerObservedCallback,
+): InboxEvent | null {
+  if (daemonEvent.payload.kind === "remove") {
+    removeWorkerFromState(state, daemonEvent.payload.agentId)
+    return null
+  }
 
-function observeWorkerLifecyclePayload(
-  state: PluginState,
-  daemonEvent: WorkerStartedEvent | WorkerFinishedEvent | WorkerFailedEvent | WorkerBlockedEvent,
-  onWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>, observedLaunchId?: string) => void,
-  onTaskWorkerObserved?: (worker: NonNullable<ReturnType<typeof syncWorkerFromPayload>>) => void,
-): void {
-  const worker = syncWorkerFromPayload(state, daemonEvent.type, daemonEvent.payload)
-  const taskBound = bindTaskWorkerFromPayload(state, worker, daemonEvent.payload)
+  const previous = state.workers.get(daemonEvent.payload.agent.id)
+  const worker = workerFromAgent(state, daemonEvent.payload.agent)
+  upsertWorker(state, worker)
+
+  const taskBound = bindTaskWorkerFromAgent(state, worker, daemonEvent.payload.agent)
   if (taskBound) onTaskWorkerObserved?.(worker)
-  const observedLaunchId = getWorkerLaunchIdFromLabels(
-    (daemonEvent.payload.agent as Record<string, unknown> | undefined)?.labels,
-  )
-  onWorkerObserved?.(worker, observedLaunchId)
+  onWorkerObserved?.(worker, getWorkerLaunchIdFromLabels(daemonEvent.payload.agent.labels))
+
+  return deriveAgentUpdateInboxEvent(state, config, previous, worker)
 }
 
-function bindTaskWorkerFromPayload(state: PluginState, worker: WorkerSummary, payload: WorkerEventPayload): boolean {
-  const labels =
-    ((payload.agent as Record<string, unknown> | undefined)?.labels as Record<string, string> | undefined) ?? {}
-  const taskInfo = getTaskLabelInfo(labels)
+function bindTaskWorkerFromAgent(state: PluginState, worker: WorkerSummary, agent: AgentSummary): boolean {
+  const taskInfo = getTaskLabelInfo(agent.labels)
   if (!taskInfo) return false
   getOrCreateSession(state, taskInfo.taskSessionId, worker.cwd)
   getOrCreateSession(state, taskInfo.parentSessionId, worker.cwd)
   recordCreatedWorker(state, taskInfo.taskSessionId, worker)
   recordCreatedWorker(state, taskInfo.parentSessionId, worker)
   const existing = getTaskRun(state, taskInfo.taskSessionId)
-  recordTaskRun(state, taskRunRecordFromWorkerPayload(worker, labels, taskInfo, existing))
+  const taskRun = taskRunRecordFromAgent(worker, agent.labels, taskInfo, existing)
+  recordTaskRun(state, taskRun)
+  if (taskRun.background) {
+    recordBackgroundWorker(state, taskRun.taskSessionId, worker.id)
+    recordBackgroundWorker(state, taskRun.parentSessionId, worker.id)
+  }
   return true
 }
 
-function taskRunRecordFromWorkerPayload(
+function taskRunRecordFromAgent(
   worker: WorkerSummary,
   labels: Record<string, string>,
   taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
   existing: TaskRunRecord | undefined,
 ): TaskRunRecord {
-  const completionInjected = taskCompletionInjected(existing, taskInfo)
+  const completionInjected = existing?.completionInjected ?? taskInfo.completionInjected
   return {
     taskSessionId: taskInfo.taskSessionId,
     parentSessionId: taskInfo.parentSessionId,
@@ -434,13 +289,6 @@ function taskRunRecordFromWorkerPayload(
   }
 }
 
-function taskCompletionInjected(
-  existing: TaskRunRecord | undefined,
-  taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
-): boolean | undefined {
-  return existing?.completionInjected ?? taskInfo.completionInjected
-}
-
 function taskBackground(
   existing: TaskRunRecord | undefined,
   taskInfo: NonNullable<ReturnType<typeof getTaskLabelInfo>>,
@@ -449,16 +297,64 @@ function taskBackground(
   return existing?.background ?? (taskInfo.deferred === true && completionInjected !== true)
 }
 
-function workerLifecycleMetadata(
-  daemonEvent:
-    | WorkerStartedEvent
-    | Extract<DaemonEvent, { type: "worker.stalled" }>
-    | WorkerFinishedEvent
-    | WorkerFailedEvent
-    | WorkerBlockedEvent,
-) {
-  if (daemonEvent.type !== "worker.blocked") return daemonEvent.payload
-  return { ...daemonEvent.payload, ...buildBlockingMetadata("worker.blocked", daemonEvent.payload.workerId) }
+function deriveAgentUpdateInboxEvent(
+  state: PluginState,
+  config: PluginConfig,
+  previous: WorkerSummary | undefined,
+  worker: WorkerSummary,
+): InboxEvent | null {
+  if (findSessionsForResource(state, worker.id).length === 0) return null
+  if (isActionableStatusTransition(previous, worker)) {
+    return createInboxEvent(state, "agent.status", worker.id, statusSummary(worker, config), {
+      workerId: worker.id,
+      status: worker.status,
+      previousStatus: previous?.status ?? null,
+    })
+  }
+  if (workerRequiresNonPermissionAttention(worker, previous)) {
+    return createInboxEvent(state, "agent.attention", worker.id, attentionSummary(worker, config), {
+      workerId: worker.id,
+      status: worker.status,
+      attentionReason: worker.attentionReason,
+    })
+  }
+  return null
+}
+
+function workerRequiresNonPermissionAttention(worker: WorkerSummary, previous: WorkerSummary | undefined): boolean {
+  if (!worker.requiresAttention) return false
+  if (worker.attentionReason === "permission" || worker.pendingPermissionIds.length > 0) return false
+  return previous?.requiresAttention !== true || previous.attentionReason !== worker.attentionReason
+}
+
+function isActionableStatusTransition(previous: WorkerSummary | undefined, worker: WorkerSummary): boolean {
+  if (previous?.status === worker.status) return false
+  return worker.status === "idle" || worker.status === "error" || worker.status === "closed"
+}
+
+function attentionSummary(worker: WorkerSummary, config: PluginConfig): string {
+  return truncateSummary(
+    worker.attentionReason ?? `Worker "${worker.title}" requires attention`,
+    config.output.maxSummaryLength,
+  )
+}
+
+function statusSummary(worker: WorkerSummary, config: PluginConfig): string {
+  return truncateSummary(`Worker "${worker.title}" is ${worker.status}`, config.output.maxSummaryLength)
+}
+
+function handleWorkerStalled(
+  state: PluginState,
+  config: PluginConfig,
+  daemonEvent: Extract<DaemonEvent, { type: "worker.stalled" }>,
+): InboxEvent {
+  const resourceId = daemonEvent.payload.workerId
+  const summary = truncateSummary(
+    (typeof daemonEvent.payload.summary === "string" && daemonEvent.payload.summary) ||
+      `worker.stalled for ${resourceId}`,
+    config.output.maxSummaryLength,
+  )
+  return createInboxEvent(state, "worker.stalled", resourceId, summary, daemonEvent.payload)
 }
 
 function handlePermissionRequestedEvent(
@@ -468,36 +364,19 @@ function handlePermissionRequestedEvent(
 ): InboxEvent {
   handlePermissionRequested(state, daemonEvent)
   const resourceId = daemonEvent.payload.workerId
-  const summary = summarizeDaemonEvent(config, daemonEvent.type, resourceId, daemonEvent.payload)
-  return createInboxEvent(state, daemonEvent.type, resourceId, summary, {
+  const summary = truncateSummary(
+    permissionRequestSummary(daemonEvent.payload.request, resourceId),
+    config.output.maxSummaryLength,
+  )
+  return createInboxEvent(state, "permission.requested", resourceId, summary, {
     ...daemonEvent.payload,
     ...buildBlockingMetadata("permission.requested", resourceId, { permissionId: daemonEvent.payload.permissionId }),
   })
 }
 
-function handlePermissionResolvedEvent(
-  state: PluginState,
-  config: PluginConfig,
-  daemonEvent: PermissionResolvedEvent,
-): InboxEvent {
-  handlePermissionResolved(state, daemonEvent)
-  const resourceId = daemonEvent.payload.workerId
-  return createInboxEvent(
-    state,
-    daemonEvent.type,
-    resourceId,
-    summarizeDaemonEvent(config, daemonEvent.type, resourceId, daemonEvent.payload),
-    daemonEvent.payload,
-  )
-}
-
-function summarizeDaemonEvent(
-  config: PluginConfig,
-  type: DaemonEvent["type"],
-  resourceId: string,
-  payload: Record<string, unknown>,
-): string {
-  return truncateSummary(getWorkerEventSummary(type, resourceId, payload), config.output.maxSummaryLength)
+function permissionRequestSummary(request: Record<string, unknown>, workerId: string): string {
+  const summary = request.summary ?? request.message ?? request.title ?? request.description
+  return typeof summary === "string" && summary.trim() ? summary : `Permission requested by worker ${workerId}`
 }
 
 function insertAndNotifyInboxEvent(
@@ -524,8 +403,8 @@ function notifyInboxEvent(
   opencodeClient: OpencodeClient | undefined,
   inboxEvent: InboxEvent,
 ): void {
-  if (!opencodeClient || !shouldNudge(inboxEvent.kind, config.notifications)) return
-  const sessionIds = findSessionsForResource(state, inboxEvent.resourceId)
+  if (!opencodeClient || !config.nudgeEnabled) return
+  const sessionIds = findBackgroundSessionsForResource(state, inboxEvent.resourceId)
   if (sessionIds.length === 0) return
   sendNudge(
     opencodeClient,

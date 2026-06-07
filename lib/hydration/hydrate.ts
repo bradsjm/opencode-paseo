@@ -13,11 +13,14 @@ import {
   mapAgentToWorkerSummary,
   getOrCreateSession,
   getTaskRun,
+  findSessionsForResource,
+  recordBackgroundWorker,
   recordCreatedWorker,
   recordTaskRun,
   buildBlockingMetadata,
 } from "../state/state.js"
 import { getTaskLabelInfo } from "../task-labels.js"
+import { getWorkerSessionIdFromLabels } from "../worker-launch/queue.js"
 
 // ─── Startup Hydration ───────────────────────────────────────────────────────
 // Fetches current agents (workers) and terminals from the daemon,
@@ -93,15 +96,29 @@ async function hydrateWorkers(
       const worker = mapAgentToWorkerSummary(agent)
       upsertWorker(state, worker)
       restoreTaskWorkerBinding(state, worker, agent, onTaskWorkerRestored)
+      restoreDurableWorkerBinding(state, worker, agent)
       onWorkerObserved?.(worker)
       workers++
-      inboxSeeded += seedBlockedWorkerInboxEvent(state, worker, agent, output)
+      inboxSeeded += seedActionableWorkerInboxEvents(state, worker, agent, output)
     }
     logger.info("Hydrated agents", { count: workers })
   } catch (err: unknown) {
     logger.warn("Agent hydration failed", getErrorMessage(err))
   }
   return { workers, inboxSeeded }
+}
+
+function restoreDurableWorkerBinding(
+  state: PluginState,
+  worker: WorkerSummary,
+  agent: Parameters<typeof mapAgentToWorkerSummary>[0],
+): void {
+  if (getTaskLabelInfo(agent.labels)) return
+  const sessionId = getWorkerSessionIdFromLabels(agent.labels)
+  if (!sessionId) return
+  getOrCreateSession(state, sessionId, worker.cwd)
+  recordCreatedWorker(state, sessionId, worker)
+  recordBackgroundWorker(state, sessionId, worker.id)
 }
 
 function restoreTaskWorkerBinding(
@@ -117,7 +134,12 @@ function restoreTaskWorkerBinding(
   recordCreatedWorker(state, taskInfo.taskSessionId, worker)
   recordCreatedWorker(state, taskInfo.parentSessionId, worker)
   const existing = getTaskRun(state, taskInfo.taskSessionId)
-  recordTaskRun(state, hydratedTaskRunRecord(worker, agent.labels, taskInfo, existing))
+  const taskRun = hydratedTaskRunRecord(worker, agent.labels, taskInfo, existing)
+  recordTaskRun(state, taskRun)
+  if (taskRun.background) {
+    recordBackgroundWorker(state, taskRun.taskSessionId, worker.id)
+    recordBackgroundWorker(state, taskRun.parentSessionId, worker.id)
+  }
   onTaskWorkerRestored?.(worker)
 }
 
@@ -156,27 +178,101 @@ function taskBackground(
   return existing?.background ?? (taskInfo.deferred === true && completionInjected !== true)
 }
 
-function seedBlockedWorkerInboxEvent(
+function seedActionableWorkerInboxEvents(
   state: PluginState,
   worker: WorkerSummary,
   agent: Parameters<typeof mapAgentToWorkerSummary>[0],
   output: OutputConfig,
 ): number {
-  if (worker.status !== "blocked") return 0
-  const permissionId = worker.pendingPermissionIds[0]
-  const kind = permissionId ? "permission.requested" : "worker.blocked"
+  if (findSessionsForResource(state, worker.id).length === 0) return 0
+  let seeded = 0
+  const hasActionableStatus = worker.status === "idle" || worker.status === "error" || worker.status === "closed"
+  if (hasActionableStatus) {
+    seeded += seedWorkerStatusInboxEvent(state, worker, agent, output)
+  }
+  if (worker.pendingPermissionIds.length > 0) {
+    seeded += seedPermissionInboxEvents(state, worker, agent, output)
+  } else if (!hasActionableStatus && worker.requiresAttention) {
+    seeded += seedAgentAttentionInboxEvent(state, worker, agent, output)
+  }
+  return seeded
+}
+
+function seedPermissionInboxEvents(
+  state: PluginState,
+  worker: WorkerSummary,
+  agent: Parameters<typeof mapAgentToWorkerSummary>[0],
+  output: OutputConfig,
+): number {
+  let seeded = 0
+  for (const permissionId of worker.pendingPermissionIds) {
+    const permission = worker.pendingPermissions.find((entry) => entry.id === permissionId)
+    const summary = permissionSummary(permission, worker, agent, output)
+    const event: InboxEvent = {
+      id: getHydrationPermissionEventId(permissionId),
+      kind: "permission.requested",
+      resourceId: agent.id,
+      blocking: true,
+      summary,
+      read: false,
+      timestamp: Date.now(),
+      metadata: buildBlockingMetadata("permission.requested", agent.id, { permissionId }),
+    }
+    if (insertInboxEvent(state, event, output.maxInboxItems)) seeded++
+  }
+  return seeded
+}
+
+function permissionSummary(
+  permission: Record<string, unknown> | undefined,
+  worker: WorkerSummary,
+  agent: Parameters<typeof mapAgentToWorkerSummary>[0],
+  output: OutputConfig,
+): string {
+  const rawSummary = permission?.summary ?? permission?.message ?? permission?.title ?? worker.attentionReason
+  return truncateSummary(
+    typeof rawSummary === "string" ? rawSummary : `Worker "${agent.title ?? agent.id}" requires permission`,
+    output.maxSummaryLength,
+  )
+}
+
+function seedWorkerStatusInboxEvent(
+  state: PluginState,
+  worker: WorkerSummary,
+  agent: Parameters<typeof mapAgentToWorkerSummary>[0],
+  output: OutputConfig,
+): number {
   const event: InboxEvent = {
-    id: permissionId ? getHydrationPermissionEventId(permissionId) : `hydration-worker-blocked-${agent.id}`,
-    kind,
+    id: `hydration-agent-status-${agent.id}-${worker.status}`,
+    kind: "agent.status",
     resourceId: agent.id,
-    blocking: true,
+    blocking: false,
+    summary: truncateSummary(`Worker "${agent.title ?? agent.id}" is ${worker.status}`, output.maxSummaryLength),
+    read: false,
+    timestamp: Date.now(),
+    metadata: { workerId: agent.id, status: worker.status, previousStatus: null },
+  }
+  return insertInboxEvent(state, event, output.maxInboxItems) ? 1 : 0
+}
+
+function seedAgentAttentionInboxEvent(
+  state: PluginState,
+  worker: WorkerSummary,
+  agent: Parameters<typeof mapAgentToWorkerSummary>[0],
+  output: OutputConfig,
+): number {
+  const event: InboxEvent = {
+    id: `hydration-agent-attention-${agent.id}`,
+    kind: "agent.attention",
+    resourceId: agent.id,
+    blocking: false,
     summary: truncateSummary(
       agent.attentionReason ?? `Worker "${agent.title ?? agent.id}" requires attention`,
       output.maxSummaryLength,
     ),
     read: false,
     timestamp: Date.now(),
-    metadata: buildBlockingMetadata(kind, agent.id, { permissionId }),
+    metadata: { workerId: agent.id, status: worker.status, attentionReason: worker.attentionReason },
   }
   return insertInboxEvent(state, event, output.maxInboxItems) ? 1 : 0
 }
