@@ -6,10 +6,13 @@ The format is based on Keep a Changelog, but entries are summarized from the rep
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-07
+
 ### Added
 
 - Added daemon-native loop tools for listing, inspecting, logging, stopping, and running bounded loops with required verification.
 - Added ephemeral `paseo_worker_run` support for foreground and background non-detached workers.
+- Added an opt-in Paseo-backed `task` tool override for OpenCode subagent sessions.
 - Added chat room tools and reserved-label chat watching that emits `chat.mentioned` inbox events for exact worker mentions.
 - Added synthetic `worker.stalled` notifications for owned workers that go quiet past the configured threshold.
 - Added `paseo_worker_launch_status` for queued launches, including structured rollback metadata for failed worktree-backed launches.
