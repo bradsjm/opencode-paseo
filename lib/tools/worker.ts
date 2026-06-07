@@ -27,6 +27,8 @@ import {
   removeWorkerFromState,
   getBlockingAction,
   markResourceEventsRead,
+  recordBackgroundWorker,
+  unrecordBackgroundWorker,
 } from "../state/state.js"
 import { getWorkerLaunchIdFromLabels } from "../worker-launch/queue.js"
 import { collapseNull, compactDefined, nullableOptional, optionalNonBlankString, optionalNumber } from "./args.js"
@@ -459,6 +461,7 @@ function daemonNudgeSummary(event: Extract<DaemonEvent, { payload: { workerId: s
 function getExistingUnreadNudge(
   state: PluginState,
   sessionId: string,
+  ownedWorkerIds: Set<string>,
   config: PluginConfig,
 ): WorkerWaitNudgeEvent | null {
   const session = state.sessions.get(sessionId)
@@ -467,7 +470,7 @@ function getExistingUnreadNudge(
   }
 
   for (const inboxEvent of session.unreadEvents.values()) {
-    if (!isUnreadInboxNudge(inboxEvent, session.backgroundWorkerIds, config)) continue
+    if (!isUnreadInboxNudge(inboxEvent, ownedWorkerIds, config)) continue
     return { kind: inboxEvent.kind, workerId: inboxEvent.resourceId, summary: inboxEvent.summary }
   }
 
@@ -476,10 +479,10 @@ function getExistingUnreadNudge(
 
 function isUnreadInboxNudge(
   inboxEvent: { kind: string; resourceId: string },
-  createdWorkerIds: Set<string>,
+  ownedWorkerIds: Set<string>,
   config: PluginConfig,
 ): inboxEvent is { kind: WorkerWaitNudgeEvent["kind"]; resourceId: string; summary: string } {
-  return config.nudgeEnabled && createdWorkerIds.has(inboxEvent.resourceId) && isInboxNudgeKind(inboxEvent.kind)
+  return config.nudgeEnabled && ownedWorkerIds.has(inboxEvent.resourceId) && isInboxNudgeKind(inboxEvent.kind)
 }
 
 function isInboxNudgeKind(kind: string): kind is WorkerWaitNudgeEvent["kind"] {
@@ -550,13 +553,15 @@ function createWorkerWaitContext(
 ): WorkerWaitExecutionContext {
   const workerIds = normalizeWorkerWaitIds(args.workerIds)
   const session = state.sessions.get(context.sessionID)
-  const nudgeEvent = getExistingUnreadNudge(state, context.sessionID, config) ?? undefined
+  const ownedWorkerIds = new Set(session?.backgroundWorkerIds ?? [])
+  for (const workerId of workerIds) ownedWorkerIds.delete(workerId)
+  const nudgeEvent = getExistingUnreadNudge(state, context.sessionID, ownedWorkerIds, config) ?? undefined
   return {
     sessionId: context.sessionID,
     waitFor: collapseNull(args.waitFor) ?? "all",
     workerIds,
     timeout: optionalNumber(args.timeout) ?? DEFAULT_WAIT_TIMEOUT_MS,
-    ownedWorkerIds: session?.backgroundWorkerIds ?? new Set<string>(),
+    ownedWorkerIds,
     pendingWorkerIds: [...workerIds],
     completedResults: new Map<string, WorkerWaitResult>(),
     interruptedByNudge: nudgeEvent !== undefined,
@@ -576,11 +581,13 @@ async function runWorkerWait(
   config: PluginConfig,
   waitContext: WorkerWaitExecutionContext,
 ) {
+  const restoreBackgroundWorkers = foregroundWaitedWorkers(state, waitContext)
   const unsubscribe = subscribeWorkerWaitNudges(client, config, waitContext)
   try {
     return await pollWorkerWait(state, client, config, waitContext)
   } finally {
     unsubscribe()
+    restoreBackgroundWorkers()
   }
 }
 
@@ -594,6 +601,22 @@ function subscribeWorkerWaitNudges(
     const matched = getNudgeEventFromDaemonEvent(event, waitContext.ownedWorkerIds, config)
     if (matched) markWaitInterruptedByNudge(waitContext, matched)
   })
+}
+
+function foregroundWaitedWorkers(state: PluginState, waitContext: WorkerWaitExecutionContext): () => void {
+  const session = state.sessions.get(waitContext.sessionId)
+  if (!session) return () => {}
+
+  const backgroundWorkerIds = waitContext.workerIds.filter((workerId) => session.backgroundWorkerIds.has(workerId))
+  for (const workerId of backgroundWorkerIds) {
+    unrecordBackgroundWorker(state, waitContext.sessionId, workerId)
+  }
+
+  return () => {
+    for (const workerId of backgroundWorkerIds) {
+      recordBackgroundWorker(state, waitContext.sessionId, workerId)
+    }
+  }
 }
 
 async function pollWorkerWait(
@@ -659,7 +682,7 @@ function workerWaitCompletionResponse(waitContext: WorkerWaitExecutionContext) {
 }
 
 function markUnreadWaitNudge(state: PluginState, config: PluginConfig, waitContext: WorkerWaitExecutionContext): void {
-  const unreadNudge = getExistingUnreadNudge(state, waitContext.sessionId, config)
+  const unreadNudge = getExistingUnreadNudge(state, waitContext.sessionId, waitContext.ownedWorkerIds, config)
   if (unreadNudge && !waitContext.nudgeEvent) markWaitInterruptedByNudge(waitContext, unreadNudge)
 }
 

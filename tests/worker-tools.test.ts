@@ -417,7 +417,7 @@ test("paseo_worker_wait", async (t) => {
     )
   })
 
-  await t.test("early exit on owned worker nudge for waited worker", async () => {
+  await t.test("waited worker permission updates return as results instead of nudges", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
     let listener: DaemonEventCallback | undefined
@@ -434,7 +434,7 @@ test("paseo_worker_wait", async (t) => {
           payload: { workerId, permissionId: "perm-1", request: { id: "perm-1", summary: "needs permission" } },
         } satisfies DaemonEvent)
         return {
-          status: "timeout",
+          status: "permission",
           workerId,
           error: null,
           lastMessage: null,
@@ -447,13 +447,14 @@ test("paseo_worker_wait", async (t) => {
     const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
-    assert.equal(output.interruptedByNudge, true)
-    assert.equal(output.nudgeEvent.kind, "permission.requested")
-    assert.equal(output.nudgeEvent.workerId, "w1")
+    assert.equal(output.interruptedByNudge, false)
+    assert.equal(output.nudgeEvent, undefined)
+    assert.equal(output.results[0].status, "permission")
+    assert.equal(output.results[0].workerId, "w1")
     assert.equal(output.timedOut, false)
   })
 
-  await t.test("early exit on unread worker.stalled event", async () => {
+  await t.test("unread worker.stalled event for waited worker no longer interrupts wait", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
     insertInboxEvent(state, {
@@ -466,14 +467,22 @@ test("paseo_worker_wait", async (t) => {
       timestamp: Date.now(),
     })
 
-    const client = createMockTransport()
+    const client = createMockTransport({
+      waitForWorker: async (workerId) => ({
+        status: "idle",
+        workerId,
+        error: null,
+        lastMessage: "done",
+        finalSnapshot: null,
+      }),
+    })
     const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
-    assert.equal(output.interruptedByNudge, true)
-    assert.equal(output.nudgeEvent.kind, "worker.stalled")
-    assert.equal(output.nudgeEvent.workerId, "w1")
+    assert.equal(output.interruptedByNudge, false)
+    assert.equal(output.nudgeEvent, undefined)
+    assert.equal(output.results[0].workerId, "w1")
   })
 
   await t.test("read worker.stalled event no longer interrupts wait", async () => {
@@ -507,7 +516,7 @@ test("paseo_worker_wait", async (t) => {
     assert.equal(output.results[0].workerId, "w1")
   })
 
-  await t.test("early exit on unread chat.mentioned event for owned worker", async () => {
+  await t.test("unread chat.mentioned event for waited worker no longer interrupts wait", async () => {
     const state = createPluginState()
     seedWorker(state, "w1")
     insertInboxEvent(state, {
@@ -520,14 +529,22 @@ test("paseo_worker_wait", async (t) => {
       timestamp: Date.now(),
     })
 
-    const client = createMockTransport()
+    const client = createMockTransport({
+      waitForWorker: async (workerId) => ({
+        status: "idle",
+        workerId,
+        error: null,
+        lastMessage: "done",
+        finalSnapshot: null,
+      }),
+    })
     const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
     const result = await toolDef.execute({ workerIds: ["w1"], timeout: 500 }, mockContext())
     const output = JSON.parse((result as { output: string }).output)
 
-    assert.equal(output.interruptedByNudge, true)
-    assert.equal(output.nudgeEvent.kind, "chat.mentioned")
-    assert.equal(output.nudgeEvent.workerId, "w1")
+    assert.equal(output.interruptedByNudge, false)
+    assert.equal(output.nudgeEvent, undefined)
+    assert.equal(output.results[0].workerId, "w1")
   })
 
   await t.test("unread background status nudge wins over same-slice wait completion", async () => {
@@ -632,6 +649,25 @@ test("paseo_worker_wait", async (t) => {
     await toolDef.execute({ workerIds: ["w1"], timeout: 1 }, mockContext())
 
     assert.equal(activeListeners, 0)
+  })
+
+  await t.test("waited workers are restored to background ownership after wait exits", async () => {
+    const state = createPluginState()
+    seedWorker(state, "w1")
+    const client = createMockTransport({
+      waitForWorker: async (workerId) => ({
+        status: "timeout",
+        workerId,
+        error: null,
+        lastMessage: null,
+        finalSnapshot: null,
+      }),
+    })
+
+    const toolDef = createWorkerWaitTool(state, client, TEST_CONFIG, logger)
+    await toolDef.execute({ workerIds: ["w1"], timeout: 1 }, mockContext())
+
+    assert.equal(state.sessions.get("sess-1")?.backgroundWorkerIds.has("w1"), true)
   })
 })
 
